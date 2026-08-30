@@ -1,5 +1,5 @@
 
-`SECURITY.md`
+# Security Policy
 
 ```md
 # Security Policy
