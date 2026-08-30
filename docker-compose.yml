@@ -1,4 +1,22 @@
 services:
+  api:
+    build:
+      context: ./apps/api
+    container_name: tap-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   postgres:
     image: postgres:16-alpine
     container_name: tap-postgres
@@ -6,7 +24,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-tap}
       POSTGRES_USER: ${POSTGRES_USER:-tap}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-development-password-change-me}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
