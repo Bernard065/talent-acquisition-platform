@@ -17,7 +17,13 @@ async def liveness() -> dict[str, str]:
 @router.get("/ready")
 async def readiness(request: Request) -> dict[str, str]:
     """Service can reach its required transactional data store."""
-    database: Database = request.app.state.database
+    database: Database | None = getattr(request.app.state, "database", None)
+
+    if database is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="database unavailable",
+        )
 
     try:
         await database.ping()

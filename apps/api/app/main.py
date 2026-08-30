@@ -23,12 +23,17 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     settings: Settings = application.state.settings
     configure_logging(settings.log_level)
 
-    application.state.database = Database(str(settings.database_url))
+    if settings.database_url is not None:
+        application.state.database = Database(str(settings.database_url))
+    else:
+        application.state.database = None
+
     logger.info("application_started", environment=settings.app_env)
 
     yield
 
-    await application.state.database.dispose()
+    if application.state.database is not None:
+        await application.state.database.dispose()
     logger.info("application_stopped")
 
 
