@@ -1,5 +1,7 @@
 """FastAPI authorization dependencies for role-based access control."""
 
+from collections.abc import Awaitable, Callable
+
 from fastapi import Depends, HTTPException, status
 
 from app.api.dependencies import get_tenant_context
@@ -8,7 +10,7 @@ from app.core.authorization import Role, TenantContext
 TENANT_CONTEXT_DEPENDENCY = Depends(get_tenant_context)
 
 
-def require_any_role(*allowed_roles: Role):
+def require_any_role(*allowed_roles: Role) -> Callable[[TenantContext], Awaitable[TenantContext]]:
     """Return a FastAPI dependency that requires at least one supplied role."""
 
     if not allowed_roles:
