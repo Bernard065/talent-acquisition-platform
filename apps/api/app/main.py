@@ -42,8 +42,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     active_settings = settings or get_settings()
 
     application = FastAPI(
-        title="Talent Acquisition Platform API",
-        version="0.1.0",
+        title=active_settings.app_name,
+        version=active_settings.app_version,
         openapi_url=f"{active_settings.api_prefix}/openapi.json",
         docs_url=f"{active_settings.api_prefix}/docs",
         redoc_url=None,

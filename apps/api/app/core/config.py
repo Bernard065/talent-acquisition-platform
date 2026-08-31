@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import PostgresDsn
+from pydantic import AnyHttpUrl, Field, PostgresDsn
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
@@ -20,18 +20,25 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_env: Literal["local", "test", "staging", "production"] = "local"
-    app_name: str = "talent-acquisition-api"
-    api_prefix: str = "/api/v1"
-    log_level: str = "INFO"
+    app_env: Literal["local", "test", "staging", "production"]
+    app_name: str
+    app_version: str
+    api_prefix: str
+
+    log_level: str = Field(
+        pattern="^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$",
+    )
 
     database_url: PostgresDsn | None = None
-    redis_url: str = "redis://localhost:6379/0"
+    redis_url: str
+    allowed_origins: list[str] = Field(default_factory=list)
 
-    allowed_origins: list[str] = [
-        "http://localhost:3000",
-        "http://localhost:3002",
-    ]
+    # Identity provider contract
+    jwt_issuer: AnyHttpUrl
+    jwt_audience: str = Field(min_length=1)
+    jwt_jwks_url: AnyHttpUrl
+    jwt_algorithm: Literal["RS256"]
+    jwt_leeway_seconds: int = Field(ge=0, le=300)
 
 
 @lru_cache
