@@ -19,6 +19,35 @@ jobs:
     name: Lint, type-check, and test API
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: tap
+          POSTGRES_USER: tap
+          POSTGRES_PASSWORD: test-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tap -d tap"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      APP_ENV: test
+      APP_NAME: tap-api
+      APP_VERSION: 0.1.0
+      API_PREFIX: /api/v1
+      LOG_LEVEL: INFO
+      DATABASE_URL: postgresql+asyncpg://tap:test-password@localhost:5432/tap
+      REDIS_URL: redis://localhost:6379/0
+      JWT_ISSUER: https://issuer.example.test/
+      JWT_AUDIENCE: talent-acquisition-api
+      JWT_JWKS_URL: https://issuer.example.test/.well-known/jwks.json
+      JWT_ALGORITHM: RS256
+      JWT_LEEWAY_SECONDS: 30
+
     defaults:
       run:
         working-directory: apps/api
@@ -48,6 +77,9 @@ jobs:
 
       - name: Type-check
         run: uv run mypy app
+
+      - name: Apply schema migrations
+        run: uv run alembic upgrade head
 
       - name: Test
         run: uv run pytest -q

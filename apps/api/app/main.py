@@ -10,8 +10,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import Response
 
 from app.api.v1.health import router as health_router
+from app.api.v1.identity import router as identity_router
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
+from app.core.security import JwtVerifier
 from app.db.session import Database
 
 logger = structlog.get_logger()
@@ -22,6 +24,8 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     """Initialize application resources on startup and clean them up on shutdown."""
     settings: Settings = application.state.settings
     configure_logging(settings.log_level)
+
+    application.state.jwt_verifier = JwtVerifier(settings)
 
     if settings.database_url is not None:
         application.state.database = Database(str(settings.database_url))
@@ -34,6 +38,7 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
 
     if application.state.database is not None:
         await application.state.database.dispose()
+
     logger.info("application_stopped")
 
 
@@ -42,8 +47,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     active_settings = settings or get_settings()
 
     application = FastAPI(
-        title="Talent Acquisition Platform API",
-        version="0.1.0",
+        title=active_settings.app_name,
+        version=active_settings.app_version,
         openapi_url=f"{active_settings.api_prefix}/openapi.json",
         docs_url=f"{active_settings.api_prefix}/docs",
         redoc_url=None,
@@ -83,6 +88,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application.include_router(
         health_router,
+        prefix=active_settings.api_prefix,
+    )
+
+    application.include_router(
+        identity_router,
         prefix=active_settings.api_prefix,
     )
 
