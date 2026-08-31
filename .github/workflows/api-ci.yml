@@ -35,10 +35,18 @@ jobs:
           --health-retries 10
 
     env:
+      APP_ENV: test
+      APP_NAME: tap-api
+      APP_VERSION: 0.1.0
+      API_PREFIX: /api/v1
+      LOG_LEVEL: INFO
       DATABASE_URL: postgresql+asyncpg://tap:test-password@localhost:5432/tap
+      REDIS_URL: redis://localhost:6379/0
       JWT_ISSUER: https://issuer.example.test/
       JWT_AUDIENCE: talent-acquisition-api
       JWT_JWKS_URL: https://issuer.example.test/.well-known/jwks.json
+      JWT_ALGORITHM: RS256
+      JWT_LEEWAY_SECONDS: 30
 
     defaults:
       run:
