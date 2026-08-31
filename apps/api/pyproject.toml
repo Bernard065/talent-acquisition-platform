@@ -39,3 +39,9 @@ python_version = "3.12"
 strict = true
 warn_unreachable = true
 warn_unused_ignores = true
+
+[tool.pylint.main]
+init-hook = "import sys; sys.path.insert(0, '.')"
+
+[tool.pylint.messages_control]
+disable = ["E1101"]
