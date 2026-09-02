@@ -1,19 +1,29 @@
 """Database connection and lifecycle management."""
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 
 class Database:
-    """Owns the database engine; domain code must not create its own engines."""
+    """Owns the database engine and application session factory."""
 
     def __init__(self, database_url: str) -> None:
-        """Initialize the database engine with the provided URL."""
+        """Initialize database resources with the provided URL."""
         self.engine: AsyncEngine = create_async_engine(
             database_url,
             pool_pre_ping=True,
             pool_size=5,
             max_overflow=10,
+        )
+        self.session_factory: async_sessionmaker[AsyncSession] = async_sessionmaker(
+            bind=self.engine,
+            autoflush=False,
+            expire_on_commit=False,
         )
 
     async def ping(self) -> None:
