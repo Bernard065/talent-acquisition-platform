@@ -57,7 +57,7 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['tenant_id'], ['tenants.id'], name=op.f('fk_users_tenant_id_tenants'), ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_users')),
     sa.UniqueConstraint('tenant_id', 'email', name=op.f('uq_users_tenant_id')),
-    sa.UniqueConstraint('tenant_id', 'external_subject', name=op.f('uq_users_tenant_id'))
+    sa.UniqueConstraint('tenant_id', 'external_subject', name=op.f('uq_users_tenant_id_external_subject'))
     )
     op.create_index(op.f('ix_users_tenant_id'), 'users', ['tenant_id'], unique=False)
     op.create_table('audit_events',
