@@ -59,12 +59,15 @@ async def get_tenant_context(
 
 
 async def get_db_session(request: Request) -> AsyncIterator[AsyncSession]:
-    """Provide one database session for the current HTTP request.
+    """Provide one database session for the current HTTP request."""
+    database = getattr(request.app.state, "database", None)
 
-    Application services own transaction boundaries. This dependency never
-    commits implicitly; it only ensures failed request work is rolled back.
-    """
-    database: Database = request.app.state.database
+    if not isinstance(database, Database):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database service is unavailable.",
+            headers={"Retry-After": "5"},
+        )
 
     async with database.session_factory() as session:
         try:
