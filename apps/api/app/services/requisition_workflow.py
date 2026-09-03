@@ -10,6 +10,10 @@ from app.db.models.requisition import Requisition
 from app.domains.requisitions.enums import RequisitionStatus
 from app.domains.requisitions.transitions import transition_requisition
 from app.services.audit import record_audit_event
+from app.services.requisition_errors import (
+    RequisitionAccessDeniedError,
+    RequisitionNotFoundError,
+)
 
 _TRANSITION_ROLES = frozenset(
     {
@@ -19,11 +23,7 @@ _TRANSITION_ROLES = frozenset(
 )
 
 
-class RequisitionNotFoundError(LookupError):
-    """Raised when a requisition is absent from the caller's tenant."""
-
-
-class RequisitionTransitionForbiddenError(PermissionError):
+class RequisitionTransitionForbiddenError(RequisitionAccessDeniedError):
     """Raised when a caller lacks permission to change requisition status."""
 
 
