@@ -29,7 +29,8 @@ def _get_test_database_url() -> str:
         configured_url = get_settings().database_url
         if configured_url is None:
             raise RuntimeError(
-                "TEST_DATABASE_URL or DATABASE_URL must be configured for database-backed tests."
+                "TEST_DATABASE_URL or DATABASE_URL must be configured for "
+                "database-backed tests."
             )
 
         base_url = make_url(str(configured_url))
@@ -67,24 +68,9 @@ async def _database_engine_fixture() -> AsyncIterator[AsyncEngine]:
     await engine.dispose()
 
 
-@pytest_asyncio.fixture(autouse=True)
-async def clean_database(database_engine: AsyncEngine) -> AsyncIterator[None]:
-    """Remove application data after each test."""
-    yield
-
-    async with database_engine.begin() as connection:
-        await connection.execute(
-            text(
-                "TRUNCATE TABLE "
-                "audit_events, requisitions, user_role_assignments, users, tenants "
-                "CASCADE"
-            )
-        )
-
-
 @pytest_asyncio.fixture
 async def session(database_engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
-    """Provide one test-scoped asynchronous database session."""
+    """Provide one isolated asynchronous database session."""
     session_factory = async_sessionmaker(
         bind=database_engine,
         autoflush=False,
@@ -96,3 +82,12 @@ async def session(database_engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
             yield database_session
         finally:
             await database_session.rollback()
+
+    async with database_engine.begin() as connection:
+        await connection.execute(
+            text(
+                "TRUNCATE TABLE "
+                "audit_events, requisitions, user_role_assignments, users, tenants "
+                "CASCADE"
+            )
+        )
