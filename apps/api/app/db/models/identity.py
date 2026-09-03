@@ -37,8 +37,12 @@ class User(Base):
 
     __tablename__ = "users"
     __table_args__ = (
-        UniqueConstraint("tenant_id", "external_subject"),
-        UniqueConstraint("tenant_id", "email"),
+        UniqueConstraint(
+            "tenant_id",
+            "external_subject",
+            name="uq_users_tenant_id_external_subject",
+        ),
+        UniqueConstraint("tenant_id", "email", name="uq_users_tenant_id"),
     )
 
     id: Mapped[UUID] = mapped_column(

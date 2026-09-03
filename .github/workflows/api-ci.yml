@@ -41,6 +41,7 @@ jobs:
       API_PREFIX: /api/v1
       LOG_LEVEL: INFO
       DATABASE_URL: postgresql+asyncpg://tap:test-password@localhost:5432/tap
+      TEST_DATABASE_URL: postgresql+asyncpg://tap:test-password@localhost:5432/tap_test
       REDIS_URL: redis://localhost:6379/0
       JWT_ISSUER: https://issuer.example.test/
       JWT_AUDIENCE: talent-acquisition-api
@@ -71,6 +72,12 @@ jobs:
 
       - name: Check dependency lock
         run: uv lock --check
+
+      - name: Create test database
+        working-directory: .
+        env:
+          PGPASSWORD: test-password
+        run: psql -h localhost -U tap -d tap -c "CREATE DATABASE tap_test;"
 
       - name: Lint
         run: uv run ruff check app tests

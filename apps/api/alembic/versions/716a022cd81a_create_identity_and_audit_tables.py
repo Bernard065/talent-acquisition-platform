@@ -1,14 +1,15 @@
 """create identity and audit tables
 
 Revision ID: 716a022cd81a
-Revises: 
+Revises:
 Create Date: 2026-09-01 00:11:38.905574
 
 """
+
 from collections.abc import Sequence
 
 # revision identifiers, used by Alembic.
-revision: str = '716a022cd81a'
+revision: str = "716a022cd81a"
 down_revision: str | Sequence[str] | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
