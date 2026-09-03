@@ -1,5 +1,6 @@
 """FastAPI dependencies for authentication and request context."""
 
+from collections.abc import AsyncIterator
 from typing import Annotated
 
 import structlog
@@ -7,9 +8,11 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import InvalidTokenError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authorization import TenantContext
 from app.core.security import JwtVerifier
+from app.db.session import Database
 
 bearer_scheme = HTTPBearer(auto_error=False)
 logger = structlog.get_logger()
@@ -53,3 +56,19 @@ async def get_tenant_context(
         subject=context.subject,
     )
     return context
+
+
+async def get_db_session(request: Request) -> AsyncIterator[AsyncSession]:
+    """Provide one database session for the current HTTP request.
+
+    Application services own transaction boundaries. This dependency never
+    commits implicitly; it only ensures failed request work is rolled back.
+    """
+    database: Database = request.app.state.database
+
+    async with database.session_factory() as session:
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
