@@ -70,6 +70,7 @@ async def transition_requisition_status(
         # Execute the update now so the ORM increments and validates `version`
         # before the related audit event is added.
         await session.flush()
+        await session.refresh(requisition)
 
         record_audit_event(
             session,

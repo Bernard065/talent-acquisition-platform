@@ -9,8 +9,10 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import Response
 
+from app.api.exception_handlers import register_exception_handlers
 from app.api.v1.health import router as health_router
 from app.api.v1.identity import router as identity_router
+from app.api.v1.requisitions import router as requisitions_router
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.core.security import JwtVerifier
@@ -57,6 +59,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application.state.settings = active_settings
 
+    register_exception_handlers(application)
+
     application.add_middleware(
         CORSMiddleware,
         allow_origins=active_settings.allowed_origins,
@@ -93,6 +97,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application.include_router(
         identity_router,
+        prefix=active_settings.api_prefix,
+    )
+
+    application.include_router(
+        requisitions_router,
         prefix=active_settings.api_prefix,
     )
 
