@@ -1,4 +1,4 @@
-"""Safe HTTP error mapping for requisition application services."""
+"""HTTP exception handlers for the API."""
 
 import structlog
 from fastapi import FastAPI, Request, status
@@ -7,6 +7,14 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm.exc import StaleDataError
 
 from app.domains.requisitions.transitions import InvalidRequisitionTransition
+from app.services.approval_errors import (
+    ApprovalDecisionAlreadyMadeError,
+    ApprovalDecisionForbiddenError,
+    ApprovalPolicyInvalidError,
+    ApprovalPolicyNotFoundError,
+    RequisitionApprovalNotFoundError,
+    SelfApprovalNotAllowedError,
+)
 from app.services.idempotency import (
     IdempotencyKeyReuseError,
     InvalidIdempotencyKeyError,
@@ -27,96 +35,112 @@ def _error_response(
     status_code: int,
     detail: str,
 ) -> JSONResponse:
-    """Create a safe, request-correlated API error response."""
+    """Build a consistent API error response."""
+    request_id = request.headers.get("X-Request-ID", "unknown")
+
     return JSONResponse(
         status_code=status_code,
         content={
             "detail": detail,
-            "request_id": request.headers.get("X-Request-ID", "unknown"),
+            "request_id": request_id,
         },
     )
 
 
+async def not_found(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Handle resources that cannot be found."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Requisition not found.",
+    )
+
+
+async def forbidden(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Handle insufficient permissions."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Insufficient permission.",
+    )
+
+
+async def conflict(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Handle conflicts caused by the current requisition state."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_409_CONFLICT,
+        detail="The requisition cannot be changed in its current state.",
+    )
+
+
+async def invalid_cursor(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Handle invalid requisition cursors."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail="Invalid requisition cursor.",
+    )
+
+
+async def invalid_idempotency_key(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Handle invalid idempotency keys."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Invalid Idempotency-Key.",
+    )
+
+
+async def idempotency_key_reused(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Handle idempotency keys reused for a different request."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Idempotency-Key was already used for a different request.",
+    )
+
+
+async def database_unavailable(
+    request: Request,
+    error: Exception,
+) -> JSONResponse:
+    """Handle database availability errors."""
+    logger.error(
+        "database_unavailable",
+        request_id=request.headers.get("X-Request-ID", "unknown"),
+        error_type=type(error).__name__,
+    )
+
+    response = _error_response(
+        request,
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Service temporarily unavailable.",
+    )
+    response.headers["Retry-After"] = "5"
+    return response
+
+
 def register_exception_handlers(application: FastAPI) -> None:
-    """Register application-service exception mappings."""
-
-    async def not_found(
-        request: Request,
-        _: Exception,
-    ) -> JSONResponse:
-        return _error_response(
-            request,
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Requisition not found.",
-        )
-
-    async def forbidden(
-        request: Request,
-        _: Exception,
-    ) -> JSONResponse:
-        return _error_response(
-            request,
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Insufficient permission.",
-        )
-
-    async def conflict(
-        request: Request,
-        _: Exception,
-    ) -> JSONResponse:
-        return _error_response(
-            request,
-            status_code=status.HTTP_409_CONFLICT,
-            detail="The requisition cannot be changed in its current state.",
-        )
-
-    async def invalid_cursor(
-        request: Request,
-        _: Exception,
-    ) -> JSONResponse:
-        return _error_response(
-            request,
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Invalid requisition cursor.",
-        )
-
-    async def invalid_idempotency_key(
-        request: Request,
-        _: Exception,
-    ) -> JSONResponse:
-        return _error_response(
-            request,
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid Idempotency-Key.",
-        )
-
-    async def idempotency_key_reused(
-        request: Request,
-        _: Exception,
-    ) -> JSONResponse:
-        return _error_response(
-            request,
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Idempotency-Key was already used for a different request.",
-        )
-
-    async def database_unavailable(
-        request: Request,
-        error: Exception,
-    ) -> JSONResponse:
-        logger.error(
-            "database_unavailable",
-            request_id=request.headers.get("X-Request-ID", "unknown"),
-            error_type=type(error).__name__,
-        )
-        response = _error_response(
-            request,
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Service temporarily unavailable.",
-        )
-        response.headers["Retry-After"] = "5"
-        return response
-
+    """Register application-wide exception handlers."""
     application.add_exception_handler(RequisitionNotFoundError, not_found)
     application.add_exception_handler(RequisitionAccessDeniedError, forbidden)
     application.add_exception_handler(RequisitionNotEditableError, conflict)
@@ -131,4 +155,27 @@ def register_exception_handlers(application: FastAPI) -> None:
         IdempotencyKeyReuseError,
         idempotency_key_reused,
     )
+
+    application.add_exception_handler(ApprovalPolicyNotFoundError, not_found)
+    application.add_exception_handler(
+        RequisitionApprovalNotFoundError,
+        not_found,
+    )
+    application.add_exception_handler(
+        ApprovalDecisionForbiddenError,
+        forbidden,
+    )
+    application.add_exception_handler(
+        SelfApprovalNotAllowedError,
+        forbidden,
+    )
+    application.add_exception_handler(
+        ApprovalDecisionAlreadyMadeError,
+        conflict,
+    )
+    application.add_exception_handler(
+        ApprovalPolicyInvalidError,
+        conflict,
+    )
+
     application.add_exception_handler(OperationalError, database_unavailable)
