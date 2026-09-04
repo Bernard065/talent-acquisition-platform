@@ -62,6 +62,19 @@ async def transition_requisition_status(
         if requisition is None:
             raise RequisitionNotFoundError("Requisition was not found.")
 
+        if (
+            requisition.status is RequisitionStatus.PENDING_APPROVAL
+            and target_status
+            in {
+                RequisitionStatus.DRAFT,
+                RequisitionStatus.APPROVED,
+            }
+        ):
+            raise RequisitionTransitionForbiddenError(
+                "Pending requisitions must be approved or rejected through "
+                "the approval workflow."
+            )
+
         previous_status = requisition.status
         requisition.status = transition_requisition(
             current_status=previous_status,
