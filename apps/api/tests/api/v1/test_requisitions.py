@@ -131,6 +131,7 @@ async def _create_requisition(
             "department": "Engineering",
             "headcount": 1,
         },
+        headers={"Idempotency-Key": str(uuid4())},
     )
 
     assert response.status_code == 201
@@ -224,6 +225,7 @@ async def test_updates_draft_then_rejects_update_after_transition(
         transitioned = await client.post(
             f"/api/v1/requisitions/{created['id']}/transitions",
             json={"target_status": "pending_approval"},
+            headers={"Idempotency-Key": str(uuid4())},
         )
         rejected_update = await client.patch(
             f"/api/v1/requisitions/{created['id']}",
@@ -296,7 +298,96 @@ async def test_rejects_write_for_read_only_role(
         response = await client.post(
             "/api/v1/requisitions",
             json={"title": "Backend Engineer"},
+            headers={"Idempotency-Key": str(uuid4())},
         )
 
     assert response.status_code == 403
     assert response.json()["detail"] == "Insufficient permission."
+
+
+@pytest.mark.asyncio
+async def test_create_replays_response_for_same_idempotency_key(
+    requisition_app: FastAPI,
+) -> None:
+    """Replay the original response when the same idempotency key is reused."""
+    transport = ASGITransport(app=requisition_app)
+    headers = {"Idempotency-Key": str(uuid4())}
+    payload = {
+        "title": "Senior Backend Engineer",
+        "department": "Engineering",
+        "headcount": 1,
+    }
+
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+    ) as client:
+        first = await client.post(
+            "/api/v1/requisitions",
+            json=payload,
+            headers=headers,
+        )
+        second = await client.post(
+            "/api/v1/requisitions",
+            json=payload,
+            headers=headers,
+        )
+
+        requisitions = await client.get("/api/v1/requisitions")
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json() == second.json()
+    assert first.headers["Idempotent-Replayed"] == "false"
+    assert second.headers["Idempotent-Replayed"] == "true"
+    assert len(requisitions.json()["items"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_rejects_reuse_of_key_for_different_payload(
+    requisition_app: FastAPI,
+) -> None:
+    """Reject reuse of an idempotency key for a different request payload."""
+    transport = ASGITransport(app=requisition_app)
+    headers = {"Idempotency-Key": str(uuid4())}
+
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+    ) as client:
+        first = await client.post(
+            "/api/v1/requisitions",
+            json={"title": "Backend Engineer"},
+            headers=headers,
+        )
+        second = await client.post(
+            "/api/v1/requisitions",
+            json={"title": "Frontend Engineer"},
+            headers=headers,
+        )
+
+    assert first.status_code == 201
+    assert second.status_code == 409
+    assert second.json()["detail"] == (
+        "Idempotency-Key was already used for a different request."
+    )
+
+
+@pytest.mark.asyncio
+async def test_rejects_write_without_idempotency_key(
+    requisition_app: FastAPI,
+) -> None:
+    """Reject a requisition write when the idempotency key is missing."""
+    transport = ASGITransport(app=requisition_app)
+
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post(
+            "/api/v1/requisitions",
+            json={"title": "Backend Engineer"},
+        )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Idempotency-Key header is required."

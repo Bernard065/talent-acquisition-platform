@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authorization import Role, TenantContext
 from app.db.models.requisition import Requisition
+from app.db.transactions import transactional
 from app.domains.requisitions.enums import RequisitionStatus
 from app.services.audit import record_audit_event
 from app.services.requisition_errors import (
@@ -147,7 +148,7 @@ async def create_requisition(
     """Create a draft requisition and its audit record atomically."""
     _require_any_role(context, _WRITE_ROLES)
 
-    async with session.begin():
+    async with transactional(session):
         requisition = Requisition(
             tenant_id=context.tenant_id,
             title=command.title,
@@ -253,7 +254,7 @@ async def update_requisition(
     """Update a draft requisition and record the change atomically."""
     _require_any_role(context, _WRITE_ROLES)
 
-    async with session.begin():
+    async with transactional(session):
         requisition = await session.scalar(
             select(Requisition)
             .where(
