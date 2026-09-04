@@ -9,9 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import (
     get_db_session,
-    get_idempotency_key,
     get_tenant_context,
 )
+from app.api.idempotency import IdempotencyKey, idempotency_response
 from app.api.v1.schemas.requisitions import (
     RequisitionCreateRequest,
     RequisitionListResponse,
@@ -20,7 +20,7 @@ from app.api.v1.schemas.requisitions import (
     RequisitionUpdateRequest,
 )
 from app.core.authorization import TenantContext
-from app.services.idempotency import IdempotencyResult, execute_idempotently
+from app.services.idempotency import execute_idempotently
 from app.services.requisition_workflow import transition_requisition_status
 from app.services.requisitions import (
     CreateRequisitionCommand,
@@ -35,18 +35,6 @@ router = APIRouter(prefix="/requisitions", tags=["Requisitions"])
 
 CallerContext = Annotated[TenantContext, Depends(get_tenant_context)]
 DatabaseSession = Annotated[AsyncSession, Depends(get_db_session)]
-IdempotencyKey = Annotated[str, Depends(get_idempotency_key)]
-
-
-def _idempotent_response(result: IdempotencyResult) -> JSONResponse:
-    """Return a stored or new write response with replay visibility."""
-    return JSONResponse(
-        status_code=result.status_code,
-        content=result.body,
-        headers={
-            "Idempotent-Replayed": str(result.replayed).lower(),
-        },
-    )
 
 
 @router.post(
@@ -88,7 +76,7 @@ async def create_requisition_endpoint(
         payload=payload.model_dump(mode="json"),
         operation=operation,
     )
-    return _idempotent_response(result)
+    return idempotency_response(result)
 
 
 @router.get(
@@ -194,4 +182,4 @@ async def transition_requisition_endpoint(
         payload=payload.model_dump(mode="json"),
         operation=operation,
     )
-    return _idempotent_response(result)
+    return idempotency_response(result)
