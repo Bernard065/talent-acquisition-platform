@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from typing import Annotated
 
 import structlog
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import InvalidTokenError
@@ -16,6 +16,22 @@ from app.db.session import Database
 
 bearer_scheme = HTTPBearer(auto_error=False)
 logger = structlog.get_logger()
+
+
+async def get_idempotency_key(
+    idempotency_key: Annotated[
+        str | None,
+        Header(alias="Idempotency-Key"),
+    ] = None,
+) -> str:
+    """Require an idempotency key for externally initiated write operations."""
+    if idempotency_key is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Idempotency-Key header is required.",
+        )
+
+    return idempotency_key
 
 
 async def get_tenant_context(

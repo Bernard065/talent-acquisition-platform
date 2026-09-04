@@ -7,6 +7,10 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm.exc import StaleDataError
 
 from app.domains.requisitions.transitions import InvalidRequisitionTransition
+from app.services.idempotency import (
+    IdempotencyKeyReuseError,
+    InvalidIdempotencyKeyError,
+)
 from app.services.requisition_errors import (
     InvalidRequisitionCursorError,
     RequisitionAccessDeniedError,
@@ -76,6 +80,26 @@ def register_exception_handlers(application: FastAPI) -> None:
             detail="Invalid requisition cursor.",
         )
 
+    async def invalid_idempotency_key(
+        request: Request,
+        _: Exception,
+    ) -> JSONResponse:
+        return _error_response(
+            request,
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid Idempotency-Key.",
+        )
+
+    async def idempotency_key_reused(
+        request: Request,
+        _: Exception,
+    ) -> JSONResponse:
+        return _error_response(
+            request,
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Idempotency-Key was already used for a different request.",
+        )
+
     async def database_unavailable(
         request: Request,
         error: Exception,
@@ -99,4 +123,12 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(InvalidRequisitionTransition, conflict)
     application.add_exception_handler(StaleDataError, conflict)
     application.add_exception_handler(InvalidRequisitionCursorError, invalid_cursor)
+    application.add_exception_handler(
+        InvalidIdempotencyKeyError,
+        invalid_idempotency_key,
+    )
+    application.add_exception_handler(
+        IdempotencyKeyReuseError,
+        idempotency_key_reused,
+    )
     application.add_exception_handler(OperationalError, database_unavailable)

@@ -12,8 +12,8 @@ from app.db.models.identity import Tenant
 from app.db.models.requisition import Requisition
 from app.domains.requisitions.enums import RequisitionStatus
 from app.domains.requisitions.transitions import InvalidRequisitionTransition
+from app.services.requisition_errors import RequisitionNotFoundError
 from app.services.requisition_workflow import (
-    RequisitionNotFoundError,
     RequisitionTransitionForbiddenError,
     transition_requisition_status,
 )

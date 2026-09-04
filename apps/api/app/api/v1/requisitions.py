@@ -1,12 +1,17 @@
 """Requisition HTTP endpoints."""
 
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_db_session, get_tenant_context
+from app.api.dependencies import (
+    get_db_session,
+    get_idempotency_key,
+    get_tenant_context,
+)
 from app.api.v1.schemas.requisitions import (
     RequisitionCreateRequest,
     RequisitionListResponse,
@@ -15,6 +20,7 @@ from app.api.v1.schemas.requisitions import (
     RequisitionUpdateRequest,
 )
 from app.core.authorization import TenantContext
+from app.services.idempotency import IdempotencyResult, execute_idempotently
 from app.services.requisition_workflow import transition_requisition_status
 from app.services.requisitions import (
     CreateRequisitionCommand,
@@ -29,6 +35,18 @@ router = APIRouter(prefix="/requisitions", tags=["Requisitions"])
 
 CallerContext = Annotated[TenantContext, Depends(get_tenant_context)]
 DatabaseSession = Annotated[AsyncSession, Depends(get_db_session)]
+IdempotencyKey = Annotated[str, Depends(get_idempotency_key)]
+
+
+def _idempotent_response(result: IdempotencyResult) -> JSONResponse:
+    """Return a stored or new write response with replay visibility."""
+    return JSONResponse(
+        status_code=result.status_code,
+        content=result.body,
+        headers={
+            "Idempotent-Replayed": str(result.replayed).lower(),
+        },
+    )
 
 
 @router.post(
@@ -41,20 +59,36 @@ async def create_requisition_endpoint(
     payload: RequisitionCreateRequest,
     context: CallerContext,
     session: DatabaseSession,
-) -> RequisitionResponse:
-    """Create a draft requisition for the verified caller's tenant."""
-    requisition = await create_requisition(
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Create a draft requisition once for the supplied idempotency key."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        requisition = await create_requisition(
+            session,
+            context=context,
+            command=CreateRequisitionCommand(
+                title=payload.title,
+                description=payload.description,
+                department=payload.department,
+                location=payload.location,
+                headcount=payload.headcount,
+            ),
+        )
+        return (
+            status.HTTP_201_CREATED,
+            RequisitionResponse.model_validate(requisition).model_dump(mode="json"),
+        )
+
+    result = await execute_idempotently(
         session,
         context=context,
-        command=CreateRequisitionCommand(
-            title=payload.title,
-            description=payload.description,
-            department=payload.department,
-            location=payload.location,
-            headcount=payload.headcount,
-        ),
+        key=idempotency_key,
+        operation_name="requisition.create",
+        payload=payload.model_dump(mode="json"),
+        operation=operation,
     )
-    return RequisitionResponse.model_validate(requisition)
+    return _idempotent_response(result)
 
 
 @router.get(
@@ -136,12 +170,28 @@ async def transition_requisition_endpoint(
     payload: RequisitionTransitionRequest,
     context: CallerContext,
     session: DatabaseSession,
-) -> RequisitionResponse:
-    """Apply an allowed requisition workflow transition."""
-    requisition = await transition_requisition_status(
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Apply one workflow transition for the supplied idempotency key."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        requisition = await transition_requisition_status(
+            session,
+            context=context,
+            requisition_id=requisition_id,
+            target_status=payload.target_status,
+        )
+        return (
+            status.HTTP_200_OK,
+            RequisitionResponse.model_validate(requisition).model_dump(mode="json"),
+        )
+
+    result = await execute_idempotently(
         session,
         context=context,
-        requisition_id=requisition_id,
-        target_status=payload.target_status,
+        key=idempotency_key,
+        operation_name=f"requisition.transition:{requisition_id}",
+        payload=payload.model_dump(mode="json"),
+        operation=operation,
     )
-    return RequisitionResponse.model_validate(requisition)
+    return _idempotent_response(result)
