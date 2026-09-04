@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authorization import Role, TenantContext
 from app.db.models.requisition import Requisition
+from app.db.transactions import transactional
 from app.domains.requisitions.enums import RequisitionStatus
 from app.domains.requisitions.transitions import transition_requisition
 from app.services.audit import record_audit_event
@@ -46,7 +47,7 @@ async def transition_requisition_status(
             "Caller is not permitted to transition requisitions."
         )
 
-    async with session.begin():
+    async with transactional(session):
         statement = (
             select(Requisition)
             .where(
