@@ -1,0 +1,98 @@
+"""Version 1 job-application HTTP endpoints."""
+
+from typing import Annotated, Any
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, Response, status
+from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.dependencies import get_db_session, get_tenant_context
+from app.api.idempotency import IdempotencyKey, idempotency_response
+from app.api.v1.schemas.applications import (
+    ApplicationCreateRequest,
+    ApplicationResponse,
+)
+from app.core.authorization import TenantContext
+from app.services.candidates import (
+    CreateApplicationCommand,
+    create_application,
+    get_application,
+)
+from app.services.idempotency import IdempotencyResult, execute_idempotently
+
+router = APIRouter(prefix="/applications", tags=["Applications"])
+
+CallerContext = Annotated[TenantContext, Depends(get_tenant_context)]
+DatabaseSession = Annotated[AsyncSession, Depends(get_db_session)]
+
+
+def _private_idempotency_response(
+    result: IdempotencyResult,
+) -> JSONResponse:
+    """Prevent sensitive write responses from being cached."""
+    response = idempotency_response(result)
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+@router.post(
+    "",
+    response_model=ApplicationResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create an application",
+)
+async def create_application_endpoint(
+    payload: ApplicationCreateRequest,
+    context: CallerContext,
+    session: DatabaseSession,
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Connect a candidate to an open tenant requisition."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        application = await create_application(
+            session,
+            context=context,
+            command=CreateApplicationCommand(
+                candidate_id=payload.candidate_id,
+                requisition_id=payload.requisition_id,
+            ),
+        )
+        return (
+            status.HTTP_201_CREATED,
+            ApplicationResponse.model_validate(application).model_dump(mode="json"),
+        )
+
+    result = await execute_idempotently(
+        session,
+        context=context,
+        key=idempotency_key,
+        operation_name="application.create",
+        payload=payload.model_dump(mode="json"),
+        operation=operation,
+    )
+
+    return _private_idempotency_response(result)
+
+
+@router.get(
+    "/{application_id}",
+    response_model=ApplicationResponse,
+    summary="Get an application",
+)
+async def get_application_endpoint(
+    application_id: UUID,
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+) -> ApplicationResponse:
+    """Return one tenant-owned candidate application."""
+    application = await get_application(
+        session,
+        context=context,
+        application_id=application_id,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+
+    return ApplicationResponse.model_validate(application)
