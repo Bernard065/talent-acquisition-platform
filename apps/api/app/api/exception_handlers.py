@@ -67,6 +67,18 @@ async def not_found(
     )
 
 
+async def candidate_or_application_not_found(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Handle candidates or applications that cannot be found."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Candidate or application not found.",
+    )
+
+
 async def forbidden(
     request: Request,
     _: Exception,
@@ -186,8 +198,14 @@ def register_exception_handlers(application: FastAPI) -> None:
         conflict,
     )
 
-    application.add_exception_handler(CandidateNotFoundError, not_found)
-    application.add_exception_handler(ApplicationNotFoundError, not_found)
+    application.add_exception_handler(
+        CandidateNotFoundError,
+        candidate_or_application_not_found,
+    )
+    application.add_exception_handler(
+        ApplicationNotFoundError,
+        candidate_or_application_not_found,
+    )
     application.add_exception_handler(CandidateAccessDeniedError, forbidden)
     application.add_exception_handler(CandidateAlreadyExistsError, conflict)
     application.add_exception_handler(ApplicationAlreadyExistsError, conflict)
