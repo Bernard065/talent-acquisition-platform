@@ -7,14 +7,15 @@ from typing import Literal
 from pydantic import AnyHttpUrl, Field, PostgresDsn
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-PROJECT_ROOT = Path(__file__).resolve().parents[4]
+API_ROOT = Path(__file__).resolve().parents[2]
+REPOSITORY_ROOT = API_ROOT.parent.parent
 
 
 class Settings(BaseSettings):
     """Application configuration loaded from environment variables only."""
 
     model_config = SettingsConfigDict(
-        env_file=PROJECT_ROOT / ".env",
+        env_file=REPOSITORY_ROOT / ".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -33,7 +34,6 @@ class Settings(BaseSettings):
     redis_url: str
     allowed_origins: list[str] = Field(default_factory=list)
 
-    # Identity provider contract
     jwt_issuer: AnyHttpUrl
     jwt_audience: str = Field(min_length=1)
     jwt_jwks_url: AnyHttpUrl
