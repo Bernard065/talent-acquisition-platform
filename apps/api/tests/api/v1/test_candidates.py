@@ -8,6 +8,7 @@ import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.api.dependencies import get_db_session, get_tenant_context
@@ -134,12 +135,20 @@ async def api_app_fixture(
     yield application
 
     application.dependency_overrides.clear()
+    async with database_engine.begin() as connection:
+        await connection.execute(
+            text(
+                "TRUNCATE TABLE "
+                "audit_events, requisitions, user_role_assignments, users, tenants "
+                "CASCADE"
+            )
+        )
 
 
 async def _create_candidate(
     client: AsyncClient,
     *,
-    email: str = "ada@example.test",
+    email: str = "ada@acme.io",
     headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Create one candidate through the public API."""
@@ -194,7 +203,7 @@ async def test_replays_candidate_creation_for_same_idempotency_key(
     headers = _idempotency_headers()
     payload = {
         "full_name": "Ada Lovelace",
-        "email": "ada@example.test",
+        "email": "ada@acme.io",
         "source": "employee_referral",
     }
 
@@ -227,7 +236,7 @@ async def test_rejects_duplicate_candidate_with_a_new_idempotency_key(
     transport = ASGITransport(app=api_app)
     payload = {
         "full_name": "Ada Lovelace",
-        "email": "Ada.Lovelace@Example.Test",
+        "email": "Ada.Lovelace@Acme.IO",
         "source": "employee_referral",
     }
 
@@ -241,7 +250,7 @@ async def test_rejects_duplicate_candidate_with_a_new_idempotency_key(
             "/api/v1/candidates",
             json={
                 **payload,
-                "email": "ada.lovelace@example.test",
+                    "email": "ada.lovelace@acme.io",
             },
             headers=_idempotency_headers(),
         )
