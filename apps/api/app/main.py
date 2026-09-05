@@ -10,7 +10,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import Response
 
 from app.api.exception_handlers import register_exception_handlers
+from app.api.v1.applications import router as applications_router
 from app.api.v1.approvals import router as approvals_router
+from app.api.v1.candidates import router as candidates_router
 from app.api.v1.health import router as health_router
 from app.api.v1.identity import router as identity_router
 from app.api.v1.requisitions import router as requisitions_router
@@ -108,6 +110,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application.include_router(
         approvals_router,
+        prefix=active_settings.api_prefix,
+    )
+
+    application.include_router(
+        candidates_router,
+        prefix=active_settings.api_prefix,
+    )
+
+    application.include_router(
+        applications_router,
         prefix=active_settings.api_prefix,
     )
 
