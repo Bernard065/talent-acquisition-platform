@@ -1,7 +1,9 @@
 """Exceptions raised by candidate document workflow services."""
 
+from app.services.candidate_errors import CandidateAccessDeniedError
 
-class CandidateDocumentAccessDeniedError(PermissionError):
+
+class CandidateDocumentAccessDeniedError(CandidateAccessDeniedError):
     """Raised when a caller lacks permission to access candidate documents."""
 
 
