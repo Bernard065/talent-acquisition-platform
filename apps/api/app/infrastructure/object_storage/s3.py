@@ -13,7 +13,9 @@ from pydantic import AnyHttpUrl, SecretStr
 
 from app.core.config import Settings
 from app.services.object_storage import (
+    ObjectNotFoundError,
     ObjectStorage,
+    ObjectStorageError,
     PresignedUpload,
     StoredObjectMetadata,
 )
@@ -23,11 +25,11 @@ class ObjectStorageConfigurationError(ValueError):
     """Raised when required object-storage configuration is absent."""
 
 
-class ObjectStorageProviderError(RuntimeError):
+class ObjectStorageProviderError(ObjectStorageError):
     """Raised when the S3-compatible storage provider rejects an operation."""
 
 
-class ObjectStorageObjectNotFoundError(ObjectStorageProviderError):
+class ObjectStorageObjectNotFoundError(ObjectNotFoundError):
     """Raised when an object does not exist in object storage."""
 
 

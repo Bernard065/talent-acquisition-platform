@@ -7,6 +7,14 @@ from typing import Protocol
 from uuid import UUID
 
 
+class ObjectStorageError(RuntimeError):
+    """Raised when the object-storage provider cannot complete an operation."""
+
+
+class ObjectNotFoundError(ObjectStorageError):
+    """Raised when an object does not exist in object storage."""
+
+
 @dataclass(frozen=True, slots=True)
 class PresignedUpload:
     """A short-lived, provider-issued upload authorization."""
