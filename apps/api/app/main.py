@@ -13,6 +13,7 @@ from app.api.exception_handlers import register_exception_handlers
 from app.api.v1.applications import router as applications_router
 from app.api.v1.approvals import router as approvals_router
 from app.api.v1.candidates import router as candidates_router
+from app.api.v1.documents import router as documents_router
 from app.api.v1.health import router as health_router
 from app.api.v1.identity import router as identity_router
 from app.api.v1.requisitions import router as requisitions_router
@@ -20,6 +21,7 @@ from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.core.security import JwtVerifier
 from app.db.session import Database
+from app.infrastructure.object_storage.s3 import S3ObjectStorage
 
 logger = structlog.get_logger()
 
@@ -36,6 +38,23 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
         application.state.database = Database(str(settings.database_url))
     else:
         application.state.database = None
+
+    storage_configuration_present = any(
+        (
+            settings.s3_endpoint_url,
+            settings.s3_public_endpoint_url,
+            settings.s3_access_key,
+            settings.s3_secret_key,
+            settings.s3_bucket,
+            settings.s3_region,
+        )
+    )
+
+    application.state.object_storage = (
+        S3ObjectStorage.from_settings(settings)
+        if storage_configuration_present
+        else None
+    )
 
     logger.info("application_started", environment=settings.app_env)
 
@@ -69,7 +88,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_origins=active_settings.allowed_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-        allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+        allow_headers=[
+            "Authorization",
+            "Content-Type",
+            "Idempotency-Key",
+            "X-Request-ID",
+        ],
     )
 
     @application.middleware("http")
@@ -120,6 +144,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application.include_router(
         applications_router,
+        prefix=active_settings.api_prefix,
+    )
+
+    application.include_router(
+        documents_router,
         prefix=active_settings.api_prefix,
     )
 

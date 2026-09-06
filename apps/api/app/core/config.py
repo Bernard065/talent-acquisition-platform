@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AnyHttpUrl, Field, PostgresDsn
+from pydantic import AnyHttpUrl, Field, PostgresDsn, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 API_ROOT = Path(__file__).resolve().parents[2]
@@ -33,6 +33,24 @@ class Settings(BaseSettings):
     database_url: PostgresDsn | None = None
     redis_url: str
     allowed_origins: list[str] = Field(default_factory=list)
+
+    # Object storage. The adapter validates these when it is constructed.
+    s3_endpoint_url: AnyHttpUrl | None = None
+    s3_public_endpoint_url: AnyHttpUrl | None = None
+    s3_access_key: SecretStr | None = None
+    s3_secret_key: SecretStr | None = None
+    s3_bucket: str | None = Field(
+        default=None,
+        min_length=3,
+        max_length=63,
+        pattern=r"^[a-z0-9][a-z0-9.-]*[a-z0-9]$",
+    )
+    s3_region: str | None = Field(default=None, min_length=1, max_length=64)
+    s3_presigned_upload_expiry_seconds: int = Field(
+        default=900,
+        ge=60,
+        le=3600,
+    )
 
     jwt_issuer: AnyHttpUrl
     jwt_audience: str = Field(min_length=1)

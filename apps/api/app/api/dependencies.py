@@ -1,7 +1,7 @@
 """FastAPI dependencies for authentication and request context."""
 
 from collections.abc import AsyncIterator
-from typing import Annotated
+from typing import Annotated, cast
 
 import structlog
 from fastapi import Depends, Header, HTTPException, Request, status
@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.authorization import TenantContext
 from app.core.security import JwtVerifier
 from app.db.session import Database
+from app.services.object_storage import ObjectStorage
 
 bearer_scheme = HTTPBearer(auto_error=False)
 logger = structlog.get_logger()
@@ -91,3 +92,17 @@ async def get_db_session(request: Request) -> AsyncIterator[AsyncSession]:
         except Exception:
             await session.rollback()
             raise
+
+
+async def get_object_storage(request: Request) -> ObjectStorage:
+    """Return the configured object-storage adapter for document workflows."""
+    storage = getattr(request.app.state, "object_storage", None)
+
+    if storage is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Document storage service is unavailable.",
+            headers={"Retry-After": "5"},
+        )
+
+    return cast(ObjectStorage, storage)
