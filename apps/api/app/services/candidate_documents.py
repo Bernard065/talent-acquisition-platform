@@ -270,6 +270,7 @@ async def confirm_candidate_document_upload(
             )
 
             await session.flush()
+            await session.refresh(document)
             return document
 
         document.status = CandidateDocumentStatus.UPLOADED
@@ -288,6 +289,7 @@ async def confirm_candidate_document_upload(
         )
 
         await session.flush()
+        await session.refresh(document)
 
     return document
 
