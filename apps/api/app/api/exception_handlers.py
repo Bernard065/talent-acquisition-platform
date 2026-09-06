@@ -15,6 +15,12 @@ from app.services.approval_errors import (
     RequisitionApprovalNotFoundError,
     SelfApprovalNotAllowedError,
 )
+from app.services.candidate_document_errors import (
+    CandidateDocumentAccessDeniedError,
+    CandidateDocumentNotFoundError,
+    CandidateDocumentNotUploadableError,
+    CandidateDocumentVerificationError,
+)
 from app.services.candidate_errors import (
     ApplicationAlreadyExistsError,
     ApplicationNotFoundError,
@@ -159,6 +165,38 @@ async def database_unavailable(
     return response
 
 
+async def candidate_document_not_found(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Hide document existence outside the caller's tenant."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Candidate document not found.",
+    )
+
+
+async def document_storage_unavailable(
+    request: Request,
+    error: Exception,
+) -> JSONResponse:
+    """Return a retryable response without exposing storage-provider details."""
+    logger.error(
+        "document_storage_unavailable",
+        request_id=request.headers.get("X-Request-ID", "unknown"),
+        error_type=type(error).__name__,
+    )
+
+    response = _error_response(
+        request,
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Document storage service is temporarily unavailable.",
+    )
+    response.headers["Retry-After"] = "5"
+    return response
+
+
 def register_exception_handlers(application: FastAPI) -> None:
     """Register application-wide exception handlers."""
     application.add_exception_handler(RequisitionNotFoundError, not_found)
@@ -212,6 +250,23 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         RequisitionNotAcceptingApplicationsError,
         conflict,
+    )
+
+    application.add_exception_handler(
+        CandidateDocumentNotFoundError,
+        candidate_document_not_found,
+    )
+    application.add_exception_handler(
+        CandidateDocumentAccessDeniedError,
+        forbidden,
+    )
+    application.add_exception_handler(
+        CandidateDocumentNotUploadableError,
+        conflict,
+    )
+    application.add_exception_handler(
+        CandidateDocumentVerificationError,
+        document_storage_unavailable,
     )
 
     application.add_exception_handler(OperationalError, database_unavailable)
