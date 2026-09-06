@@ -4,7 +4,7 @@ import asyncio
 import base64
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Protocol, cast
+from typing import NoReturn, Protocol, cast
 
 import boto3
 from botocore.config import Config
@@ -272,7 +272,7 @@ class S3ObjectStorage(ObjectStorage):
         code = str(error.response.get("Error", {}).get("Code", ""))
         return code in {"404", "NoSuchBucket", "NoSuchKey", "NotFound"}
 
-    def _raise_provider_error(self, error: ClientError, operation: str) -> None:
+    def _raise_provider_error(self, error: ClientError, operation: str) -> NoReturn:
         """Map provider failures without exposing provider details to callers."""
         if self._is_missing(error):
             raise ObjectStorageObjectNotFoundError(
