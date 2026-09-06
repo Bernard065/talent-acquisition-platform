@@ -12,9 +12,14 @@ __pycache__/
 .ruff_cache/
 .venv/
 venv/
+.tox/
+.nox/
+.eggs/
 dist/
 build/
 *.egg-info/
+*.coverage
+.coverage
 coverage.xml
 htmlcov/
 
