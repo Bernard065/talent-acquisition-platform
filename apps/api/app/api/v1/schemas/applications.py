@@ -28,3 +28,5 @@ class ApplicationResponse(BaseModel):
     status: ApplicationStatus
     applied_at: datetime
     created_at: datetime
+    updated_at: datetime
+    version: int

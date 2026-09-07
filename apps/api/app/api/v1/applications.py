@@ -9,11 +9,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_db_session, get_tenant_context
 from app.api.idempotency import IdempotencyKey, idempotency_response
+from app.api.v1.schemas.application_pipeline import (
+    ApplicationStageTransitionRequest,
+)
 from app.api.v1.schemas.applications import (
     ApplicationCreateRequest,
     ApplicationResponse,
 )
 from app.core.authorization import TenantContext
+from app.services.application_pipeline import (
+    TransitionApplicationStageCommand,
+    transition_application_stage,
+)
 from app.services.candidates import (
     CreateApplicationCommand,
     create_application,
@@ -70,6 +77,52 @@ async def create_application_endpoint(
         key=idempotency_key,
         operation_name="application.create",
         payload=payload.model_dump(mode="json"),
+        operation=operation,
+    )
+
+    return _private_idempotency_response(result)
+
+
+@router.post(
+    "/{application_id}/stage-transitions",
+    response_model=ApplicationResponse,
+    summary="Transition an application pipeline stage",
+)
+async def transition_application_stage_endpoint(
+    application_id: UUID,
+    payload: ApplicationStageTransitionRequest,
+    context: CallerContext,
+    session: DatabaseSession,
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Transition one tenant-owned application using optimistic concurrency."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        application = await transition_application_stage(
+            session,
+            context=context,
+            application_id=application_id,
+            command=TransitionApplicationStageCommand(
+                target_status=payload.target_status,
+                expected_version=payload.expected_version,
+                rejection_reason=payload.rejection_reason,
+            ),
+        )
+
+        return (
+            status.HTTP_200_OK,
+            ApplicationResponse.model_validate(application).model_dump(mode="json"),
+        )
+
+    result = await execute_idempotently(
+        session,
+        context=context,
+        key=idempotency_key,
+        operation_name="application.transition_stage",
+        payload={
+            "application_id": str(application_id),
+            **payload.model_dump(mode="json"),
+        },
         operation=operation,
     )
 

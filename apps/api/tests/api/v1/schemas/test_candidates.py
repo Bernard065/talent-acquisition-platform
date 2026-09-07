@@ -163,6 +163,8 @@ def test_application_response_serializes_orm_style_object() -> None:
             status=ApplicationStatus.APPLIED,
             applied_at=timestamp,
             created_at=timestamp,
+            updated_at=timestamp,
+            version=1,
         )
     )
 
