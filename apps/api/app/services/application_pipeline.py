@@ -132,5 +132,6 @@ async def transition_application_stage(
             },
         )
         await session.flush()
+        await session.refresh(application)
 
     return application
