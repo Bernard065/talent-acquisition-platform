@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authorization import Role, TenantContext
 from app.db.models.application import Application
+from app.db.models.application_stage_history import ApplicationStageHistory
 from app.db.models.candidate import Candidate
 from app.db.models.requisition import Requisition
 from app.db.transactions import transactional
@@ -230,6 +231,17 @@ async def create_application(
             raise ApplicationAlreadyExistsError(
                 "Candidate already has an application for this requisition."
             ) from error
+
+        session.add(
+            ApplicationStageHistory(
+                tenant_id=context.tenant_id,
+                application_id=application.id,
+                from_status=None,
+                to_status=ApplicationStatus.APPLIED,
+                transitioned_by_subject=context.subject,
+            )
+        )
+        await session.flush()
 
         record_audit_event(
             session,

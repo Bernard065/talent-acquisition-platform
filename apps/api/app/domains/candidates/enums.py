@@ -12,6 +12,23 @@ class CandidateConsentStatus(StrEnum):
 
 
 class ApplicationStatus(StrEnum):
-    """Initial applicant-tracking status values."""
+    """Applicant-tracking pipeline stages."""
 
     APPLIED = "applied"
+    SCREENING = "screening"
+    INTERVIEW = "interview"
+    OFFER = "offer"
+    HIRED = "hired"
+    REJECTED = "rejected"
+    WITHDRAWN = "withdrawn"
+
+
+class ApplicationRejectionReason(StrEnum):
+    """Controlled reasons for rejecting an application."""
+
+    NOT_QUALIFIED = "not_qualified"
+    BETTER_MATCHED_CANDIDATE = "better_matched_candidate"
+    FAILED_ASSESSMENT = "failed_assessment"
+    COMPENSATION_MISMATCH = "compensation_mismatch"
+    ROLE_CLOSED = "role_closed"
+    OTHER = "other"
