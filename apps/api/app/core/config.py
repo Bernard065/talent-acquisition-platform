@@ -65,6 +65,15 @@ class Settings(BaseSettings):
     scan_worker_poll_interval_seconds: int = Field(default=2, ge=1, le=60)
     scan_worker_batch_size: int = Field(default=10, ge=1, le=100)
     scan_worker_id: str | None = Field(default=None, min_length=1, max_length=255)
+    scan_worker_metrics_port: int = Field(default=9100, ge=1024, le=65535)
+    scan_worker_heartbeat_path: Path = Path(
+        "/tmp/tap-document-scan-worker.heartbeat"  # noqa: S108
+    )
+    scan_worker_heartbeat_max_age_seconds: int = Field(
+        default=90,
+        ge=5,
+        le=600,
+    )
 
     jwt_issuer: AnyHttpUrl
     jwt_audience: str = Field(min_length=1)
