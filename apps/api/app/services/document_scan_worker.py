@@ -116,6 +116,7 @@ async def _process_scan_event(
     policy: OutboxWorkerPolicy,
 ) -> str:
     """Process one leased scan request without exposing provider details."""
+    event_id = event.id
     context = _worker_context(event, worker_id)
 
     try:
@@ -123,7 +124,7 @@ async def _process_scan_event(
     except (TypeError, ValueError):
         await dead_letter_outbox_event(
             session,
-            event_id=event.id,
+            event_id=event_id,
             worker_id=worker_id,
             failure_code="invalid_scan_event_payload",
         )
@@ -143,7 +144,7 @@ async def _process_scan_event(
     except CandidateDocumentNotFoundError:
         await dead_letter_outbox_event(
             session,
-            event_id=event.id,
+            event_id=event_id,
             worker_id=worker_id,
             failure_code="document_not_found",
         )
@@ -158,14 +159,14 @@ async def _process_scan_event(
         if document.status in _TERMINAL_DOCUMENT_STATUSES:
             await mark_outbox_event_processed(
                 session,
-                event_id=event.id,
+                event_id=event_id,
                 worker_id=worker_id,
             )
             return "processed"
 
         await dead_letter_outbox_event(
             session,
-            event_id=event.id,
+            event_id=event_id,
             worker_id=worker_id,
             failure_code="document_not_scannable",
         )
@@ -180,7 +181,7 @@ async def _process_scan_event(
     except MalwareScannerError:
         await schedule_outbox_event_retry(
             session,
-            event_id=event.id,
+            event_id=event_id,
             worker_id=worker_id,
             failure_code="malware_scanner_unavailable",
             policy=policy,
@@ -195,7 +196,7 @@ async def _process_scan_event(
     )
     await mark_outbox_event_processed(
         session,
-        event_id=event.id,
+        event_id=event_id,
         worker_id=worker_id,
     )
 
