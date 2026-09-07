@@ -6,7 +6,13 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm.exc import StaleDataError
 
+from app.domains.applications.transitions import InvalidApplicationTransition
 from app.domains.requisitions.transitions import InvalidRequisitionTransition
+from app.services.application_pipeline_errors import (
+    ApplicationPipelineAccessDeniedError,
+    ApplicationRejectionReasonError,
+    ApplicationVersionConflictError,
+)
 from app.services.approval_errors import (
     ApprovalDecisionAlreadyMadeError,
     ApprovalDecisionForbiddenError,
@@ -110,6 +116,42 @@ async def conflict(
         request,
         status_code=status.HTTP_409_CONFLICT,
         detail="The requisition cannot be changed in its current state.",
+    )
+
+
+async def application_conflict(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Handle invalid application workflow state changes."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Application cannot transition in its current state.",
+    )
+
+
+async def application_version_conflict(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Require callers to retry against the latest application version."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Application has changed; retrieve the latest version and retry.",
+    )
+
+
+async def invalid_application_transition_request(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Handle service-level transition input validation failures."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail="Invalid application transition request.",
     )
 
 
@@ -219,6 +261,22 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(RequisitionAccessDeniedError, forbidden)
     application.add_exception_handler(RequisitionNotEditableError, conflict)
     application.add_exception_handler(InvalidRequisitionTransition, conflict)
+    application.add_exception_handler(
+        ApplicationPipelineAccessDeniedError,
+        forbidden,
+    )
+    application.add_exception_handler(
+        InvalidApplicationTransition,
+        application_conflict,
+    )
+    application.add_exception_handler(
+        ApplicationVersionConflictError,
+        application_version_conflict,
+    )
+    application.add_exception_handler(
+        ApplicationRejectionReasonError,
+        invalid_application_transition_request,
+    )
     application.add_exception_handler(StaleDataError, conflict)
     application.add_exception_handler(InvalidRequisitionCursorError, invalid_cursor)
     application.add_exception_handler(
