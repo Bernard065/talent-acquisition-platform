@@ -103,6 +103,7 @@ async def claim_outbox_events(
     *,
     worker_id: str,
     policy: OutboxWorkerPolicy = DEFAULT_OUTBOX_WORKER_POLICY,
+    event_types: frozenset[str] | None = None,
 ) -> list[OutboxEvent]:
     """
     Recover stale leases and atomically claim ready events.
@@ -152,14 +153,20 @@ async def claim_outbox_events(
             )
         )
 
+        if event_types is not None and not event_types:
+            raise ValueError("Outbox event types must not be empty when supplied.")
+
+        statement = select(OutboxEvent).where(
+            OutboxEvent.status == OutboxEventStatus.PENDING,
+            OutboxEvent.next_attempt_at <= now,
+        )
+
+        if event_types is not None:
+            statement = statement.where(OutboxEvent.event_type.in_(event_types))
+
         events = list(
             await session.scalars(
-                select(OutboxEvent)
-                .where(
-                    OutboxEvent.status == OutboxEventStatus.PENDING,
-                    OutboxEvent.next_attempt_at <= now,
-                )
-                .order_by(
+                statement.order_by(
                     OutboxEvent.next_attempt_at,
                     OutboxEvent.created_at,
                     OutboxEvent.id,
@@ -244,6 +251,35 @@ async def schedule_outbox_event_retry(
                 attempts=event.attempts,
                 policy=policy,
             )
+
+        await session.flush()
+
+    return event
+
+
+async def dead_letter_outbox_event(
+    session: AsyncSession,
+    *,
+    event_id: UUID,
+    worker_id: str,
+    failure_code: str,
+) -> OutboxEvent:
+    """Terminally fail a leased event that cannot ever be processed."""
+    normalized_worker_id = _validate_worker_id(worker_id)
+    normalized_failure_code = _validate_failure_code(failure_code)
+
+    async with transactional(session):
+        event = await _get_leased_event(
+            session,
+            event_id=event_id,
+            worker_id=normalized_worker_id,
+        )
+
+        event.status = OutboxEventStatus.DEAD_LETTERED
+        event.locked_at = None
+        event.locked_by = None
+        event.dead_lettered_at = _now()
+        event.last_error = normalized_failure_code
 
         await session.flush()
 

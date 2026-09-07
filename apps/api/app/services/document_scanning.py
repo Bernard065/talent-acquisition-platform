@@ -44,6 +44,24 @@ async def begin_candidate_document_scan(
         if document is None:
             raise CandidateDocumentNotFoundError("Candidate document was not found.")
 
+        if document.status is CandidateDocumentStatus.SCANNING:
+            existing_scan = await session.scalar(
+                select(CandidateDocumentScan)
+                .where(
+                    CandidateDocumentScan.candidate_document_id == document.id,
+                    CandidateDocumentScan.status
+                    == CandidateDocumentScanStatus.SCANNING,
+                )
+                .order_by(CandidateDocumentScan.started_at.desc())
+                .with_for_update()
+            )
+            if existing_scan is None:
+                raise CandidateDocumentNotScannableError(
+                    "Document scan state is inconsistent."
+                )
+
+            return existing_scan
+
         if document.status is not CandidateDocumentStatus.UPLOADED:
             raise CandidateDocumentNotScannableError(
                 "Document is not ready for malware scanning."
