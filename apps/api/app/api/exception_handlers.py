@@ -33,6 +33,10 @@ from app.services.idempotency import (
     IdempotencyKeyReuseError,
     InvalidIdempotencyKeyError,
 )
+from app.services.outbox_inspection_errors import (
+    InvalidOutboxCursorError,
+    OutboxInspectionAccessDeniedError,
+)
 from app.services.requisition_errors import (
     InvalidRequisitionCursorError,
     RequisitionAccessDeniedError,
@@ -212,6 +216,14 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         IdempotencyKeyReuseError,
         idempotency_key_reused,
+    )
+    application.add_exception_handler(
+        OutboxInspectionAccessDeniedError,
+        forbidden,
+    )
+    application.add_exception_handler(
+        InvalidOutboxCursorError,
+        invalid_cursor,
     )
 
     application.add_exception_handler(ApprovalPolicyNotFoundError, not_found)
