@@ -12,7 +12,9 @@ from app.db.models.audit import AuditEvent
 from app.db.models.candidate import Candidate
 from app.db.models.candidate_document import CandidateDocument
 from app.db.models.identity import Tenant
+from app.db.models.outbox import OutboxEvent
 from app.domains.documents.enums import CandidateDocumentStatus
+from app.domains.outbox.enums import OutboxEventStatus
 from app.services.candidate_document_errors import (
     CandidateDocumentNotFoundError,
     CandidateDocumentNotUploadableError,
@@ -197,6 +199,14 @@ async def test_confirms_matching_upload_and_records_audit_event(
             .order_by(AuditEvent.occurred_at)
         )
     )
+    outbox_events = list(
+        await session.scalars(
+            select(OutboxEvent).where(
+                OutboxEvent.event_type == "candidate_document.scan_requested",
+                OutboxEvent.aggregate_id == str(document.id),
+            )
+        )
+    )
 
     assert confirmed.status is CandidateDocumentStatus.UPLOADED
     assert confirmed.uploaded_at is not None
@@ -204,6 +214,15 @@ async def test_confirms_matching_upload_and_records_audit_event(
         "candidate_document.upload_intent_created",
         "candidate_document.upload_confirmed",
     ]
+    assert len(outbox_events) == 1
+    assert outbox_events[0].tenant_id == tenant_id
+    assert outbox_events[0].status is OutboxEventStatus.PENDING
+    assert outbox_events[0].deduplication_key == (
+        f"candidate_document.scan_requested:{document.id}"
+    )
+    assert outbox_events[0].payload == {
+        "document_id": str(document.id),
+    }
 
 
 @pytest.mark.asyncio
@@ -234,10 +253,18 @@ async def test_rejects_metadata_mismatch_and_records_audit_event(
             AuditEvent.action == "candidate_document.upload_rejected",
         )
     )
+    scan_events = list(
+        await session.scalars(
+            select(OutboxEvent).where(
+                OutboxEvent.event_type == "candidate_document.scan_requested"
+            )
+        )
+    )
 
     assert rejected.status is CandidateDocumentStatus.REJECTED
     assert audit_event is not None
     assert audit_event.details == {"reason": "metadata_mismatch"}
+    assert not scan_events
 
     with pytest.raises(CandidateDocumentNotUploadableError):
         await create_upload_authorization(
@@ -303,6 +330,14 @@ async def test_keeps_document_pending_when_provider_cannot_verify_upload(
             )
         )
     )
+    scan_events = list(
+        await session.scalars(
+            select(OutboxEvent).where(
+                OutboxEvent.event_type == "candidate_document.scan_requested"
+            )
+        )
+    )
 
     assert document.status is CandidateDocumentStatus.PENDING_UPLOAD
     assert not upload_audits
+    assert not scan_events
