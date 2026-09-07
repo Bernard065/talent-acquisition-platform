@@ -236,7 +236,7 @@ class S3ObjectStorage(ObjectStorage, ObjectStorageReader):
             checksum_sha256=checksum_sha256,
         )
 
-    async def iter_object_chunks(
+    def iter_object_chunks(
         self,
         *,
         object_key: str,
@@ -246,36 +246,39 @@ class S3ObjectStorage(ObjectStorage, ObjectStorageReader):
         if chunk_size <= 0:
             raise ValueError("Object stream chunk size must be positive.")
 
-        try:
-            response = await asyncio.to_thread(
-                self._client.get_object,
-                Bucket=self.config.bucket,
-                Key=object_key,
-            )
-        except ClientError as error:
-            self._raise_provider_error(error, "read document object")
+        async def stream_chunks() -> AsyncIterator[bytes]:
+            try:
+                response = await asyncio.to_thread(
+                    self._client.get_object,
+                    Bucket=self.config.bucket,
+                    Key=object_key,
+                )
+            except ClientError as error:
+                self._raise_provider_error(error, "read document object")
 
-        body = response.get("Body")
-        if body is None or not hasattr(body, "read") or not hasattr(body, "close"):
-            raise ObjectStorageProviderError(
-                "Object storage returned an unreadable document body."
-            )
+            body = response.get("Body")
+            if body is None or not hasattr(body, "read") or not hasattr(body, "close"):
+                raise ObjectStorageProviderError(
+                    "Object storage returned an unreadable document body."
+                )
 
-        try:
-            while True:
-                chunk = await asyncio.to_thread(body.read, chunk_size)
+            try:
+                while True:
+                    chunk = await asyncio.to_thread(body.read, chunk_size)
 
-                if not isinstance(chunk, bytes):
-                    raise ObjectStorageProviderError(
-                        "Object storage returned an invalid document chunk."
-                    )
+                    if not isinstance(chunk, bytes):
+                        raise ObjectStorageProviderError(
+                            "Object storage returned an invalid document chunk."
+                        )
 
-                if not chunk:
-                    break
+                    if not chunk:
+                        break
 
-                yield chunk
-        finally:
-            await asyncio.to_thread(body.close)
+                    yield chunk
+            finally:
+                await asyncio.to_thread(body.close)
+
+        return stream_chunks()
 
     async def delete_object(self, *, object_key: str) -> None:
         """Delete one document object during a privacy or retention workflow."""
@@ -327,6 +330,4 @@ class S3ObjectStorage(ObjectStorage, ObjectStorageReader):
                 "Requested document object was not found."
             ) from error
 
-        raise ObjectStorageProviderError(
-            f"Object storage could not {operation}."
-        ) from error
+        raise ObjectStorageProviderError(f"Object storage could not {operation}.") from error
