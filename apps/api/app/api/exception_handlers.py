@@ -120,8 +120,20 @@ async def invalid_cursor(
     """Handle invalid requisition cursors."""
     return _error_response(
         request,
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         detail="Invalid requisition cursor.",
+    )
+
+
+async def invalid_outbox_cursor(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Handle malformed dead-letter pagination cursors."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail="Invalid outbox cursor.",
     )
 
 
@@ -223,7 +235,7 @@ def register_exception_handlers(application: FastAPI) -> None:
     )
     application.add_exception_handler(
         InvalidOutboxCursorError,
-        invalid_cursor,
+        invalid_outbox_cursor,
     )
 
     application.add_exception_handler(ApprovalPolicyNotFoundError, not_found)
