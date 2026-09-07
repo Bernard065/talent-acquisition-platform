@@ -1,6 +1,6 @@
 """Provider-neutral object-storage contract and server-owned object keys."""
 
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Protocol
@@ -55,6 +55,18 @@ class ObjectStorage(Protocol):
 
     async def delete_object(self, *, object_key: str) -> None:
         """Delete an object as part of retention or privacy workflows."""
+
+
+class ObjectStorageReader(Protocol):
+    """Trusted internal read access for background security services."""
+
+    def iter_object_chunks(
+        self,
+        *,
+        object_key: str,
+        chunk_size: int = 64 * 1024,
+    ) -> AsyncIterator[bytes]:
+        """Yield server-owned object bytes without exposing a download URL."""
 
 
 def candidate_document_object_key(

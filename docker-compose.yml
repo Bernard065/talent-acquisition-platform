@@ -19,6 +19,51 @@ services:
       redis:
         condition: service_healthy
 
+  clamav:
+    image: clamav/clamav:stable
+    container_name: tap-clamav
+    restart: unless-stopped
+    environment:
+      CLAMAV_NO_MILTERD: "true"
+    volumes:
+      - clamav_data:/var/lib/clamav
+
+  scanner-worker:
+    build:
+      context: ./apps/api
+    container_name: tap-scanner-worker
+    restart: unless-stopped
+    command: python -m app.workers.document_scan_worker
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_PUBLIC_ENDPOINT_URL: ${S3_PUBLIC_ENDPOINT_URL}
+      CLAMAV_HOST: clamav
+      CLAMAV_PORT: 3310
+    expose:
+      - "9100"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-m",
+          "app.workers.document_scan_worker_health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 180s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      clamav:
+        condition: service_started
+
   postgres:
     image: postgres:16-alpine
     container_name: tap-postgres
@@ -74,3 +119,4 @@ volumes:
   postgres_data:
   redis_data:
   minio_data:
+  clamav_data:

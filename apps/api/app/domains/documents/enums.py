@@ -13,3 +13,19 @@ class CandidateDocumentStatus(StrEnum):
     QUARANTINED = "quarantined"
     REJECTED = "rejected"
     DELETED = "deleted"
+
+
+class CandidateDocumentScanStatus(StrEnum):
+    """Lifecycle state for one malware-scanning attempt."""
+
+    SCANNING = "scanning"
+    CLEAN = "clean"
+    INFECTED = "infected"
+    FAILED = "failed"
+
+
+class MalwareScanVerdict(StrEnum):
+    """Safe scanner outcomes that may affect document availability."""
+
+    CLEAN = "clean"
+    INFECTED = "infected"

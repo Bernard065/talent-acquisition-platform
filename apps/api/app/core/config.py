@@ -52,6 +52,29 @@ class Settings(BaseSettings):
         le=3600,
     )
 
+    # Malware scanning; ClamAV is reachable only on the private container network.
+    clamav_host: str = Field(default="clamav", min_length=1, max_length=255)
+    clamav_port: int = Field(default=3310, ge=1, le=65535)
+    clamav_timeout_seconds: int = Field(default=120, ge=1, le=300)
+    clamav_max_stream_bytes: int = Field(
+        default=10 * 1024 * 1024,
+        ge=1,
+        le=100 * 1024 * 1024,
+    )
+
+    scan_worker_poll_interval_seconds: int = Field(default=2, ge=1, le=60)
+    scan_worker_batch_size: int = Field(default=10, ge=1, le=100)
+    scan_worker_id: str | None = Field(default=None, min_length=1, max_length=255)
+    scan_worker_metrics_port: int = Field(default=9100, ge=1024, le=65535)
+    scan_worker_heartbeat_path: Path = Path(
+        "/tmp/tap-document-scan-worker.heartbeat"  # noqa: S108
+    )
+    scan_worker_heartbeat_max_age_seconds: int = Field(
+        default=90,
+        ge=5,
+        le=600,
+    )
+
     jwt_issuer: AnyHttpUrl
     jwt_audience: str = Field(min_length=1)
     jwt_jwks_url: AnyHttpUrl

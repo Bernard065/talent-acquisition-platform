@@ -28,6 +28,7 @@ from app.services.object_storage import (
     StoredObjectMetadata,
     candidate_document_object_key,
 )
+from app.services.outbox import enqueue_outbox_event
 
 _DOCUMENT_READ_ROLES = frozenset(
     {
@@ -275,6 +276,18 @@ async def confirm_candidate_document_upload(
 
         document.status = CandidateDocumentStatus.UPLOADED
         document.uploaded_at = datetime.now(UTC)
+
+        enqueue_outbox_event(
+            session,
+            context=context,
+            event_type="candidate_document.scan_requested",
+            aggregate_type="candidate_document",
+            aggregate_id=str(document.id),
+            deduplication_key=f"candidate_document.scan_requested:{document.id}",
+            payload={
+                "document_id": str(document.id),
+            },
+        )
 
         record_audit_event(
             session,
