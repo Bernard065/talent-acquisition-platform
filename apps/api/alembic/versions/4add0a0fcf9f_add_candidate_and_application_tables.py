@@ -48,7 +48,7 @@ def upgrade() -> None:
     sa.Column('tenant_id', sa.UUID(), nullable=False),
     sa.Column('candidate_id', sa.UUID(), nullable=False),
     sa.Column('requisition_id', sa.UUID(), nullable=False),
-    sa.Column('status', sa.Enum('applied', name='application_status'), server_default='applied', nullable=False),
+    sa.Column('status', sa.Enum('applied', 'screening', 'interview', 'offer', 'hired', 'rejected', 'withdrawn', name='application_status'), server_default='applied', nullable=False),
     sa.Column('applied_at', sa.DateTime(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False),
     sa.Column('created_by_subject', sa.String(length=255), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False),
