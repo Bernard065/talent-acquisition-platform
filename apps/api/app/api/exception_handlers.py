@@ -39,6 +39,13 @@ from app.services.idempotency import (
     IdempotencyKeyReuseError,
     InvalidIdempotencyKeyError,
 )
+from app.services.interview_scheduling_errors import (
+    InterviewApplicationNotReadyError,
+    InterviewParticipantsNotFoundError,
+    InterviewScheduleConflictError,
+    InterviewSchedulingAccessDeniedError,
+    InterviewSchedulingValidationError,
+)
 from app.services.outbox_inspection_errors import (
     InvalidOutboxCursorError,
     OutboxInspectionAccessDeniedError,
@@ -255,6 +262,42 @@ async def document_storage_unavailable(
     return response
 
 
+async def interview_not_found(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Hide interview-related resources outside the caller's tenant."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Interview application or participant not found.",
+    )
+
+
+async def interview_conflict(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Handle database-enforced double-booking conflicts."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_409_CONFLICT,
+        detail="An interview participant is already booked.",
+    )
+
+
+async def invalid_interview_schedule(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Handle invalid interview workflow or scheduling input."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail="Invalid interview scheduling request.",
+    )
+
+
 def register_exception_handlers(application: FastAPI) -> None:
     """Register application-wide exception handlers."""
     application.add_exception_handler(RequisitionNotFoundError, not_found)
@@ -349,6 +392,26 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         CandidateDocumentVerificationError,
         document_storage_unavailable,
+    )
+    application.add_exception_handler(
+        InterviewSchedulingAccessDeniedError,
+        forbidden,
+    )
+    application.add_exception_handler(
+        InterviewParticipantsNotFoundError,
+        interview_not_found,
+    )
+    application.add_exception_handler(
+        InterviewScheduleConflictError,
+        interview_conflict,
+    )
+    application.add_exception_handler(
+        InterviewApplicationNotReadyError,
+        invalid_interview_schedule,
+    )
+    application.add_exception_handler(
+        InterviewSchedulingValidationError,
+        invalid_interview_schedule,
     )
 
     application.add_exception_handler(OperationalError, database_unavailable)
