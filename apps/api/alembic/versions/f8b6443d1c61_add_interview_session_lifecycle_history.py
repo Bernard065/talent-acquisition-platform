@@ -14,10 +14,10 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 # revision identifiers, used by Alembic.
-REVISION: str = "f8b6443d1c61"
-DOWN_REVISION: str | Sequence[str] | None = "5404bc192de4"
-BRANCH_LABELS: str | Sequence[str] | None = None
-DEPENDS_ON: str | Sequence[str] | None = None
+revision: str = "f8b6443d1c61"
+down_revision: str | Sequence[str] | None = "5404bc192de4"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
