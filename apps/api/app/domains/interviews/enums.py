@@ -16,3 +16,19 @@ class InterviewParticipantRole(StrEnum):
 
     INTERVIEWER = "interviewer"
     COORDINATOR = "coordinator"
+
+
+class InterviewFeedbackStatus(StrEnum):
+    """Lifecycle state for interviewer feedback."""
+
+    DRAFT = "draft"
+    SUBMITTED = "submitted"
+
+
+class InterviewRecommendation(StrEnum):
+    """A controlled hiring recommendation from an interviewer."""
+
+    STRONG_NO = "strong_no"
+    NO = "no"
+    YES = "yes"
+    STRONG_YES = "strong_yes"
