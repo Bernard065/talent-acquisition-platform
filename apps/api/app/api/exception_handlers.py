@@ -39,6 +39,14 @@ from app.services.idempotency import (
     IdempotencyKeyReuseError,
     InvalidIdempotencyKeyError,
 )
+from app.services.interview_feedback_errors import (
+    InterviewFeedbackAccessDeniedError,
+    InterviewFeedbackAlreadyExistsError,
+    InterviewFeedbackIncompleteError,
+    InterviewFeedbackNotEditableError,
+    InterviewFeedbackNotFoundError,
+    InterviewFeedbackVersionConflictError,
+)
 from app.services.interview_scheduling_errors import (
     InterviewApplicationNotReadyError,
     InterviewParticipantsNotFoundError,
@@ -298,6 +306,54 @@ async def invalid_interview_schedule(
     )
 
 
+async def interview_feedback_not_found(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Hide feedback outside its author and tenant scope."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Interview feedback not found.",
+    )
+
+
+async def interview_feedback_conflict(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Handle duplicate drafts and immutable feedback safely."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Interview feedback cannot be changed in its current state.",
+    )
+
+
+async def interview_feedback_version_conflict(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Require callers to retrieve the latest feedback before retrying."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Interview feedback has changed; retrieve the latest version and retry.",
+    )
+
+
+async def invalid_interview_feedback(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Handle incomplete feedback submission safely."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail="Invalid interview feedback request.",
+    )
+
+
 def register_exception_handlers(application: FastAPI) -> None:
     """Register application-wide exception handlers."""
     application.add_exception_handler(RequisitionNotFoundError, not_found)
@@ -412,6 +468,30 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         InterviewSchedulingValidationError,
         invalid_interview_schedule,
+    )
+    application.add_exception_handler(
+        InterviewFeedbackAccessDeniedError,
+        forbidden,
+    )
+    application.add_exception_handler(
+        InterviewFeedbackNotFoundError,
+        interview_feedback_not_found,
+    )
+    application.add_exception_handler(
+        InterviewFeedbackAlreadyExistsError,
+        interview_feedback_conflict,
+    )
+    application.add_exception_handler(
+        InterviewFeedbackNotEditableError,
+        interview_feedback_conflict,
+    )
+    application.add_exception_handler(
+        InterviewFeedbackVersionConflictError,
+        interview_feedback_version_conflict,
+    )
+    application.add_exception_handler(
+        InterviewFeedbackIncompleteError,
+        invalid_interview_feedback,
     )
 
     application.add_exception_handler(OperationalError, database_unavailable)
