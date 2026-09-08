@@ -14,6 +14,7 @@ from app.db.models.candidate_document import CandidateDocument
 from app.db.models.candidate_document_scan import CandidateDocumentScan
 from app.db.models.idempotency import IdempotencyRecord
 from app.db.models.identity import Tenant, User, UserRoleAssignment
+from app.db.models.interview import InterviewParticipant, InterviewSession
 from app.db.models.outbox import OutboxEvent
 from app.db.models.requisition import Requisition
 
@@ -27,6 +28,8 @@ __all__ = [
     "CandidateDocument",
     "CandidateDocumentScan",
     "IdempotencyRecord",
+    "InterviewParticipant",
+    "InterviewSession",
     "OutboxEvent",
     "Requisition",
     "RequisitionApproval",
