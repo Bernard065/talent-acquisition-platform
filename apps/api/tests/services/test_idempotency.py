@@ -86,9 +86,7 @@ async def test_replays_persisted_response_without_second_write(
         operation=operation,
     )
 
-    requisition_count = await session.scalar(
-        select(count()).select_from(Requisition)
-    )
+    requisition_count = await session.scalar(select(count()).select_from(Requisition))
 
     assert first.replayed is False
     assert second.replayed is True

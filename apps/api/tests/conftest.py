@@ -57,6 +57,7 @@ async def _database_engine_fixture() -> AsyncIterator[AsyncEngine]:
     engine = create_async_engine(_get_test_database_url(), poolclass=NullPool)
 
     async with engine.begin() as connection:
+        await connection.execute(text("CREATE EXTENSION IF NOT EXISTS btree_gist"))
         await connection.run_sync(Base.metadata.drop_all)
         await connection.run_sync(Base.metadata.create_all)
 
