@@ -422,10 +422,15 @@ async def get_owned_interview_feedback(
     """Return feedback only when it belongs to the verified interviewer."""
     _require_interviewer_role(context)
 
-    interviewer_user_id = await _get_current_tenant_user_id(
-        session,
-        context=context,
-    )
+    try:
+        interviewer_user_id = await _get_current_tenant_user_id(
+            session,
+            context=context,
+        )
+    except InterviewFeedbackAccessDeniedError as error:
+        raise InterviewFeedbackNotFoundError(
+            "Interview feedback was not found."
+        ) from error
 
     feedback = await session.scalar(
         select(InterviewFeedback).where(
