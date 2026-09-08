@@ -26,6 +26,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.domains.interviews.enums import (
+    InterviewCancellationReason,
     InterviewParticipantRole,
     InterviewSessionStatus,
 )
@@ -44,6 +45,15 @@ class InterviewSession(Base):
         CheckConstraint(
             "scheduled_end_at > scheduled_start_at",
             name="ck_interview_sessions_positive_duration",
+        ),
+        CheckConstraint(
+            "(status != 'completed') OR completed_at IS NOT NULL",
+            name="ck_interview_sessions_completed_at_required",
+        ),
+        CheckConstraint(
+            "(status != 'cancelled') OR "
+            "(cancelled_at IS NOT NULL AND cancellation_reason IS NOT NULL)",
+            name="ck_interview_sessions_cancellation_metadata_required",
         ),
         Index(
             "ix_interview_sessions_tenant_application_start",
@@ -92,6 +102,26 @@ class InterviewSession(Base):
         nullable=False,
         default=InterviewSessionStatus.SCHEDULED,
         server_default=InterviewSessionStatus.SCHEDULED.value,
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    cancelled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    cancelled_by_subject: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+    cancellation_reason: Mapped[InterviewCancellationReason | None] = mapped_column(
+        Enum(
+            InterviewCancellationReason,
+            name="interview_cancellation_reason",
+            values_callable=lambda reasons: [reason.value for reason in reasons],
+        ),
+        nullable=True,
     )
 
     created_by_subject: Mapped[str] = mapped_column(String(255), nullable=False)
