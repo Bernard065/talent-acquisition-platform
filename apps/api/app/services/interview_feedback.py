@@ -411,3 +411,31 @@ async def submit_interview_feedback(
         await session.refresh(feedback)
 
     return feedback
+
+
+async def get_owned_interview_feedback(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    feedback_id: UUID,
+) -> InterviewFeedback:
+    """Return feedback only when it belongs to the verified interviewer."""
+    _require_interviewer_role(context)
+
+    interviewer_user_id = await _get_current_tenant_user_id(
+        session,
+        context=context,
+    )
+
+    feedback = await session.scalar(
+        select(InterviewFeedback).where(
+            InterviewFeedback.id == feedback_id,
+            InterviewFeedback.tenant_id == context.tenant_id,
+            InterviewFeedback.interviewer_user_id == interviewer_user_id,
+        )
+    )
+
+    if feedback is None:
+        raise InterviewFeedbackNotFoundError("Interview feedback was not found.")
+
+    return feedback
