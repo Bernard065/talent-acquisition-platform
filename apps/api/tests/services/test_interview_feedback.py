@@ -125,6 +125,7 @@ async def _seed_interview(
         scheduled_start_at=datetime(2026, 2, 2, 9, 0, tzinfo=UTC),
         scheduled_end_at=datetime(2026, 2, 2, 10, 0, tzinfo=UTC),
         status=InterviewSessionStatus.COMPLETED,
+        completed_at=datetime(2026, 2, 2, 10, 30, tzinfo=UTC),
         created_by_subject="recruiter-subject",
     )
     session.add(interview_session)
