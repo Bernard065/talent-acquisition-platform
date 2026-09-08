@@ -16,6 +16,9 @@ from app.db.models.idempotency import IdempotencyRecord
 from app.db.models.identity import Tenant, User, UserRoleAssignment
 from app.db.models.interview import InterviewParticipant, InterviewSession
 from app.db.models.interview_feedback import InterviewFeedback
+from app.db.models.interview_session_lifecycle import (
+    InterviewSessionLifecycleHistory,
+)
 from app.db.models.outbox import OutboxEvent
 from app.db.models.requisition import Requisition
 
@@ -32,6 +35,7 @@ __all__ = [
     "InterviewFeedback",
     "InterviewParticipant",
     "InterviewSession",
+    "InterviewSessionLifecycleHistory",
     "OutboxEvent",
     "Requisition",
     "RequisitionApproval",

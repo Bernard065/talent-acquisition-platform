@@ -18,6 +18,25 @@ class InterviewParticipantRole(StrEnum):
     COORDINATOR = "coordinator"
 
 
+class InterviewCancellationReason(StrEnum):
+    """Controlled reason for cancelling a scheduled interview."""
+
+    CANDIDATE_WITHDREW = "candidate_withdrew"
+    CANDIDATE_UNAVAILABLE = "candidate_unavailable"
+    INTERVIEWER_UNAVAILABLE = "interviewer_unavailable"
+    REQUISITION_CLOSED = "requisition_closed"
+    SCHEDULING_CONFLICT = "scheduling_conflict"
+    OTHER = "other"
+
+
+class InterviewLifecycleEventType(StrEnum):
+    """Append-only events that change an interview session's lifecycle."""
+
+    RESCHEDULED = "rescheduled"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+
 class InterviewFeedbackStatus(StrEnum):
     """Lifecycle state for interviewer feedback."""
 
