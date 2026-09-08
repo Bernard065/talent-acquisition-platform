@@ -265,7 +265,7 @@ async def test_requires_interview_scheduling_role(
             select(InterviewSession).where(InterviewSession.tenant_id == tenant_id)
         )
     )
-    assert sessions == []
+    assert not sessions
 
 
 @pytest.mark.asyncio

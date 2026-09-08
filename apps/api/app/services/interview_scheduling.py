@@ -146,7 +146,7 @@ async def schedule_interview(
                         select(User.id).where(
                             User.tenant_id == context.tenant_id,
                             User.id.in_(participant_ids),
-                        )
+                        ).with_for_update()
                     )
                 ).all()
             )
