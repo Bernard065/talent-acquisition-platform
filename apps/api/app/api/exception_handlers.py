@@ -7,6 +7,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm.exc import StaleDataError
 
 from app.domains.applications.transitions import InvalidApplicationTransition
+from app.domains.decisions.transitions import InvalidHiringDecisionTransition
 from app.domains.interviews.transitions import InvalidInterviewSessionTransition
 from app.domains.requisitions.transitions import InvalidRequisitionTransition
 from app.services.application_pipeline_errors import (
@@ -35,6 +36,14 @@ from app.services.candidate_errors import (
     CandidateAlreadyExistsError,
     CandidateNotFoundError,
     RequisitionNotAcceptingApplicationsError,
+)
+from app.services.hiring_decision_errors import (
+    HiringDecisionAccessDeniedError,
+    HiringDecisionAlreadyExistsError,
+    HiringDecisionFeedbackRequiredError,
+    HiringDecisionSelfDecisionError,
+    HiringDecisionValidationError,
+    HiringDecisionVersionConflictError,
 )
 from app.services.idempotency import (
     IdempotencyKeyReuseError,
@@ -422,6 +431,42 @@ async def invalid_interview_lifecycle_request(
     )
 
 
+async def hiring_decision_conflict(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Handle an existing final decision safely."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_409_CONFLICT,
+        detail="A final hiring decision already exists for this application.",
+    )
+
+
+async def hiring_decision_version_conflict(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Require a decision-maker to use the current application version."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Application has changed; retrieve the latest version and retry.",
+    )
+
+
+async def invalid_hiring_decision(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Handle invalid decision workflow or request input."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail="Invalid hiring decision request.",
+    )
+
+
 def register_exception_handlers(application: FastAPI) -> None:
     """Register application-wide exception handlers."""
     application.add_exception_handler(RequisitionNotFoundError, not_found)
@@ -584,6 +629,35 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         InterviewLifecycleValidationError,
         invalid_interview_lifecycle_request,
+    )
+
+    application.add_exception_handler(
+        HiringDecisionAccessDeniedError,
+        forbidden,
+    )
+    application.add_exception_handler(
+        HiringDecisionSelfDecisionError,
+        forbidden,
+    )
+    application.add_exception_handler(
+        HiringDecisionAlreadyExistsError,
+        hiring_decision_conflict,
+    )
+    application.add_exception_handler(
+        HiringDecisionVersionConflictError,
+        hiring_decision_version_conflict,
+    )
+    application.add_exception_handler(
+        HiringDecisionFeedbackRequiredError,
+        invalid_hiring_decision,
+    )
+    application.add_exception_handler(
+        HiringDecisionValidationError,
+        invalid_hiring_decision,
+    )
+    application.add_exception_handler(
+        InvalidHiringDecisionTransition,
+        invalid_hiring_decision,
     )
 
     application.add_exception_handler(OperationalError, database_unavailable)

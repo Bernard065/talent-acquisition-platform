@@ -15,6 +15,7 @@ from app.api.v1.approvals import router as approvals_router
 from app.api.v1.candidates import router as candidates_router
 from app.api.v1.documents import router as documents_router
 from app.api.v1.health import router as health_router
+from app.api.v1.hiring_decisions import router as hiring_decisions_router
 from app.api.v1.identity import router as identity_router
 from app.api.v1.interview_feedback import router as interview_feedback_router
 from app.api.v1.interview_lifecycle import router as interview_lifecycle_router
@@ -148,6 +149,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application.include_router(
         applications_router,
+        prefix=active_settings.api_prefix,
+    )
+
+    application.include_router(
+        hiring_decisions_router,
         prefix=active_settings.api_prefix,
     )
 
