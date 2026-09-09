@@ -1,6 +1,10 @@
 """Database models for tenant identity, audit logging, idempotency, and approvals."""
 
 from app.db.models.application import Application
+from app.db.models.application_debrief import (
+    ApplicationDebrief,
+    ApplicationDecisionHistory,
+)
 from app.db.models.application_stage_history import ApplicationStageHistory
 from app.db.models.approval import (
     ApprovalPolicy,
@@ -24,6 +28,8 @@ from app.db.models.requisition import Requisition
 
 __all__ = [
     "Application",
+    "ApplicationDebrief",
+    "ApplicationDecisionHistory",
     "ApplicationStageHistory",
     "ApprovalPolicy",
     "ApprovalPolicyStep",
