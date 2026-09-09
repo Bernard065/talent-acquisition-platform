@@ -68,6 +68,10 @@ class Offer(Base):
             "(status != 'cancelled') OR cancelled_at IS NOT NULL",
             name="ck_offers_cancelled_at_required",
         ),
+        CheckConstraint(
+            "(status != 'expired') OR expired_at IS NOT NULL",
+            name="ck_offers_expired_at_required",
+        ),
         Index(
             "uq_offers_one_active_offer_per_application",
             "tenant_id",
@@ -152,6 +156,10 @@ class Offer(Base):
         nullable=True,
     )
     declined_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    expired_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )
