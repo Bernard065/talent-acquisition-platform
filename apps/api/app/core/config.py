@@ -74,6 +74,29 @@ class Settings(BaseSettings):
         ge=5,
         le=600,
     )
+    offer_expiry_worker_poll_interval_seconds: int = Field(
+        default=30,
+        ge=1,
+        le=300,
+    )
+    offer_expiry_worker_batch_size: int = Field(
+        default=50,
+        ge=1,
+        le=100,
+    )
+    offer_expiry_worker_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=255,
+    )
+    offer_expiry_worker_heartbeat_path: Path = Path(
+        "/tmp/tap-offer-expiry-worker.heartbeat"  # noqa: S108
+    )
+    offer_expiry_worker_heartbeat_max_age_seconds: int = Field(
+        default=120,
+        ge=10,
+        le=900,
+    )
 
     jwt_issuer: AnyHttpUrl
     jwt_audience: str = Field(min_length=1)
