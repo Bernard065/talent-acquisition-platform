@@ -9,6 +9,7 @@ from sqlalchemy.orm.exc import StaleDataError
 from app.domains.applications.transitions import InvalidApplicationTransition
 from app.domains.decisions.transitions import InvalidHiringDecisionTransition
 from app.domains.interviews.transitions import InvalidInterviewSessionTransition
+from app.domains.offers.transitions import InvalidOfferTransitionError
 from app.domains.requisitions.transitions import InvalidRequisitionTransition
 from app.services.application_pipeline_errors import (
     ApplicationPipelineAccessDeniedError,
@@ -70,6 +71,18 @@ from app.services.interview_scheduling_errors import (
     InterviewScheduleConflictError,
     InterviewSchedulingAccessDeniedError,
     InterviewSchedulingValidationError,
+)
+from app.services.offer_errors import (
+    OfferAccessDeniedError,
+    OfferAlreadyExistsError,
+    OfferApplicationNotEligibleError,
+    OfferApprovalAlreadyCompleteError,
+    OfferApprovalForbiddenError,
+    OfferApprovalNotFoundError,
+    OfferNotFoundError,
+    OfferSelfApprovalError,
+    OfferValidationError,
+    OfferVersionConflictError,
 )
 from app.services.outbox_inspection_errors import (
     InvalidOutboxCursorError,
@@ -659,5 +672,17 @@ def register_exception_handlers(application: FastAPI) -> None:
         InvalidHiringDecisionTransition,
         invalid_hiring_decision,
     )
+
+    application.add_exception_handler(OfferNotFoundError, not_found)
+    application.add_exception_handler(OfferApprovalNotFoundError, not_found)
+    application.add_exception_handler(OfferAccessDeniedError, forbidden)
+    application.add_exception_handler(OfferApprovalForbiddenError, forbidden)
+    application.add_exception_handler(OfferSelfApprovalError, forbidden)
+    application.add_exception_handler(OfferAlreadyExistsError, conflict)
+    application.add_exception_handler(OfferApprovalAlreadyCompleteError, conflict)
+    application.add_exception_handler(OfferVersionConflictError, conflict)
+    application.add_exception_handler(OfferApplicationNotEligibleError, conflict)
+    application.add_exception_handler(InvalidOfferTransitionError, conflict)
+    application.add_exception_handler(OfferValidationError, invalid_hiring_decision)
 
     application.add_exception_handler(OperationalError, database_unavailable)
