@@ -29,6 +29,7 @@ class OfferLifecycleEventType(StrEnum):
     CREATED = "created"
     SUBMITTED_FOR_APPROVAL = "submitted_for_approval"
     APPROVED = "approved"
+    APPROVAL_REJECTED = "approval_rejected"
     SENT = "sent"
     ACCEPTED = "accepted"
     DECLINED = "declined"
