@@ -23,6 +23,7 @@ from app.db.models.interview_feedback import InterviewFeedback
 from app.db.models.interview_session_lifecycle import (
     InterviewSessionLifecycleHistory,
 )
+from app.db.models.offer import Offer, OfferLifecycleHistory
 from app.db.models.outbox import OutboxEvent
 from app.db.models.requisition import Requisition
 
@@ -42,6 +43,8 @@ __all__ = [
     "InterviewParticipant",
     "InterviewSession",
     "InterviewSessionLifecycleHistory",
+    "Offer",
+    "OfferLifecycleHistory",
     "OutboxEvent",
     "Requisition",
     "RequisitionApproval",
