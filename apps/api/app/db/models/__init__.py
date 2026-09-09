@@ -25,6 +25,14 @@ from app.db.models.interview_session_lifecycle import (
 )
 from app.db.models.offer import Offer, OfferLifecycleHistory
 from app.db.models.offer_approval import OfferApproval, OfferApprovalDecision
+from app.db.models.onboarding import (
+    OnboardingInstance,
+    OnboardingInstanceHistory,
+    OnboardingTask,
+    OnboardingTaskHistory,
+    OnboardingTemplate,
+    OnboardingTemplateTask,
+)
 from app.db.models.outbox import OutboxEvent
 from app.db.models.requisition import Requisition
 
@@ -48,6 +56,12 @@ __all__ = [
     "OfferApproval",
     "OfferApprovalDecision",
     "OfferLifecycleHistory",
+    "OnboardingInstance",
+    "OnboardingInstanceHistory",
+    "OnboardingTask",
+    "OnboardingTaskHistory",
+    "OnboardingTemplate",
+    "OnboardingTemplateTask",
     "OutboxEvent",
     "Requisition",
     "RequisitionApproval",
