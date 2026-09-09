@@ -7,6 +7,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm.exc import StaleDataError
 
 from app.domains.applications.transitions import InvalidApplicationTransition
+from app.domains.interviews.transitions import InvalidInterviewSessionTransition
 from app.domains.requisitions.transitions import InvalidRequisitionTransition
 from app.services.application_pipeline_errors import (
     ApplicationPipelineAccessDeniedError,
@@ -46,6 +47,13 @@ from app.services.interview_feedback_errors import (
     InterviewFeedbackNotEditableError,
     InterviewFeedbackNotFoundError,
     InterviewFeedbackVersionConflictError,
+)
+from app.services.interview_lifecycle_errors import (
+    InterviewLifecycleAccessDeniedError,
+    InterviewLifecycleValidationError,
+    InterviewRescheduleConflictError,
+    InterviewSessionNotFoundError,
+    InterviewSessionVersionConflictError,
 )
 from app.services.interview_scheduling_errors import (
     InterviewApplicationNotReadyError,
@@ -354,6 +362,66 @@ async def invalid_interview_feedback(
     )
 
 
+async def interview_session_not_found(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Hide an interview session outside the caller's tenant."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Interview session not found.",
+    )
+
+
+async def interview_session_conflict(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Handle terminal-state lifecycle operations safely."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Interview session cannot be changed in its current state.",
+    )
+
+
+async def interview_session_version_conflict(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Require a caller to retrieve the latest session before retrying."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Interview session has changed; retrieve the latest version and retry.",
+    )
+
+
+async def interview_reschedule_conflict(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Map participant double-booking to a safe conflict response."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_409_CONFLICT,
+        detail="An interview participant is already booked.",
+    )
+
+
+async def invalid_interview_lifecycle_request(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Handle invalid lifecycle request input."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail="Invalid interview lifecycle request.",
+    )
+
+
 def register_exception_handlers(application: FastAPI) -> None:
     """Register application-wide exception handlers."""
     application.add_exception_handler(RequisitionNotFoundError, not_found)
@@ -492,6 +560,30 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         InterviewFeedbackIncompleteError,
         invalid_interview_feedback,
+    )
+    application.add_exception_handler(
+        InterviewLifecycleAccessDeniedError,
+        forbidden,
+    )
+    application.add_exception_handler(
+        InterviewSessionNotFoundError,
+        interview_session_not_found,
+    )
+    application.add_exception_handler(
+        InvalidInterviewSessionTransition,
+        interview_session_conflict,
+    )
+    application.add_exception_handler(
+        InterviewSessionVersionConflictError,
+        interview_session_version_conflict,
+    )
+    application.add_exception_handler(
+        InterviewRescheduleConflictError,
+        interview_reschedule_conflict,
+    )
+    application.add_exception_handler(
+        InterviewLifecycleValidationError,
+        invalid_interview_lifecycle_request,
     )
 
     application.add_exception_handler(OperationalError, database_unavailable)

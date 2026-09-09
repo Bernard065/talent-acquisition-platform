@@ -6,6 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.domains.interviews.enums import (
+    InterviewCancellationReason,
     InterviewParticipantRole,
     InterviewSessionStatus,
 )
@@ -34,7 +35,7 @@ class ScheduleInterviewRequest(BaseModel):
 
 
 class InterviewSessionResponse(BaseModel):
-    """Safe metadata for a scheduled interview session."""
+    """Safe metadata for a tenant-owned interview session."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -43,6 +44,9 @@ class InterviewSessionResponse(BaseModel):
     scheduled_start_at: datetime
     scheduled_end_at: datetime
     status: InterviewSessionStatus
+    completed_at: datetime | None
+    cancelled_at: datetime | None
+    cancellation_reason: InterviewCancellationReason | None
     created_at: datetime
     updated_at: datetime
     version: int
