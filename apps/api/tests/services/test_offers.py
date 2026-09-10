@@ -17,6 +17,7 @@ from app.db.models.candidate import Candidate
 from app.db.models.identity import Tenant, User
 from app.db.models.offer import Offer, OfferLifecycleHistory
 from app.db.models.offer_approval import OfferApprovalDecision
+from app.db.models.outbox import OutboxEvent
 from app.db.models.requisition import Requisition
 from app.domains.approvals.enums import ApprovalDecisionStatus, ApprovalStatus
 from app.domains.candidates.enums import ApplicationStatus, CandidateConsentStatus
@@ -254,6 +255,36 @@ async def test_creates_submits_approves_sends_and_accepts_offer_atomically(
         offer_id=offer.id,
         expected_offer_version=4,
     )
+
+    notification_events = list(
+        await session.scalars(
+            select(OutboxEvent)
+            .where(
+                OutboxEvent.event_type == "notification.requested",
+                OutboxEvent.tenant_id == tenant_id,
+            )
+            .order_by(OutboxEvent.created_at)
+        )
+    )
+
+    notification_types = {
+        event.payload["notification_event_type"]
+        for event in notification_events
+    }
+
+    assert {
+        "offer.approval_requested",
+        "offer.approved",
+        "offer.sent",
+        "offer.accepted",
+    }.issubset(notification_types)
+
+    for event in notification_events:
+        assert "base_salary" not in event.payload
+        assert "bonus_amount" not in event.payload
+        assert "equity_summary" not in event.payload
+        assert "candidate_email" not in event.payload
+        assert "feedback" not in event.payload
 
     stored_application = await session.get(Application, application.id)
     history = list(

@@ -12,12 +12,13 @@ from app.core.authorization import Role, TenantContext
 from app.db.models.application import Application
 from app.db.models.audit import AuditEvent
 from app.db.models.candidate import Candidate
-from app.db.models.identity import Tenant, User
+from app.db.models.identity import Tenant, User, UserRoleAssignment
 from app.db.models.onboarding import (
     OnboardingInstanceHistory,
     OnboardingTask,
     OnboardingTaskHistory,
 )
+from app.db.models.outbox import OutboxEvent
 from app.db.models.requisition import Requisition
 from app.domains.candidates.enums import ApplicationStatus, CandidateConsentStatus
 from app.domains.onboarding.enums import (
@@ -92,6 +93,12 @@ async def _seed_hired_application(
     }
     session.add_all(users.values())
     await session.flush()
+    session.add(
+        UserRoleAssignment(
+            user_id=users["people-operations-subject"].id,
+            role=Role.PEOPLE_OPERATIONS,
+        )
+    )
 
     candidate = Candidate(
         tenant_id=tenant_id,
@@ -344,6 +351,49 @@ async def test_assigns_and_transitions_task_with_history_and_concurrency(
     assert history[-1].event_type is OnboardingTaskEventType.BLOCKED
     assert audit is not None
     assert "blocked_reason" not in audit.details
+
+    in_progress = await update_onboarding_task_status(
+        session,
+        context=_context(tenant_id),
+        onboarding_task_id=task.id,
+        command=UpdateOnboardingTaskStatusCommand(
+            expected_version=4,
+            target_status=OnboardingTaskStatus.IN_PROGRESS,
+        ),
+    )
+    completed = await update_onboarding_task_status(
+        session,
+        context=_context(tenant_id),
+        onboarding_task_id=task.id,
+        command=UpdateOnboardingTaskStatusCommand(
+            expected_version=in_progress.version,
+            target_status=OnboardingTaskStatus.COMPLETED,
+        ),
+    )
+    assert completed.status is OnboardingTaskStatus.COMPLETED
+
+    notification_events = list(
+        await session.scalars(
+            select(OutboxEvent).where(
+                OutboxEvent.event_type == "notification.requested",
+                OutboxEvent.tenant_id == tenant_id,
+            )
+        )
+    )
+
+    notification_types = {
+        event.payload["notification_event_type"]
+        for event in notification_events
+    }
+
+    assert "onboarding.started" in notification_types
+    assert "onboarding.task_assigned" in notification_types
+    assert "onboarding.task_blocked" in notification_types
+    assert "onboarding.task_completed" in notification_types
+
+    for event in notification_events:
+        assert "description" not in event.payload
+        assert "blocked_reason" not in event.payload
 
     with pytest.raises(OnboardingVersionConflictError):
         await update_onboarding_task_status(
