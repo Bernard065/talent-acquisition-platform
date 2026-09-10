@@ -26,6 +26,9 @@ from app.api.v1.notification_preferences import (
 from app.api.v1.offers import router as offers_router
 from app.api.v1.onboarding import router as onboarding_router
 from app.api.v1.operations import router as operations_router
+from app.api.v1.public_applications import (
+    router as public_applications_router,
+)
 from app.api.v1.public_jobs import router as public_jobs_router
 from app.api.v1.requisitions import router as requisitions_router
 from app.core.config import Settings, get_settings
@@ -33,6 +36,9 @@ from app.core.logging import configure_logging
 from app.core.security import JwtVerifier
 from app.db.session import Database
 from app.infrastructure.object_storage.s3 import S3ObjectStorage
+from app.services.public_application_abuse_control import (
+    build_public_application_abuse_guard,
+)
 
 logger = structlog.get_logger()
 
@@ -91,6 +97,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     application.state.settings = active_settings
+    application.state.public_application_abuse_guard = (
+        build_public_application_abuse_guard(active_settings)
+    )
 
     register_exception_handlers(application)
 
@@ -135,6 +144,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application.include_router(
         public_jobs_router,
+        prefix=active_settings.api_prefix,
+    )
+
+    application.include_router(
+        public_applications_router,
         prefix=active_settings.api_prefix,
     )
 
