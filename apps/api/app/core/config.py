@@ -97,6 +97,29 @@ class Settings(BaseSettings):
         ge=10,
         le=900,
     )
+    notification_worker_poll_interval_seconds: int = Field(
+        default=5,
+        ge=1,
+        le=300,
+    )
+    notification_worker_batch_size: int = Field(
+        default=25,
+        ge=1,
+        le=100,
+    )
+    notification_worker_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=255,
+    )
+    notification_worker_heartbeat_path: Path = Path(
+        "/tmp/tap-notification-worker.heartbeat"  # noqa: S108
+    )
+    notification_worker_heartbeat_max_age_seconds: int = Field(
+        default=90,
+        ge=10,
+        le=900,
+    )
 
     jwt_issuer: AnyHttpUrl
     jwt_audience: str = Field(min_length=1)
