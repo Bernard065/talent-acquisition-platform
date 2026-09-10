@@ -15,6 +15,10 @@ from app.domains.onboarding.transitions import (
     InvalidOnboardingTaskTransition,
 )
 from app.domains.requisitions.transitions import InvalidRequisitionTransition
+from app.services.abuse_control import (
+    AbuseControlRejectedError,
+    AbuseControlUnavailableError,
+)
 from app.services.application_pipeline_errors import (
     ApplicationPipelineAccessDeniedError,
     ApplicationRejectionReasonError,
@@ -104,6 +108,9 @@ from app.services.onboarding_errors import (
 from app.services.outbox_inspection_errors import (
     InvalidOutboxCursorError,
     OutboxInspectionAccessDeniedError,
+)
+from app.services.public_application_errors import (
+    PublicApplicationJobNotFoundError,
 )
 from app.services.public_job_errors import (
     InvalidPublicJobCursorError,
@@ -537,6 +544,44 @@ async def invalid_public_job_cursor(
     )
 
 
+async def public_application_job_not_found(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Do not reveal hidden, expired, or nonexistent job posting state."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Job posting not found.",
+    )
+
+
+async def public_application_rejected(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Reject failed abuse checks without disclosing provider details."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Application submission could not be accepted.",
+    )
+
+
+async def public_application_abuse_unavailable(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Fail safely when the abuse-control provider is unavailable."""
+    response = _error_response(
+        request,
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Application submission service is temporarily unavailable.",
+    )
+    response.headers["Retry-After"] = "5"
+    return response
+
+
 def register_exception_handlers(application: FastAPI) -> None:
     """Register application-wide exception handlers."""
     application.add_exception_handler(RequisitionNotFoundError, not_found)
@@ -568,6 +613,18 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         InvalidPublicJobCursorError,
         invalid_public_job_cursor,
+    )
+    application.add_exception_handler(
+        PublicApplicationJobNotFoundError,
+        public_application_job_not_found,
+    )
+    application.add_exception_handler(
+        AbuseControlRejectedError,
+        public_application_rejected,
+    )
+    application.add_exception_handler(
+        AbuseControlUnavailableError,
+        public_application_abuse_unavailable,
     )
     application.add_exception_handler(
         InvalidIdempotencyKeyError,

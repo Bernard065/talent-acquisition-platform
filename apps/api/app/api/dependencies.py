@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.authorization import TenantContext
 from app.core.security import JwtVerifier
 from app.db.session import Database
+from app.services.abuse_control import PublicApplicationAbuseGuard
 from app.services.object_storage import ObjectStorage
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -106,3 +107,46 @@ async def get_object_storage(request: Request) -> ObjectStorage:
         )
 
     return cast(ObjectStorage, storage)
+
+
+_PUBLIC_APPLICATION_MAX_BODY_BYTES = 16 * 1024
+
+
+async def get_public_application_abuse_guard(
+    request: Request,
+) -> PublicApplicationAbuseGuard:
+    """Return the configured anonymous-submission abuse-control provider."""
+    guard = getattr(request.app.state, "public_application_abuse_guard", None)
+    if guard is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Application submission service is unavailable.",
+            headers={"Retry-After": "5"},
+        )
+
+    return cast(PublicApplicationAbuseGuard, guard)
+
+
+async def enforce_public_application_body_limit(request: Request) -> None:
+    """Reject oversized anonymous submissions before application processing."""
+    content_length = request.headers.get("Content-Length")
+
+    if content_length is not None:
+        try:
+            if int(content_length) > _PUBLIC_APPLICATION_MAX_BODY_BYTES:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail="Application submission is too large.",
+                )
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid Content-Length header.",
+            ) from None
+
+    body = await request.body()
+    if len(body) > _PUBLIC_APPLICATION_MAX_BODY_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Application submission is too large.",
+        )
