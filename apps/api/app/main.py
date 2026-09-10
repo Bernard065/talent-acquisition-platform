@@ -21,6 +21,7 @@ from app.api.v1.interview_feedback import router as interview_feedback_router
 from app.api.v1.interview_lifecycle import router as interview_lifecycle_router
 from app.api.v1.interviews import router as interviews_router
 from app.api.v1.offers import router as offers_router
+from app.api.v1.onboarding import router as onboarding_router
 from app.api.v1.operations import router as operations_router
 from app.api.v1.requisitions import router as requisitions_router
 from app.core.config import Settings, get_settings
@@ -160,6 +161,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application.include_router(
         offers_router,
+        prefix=active_settings.api_prefix,
+    )
+
+    application.include_router(
+        onboarding_router,
         prefix=active_settings.api_prefix,
     )
 

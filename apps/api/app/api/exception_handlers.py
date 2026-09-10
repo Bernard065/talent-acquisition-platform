@@ -10,6 +10,10 @@ from app.domains.applications.transitions import InvalidApplicationTransition
 from app.domains.decisions.transitions import InvalidHiringDecisionTransition
 from app.domains.interviews.transitions import InvalidInterviewSessionTransition
 from app.domains.offers.transitions import InvalidOfferTransitionError
+from app.domains.onboarding.transitions import (
+    InvalidOnboardingInstanceTransition,
+    InvalidOnboardingTaskTransition,
+)
 from app.domains.requisitions.transitions import InvalidRequisitionTransition
 from app.services.application_pipeline_errors import (
     ApplicationPipelineAccessDeniedError,
@@ -83,6 +87,15 @@ from app.services.offer_errors import (
     OfferSelfApprovalError,
     OfferValidationError,
     OfferVersionConflictError,
+)
+from app.services.onboarding_errors import (
+    OnboardingAccessDeniedError,
+    OnboardingAlreadyExistsError,
+    OnboardingInstanceNotFoundError,
+    OnboardingTaskNotFoundError,
+    OnboardingTemplateNotFoundError,
+    OnboardingValidationError,
+    OnboardingVersionConflictError,
 )
 from app.services.outbox_inspection_errors import (
     InvalidOutboxCursorError,
@@ -480,6 +493,18 @@ async def invalid_hiring_decision(
     )
 
 
+async def invalid_onboarding_request(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Return a safe validation error for onboarding workflow input."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail="Invalid onboarding request.",
+    )
+
+
 def register_exception_handlers(application: FastAPI) -> None:
     """Register application-wide exception handlers."""
     application.add_exception_handler(RequisitionNotFoundError, not_found)
@@ -684,5 +709,42 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(OfferApplicationNotEligibleError, conflict)
     application.add_exception_handler(InvalidOfferTransitionError, conflict)
     application.add_exception_handler(OfferValidationError, invalid_hiring_decision)
+
+    application.add_exception_handler(
+        OnboardingAccessDeniedError,
+        forbidden,
+    )
+    application.add_exception_handler(
+        OnboardingTemplateNotFoundError,
+        not_found,
+    )
+    application.add_exception_handler(
+        OnboardingInstanceNotFoundError,
+        not_found,
+    )
+    application.add_exception_handler(
+        OnboardingTaskNotFoundError,
+        not_found,
+    )
+    application.add_exception_handler(
+        OnboardingAlreadyExistsError,
+        conflict,
+    )
+    application.add_exception_handler(
+        OnboardingVersionConflictError,
+        conflict,
+    )
+    application.add_exception_handler(
+        InvalidOnboardingInstanceTransition,
+        conflict,
+    )
+    application.add_exception_handler(
+        InvalidOnboardingTaskTransition,
+        conflict,
+    )
+    application.add_exception_handler(
+        OnboardingValidationError,
+        invalid_onboarding_request,
+    )
 
     application.add_exception_handler(OperationalError, database_unavailable)
