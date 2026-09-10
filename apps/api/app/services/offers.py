@@ -19,6 +19,7 @@ from app.db.transactions import transactional
 from app.domains.applications.transitions import validate_application_transition
 from app.domains.approvals.enums import ApprovalDecisionStatus, ApprovalStatus
 from app.domains.candidates.enums import ApplicationStatus
+from app.domains.notifications.enums import NotificationEventType
 from app.domains.offers.enums import (
     OfferLifecycleEventType,
     OfferPayPeriod,
@@ -27,6 +28,10 @@ from app.domains.offers.enums import (
 from app.domains.offers.transitions import validate_offer_transition
 from app.services.audit import record_audit_event
 from app.services.candidate_errors import ApplicationNotFoundError
+from app.services.notification_publishing import (
+    enqueue_notification_for_subject,
+    enqueue_notification_request,
+)
 from app.services.offer_errors import (
     OfferAccessDeniedError,
     OfferAlreadyExistsError,
@@ -377,6 +382,15 @@ async def submit_offer_for_approval(
                 for step in steps
             ]
         )
+        enqueue_notification_request(
+            session,
+            context=context,
+            recipient_user_id=steps[0].approver_user_id,
+            notification_event_type=NotificationEventType.OFFER_APPROVAL_REQUESTED,
+            entity_type="offer_approval",
+            entity_id=approval.id,
+            template_key="offer_approval_requested",
+        )
 
         _append_lifecycle_history(
             session,
@@ -529,8 +543,28 @@ async def decide_offer_approval(
                     from_status=previous_status,
                     to_status=offer.status,
                 )
+                await enqueue_notification_for_subject(
+                    session,
+                    context=context,
+                    subject=offer.created_by_subject,
+                    notification_event_type=NotificationEventType.OFFER_APPROVED,
+                    entity_type="offer",
+                    entity_id=offer.id,
+                    template_key="offer_approved",
+                )
             else:
                 approval.current_step = next_decision.step_position
+                enqueue_notification_request(
+                    session,
+                    context=context,
+                    recipient_user_id=next_decision.approver_user_id,
+                    notification_event_type=(
+                        NotificationEventType.OFFER_APPROVAL_REQUESTED
+                    ),
+                    entity_type="offer_approval",
+                    entity_id=approval.id,
+                    template_key="offer_approval_requested",
+                )
 
             action = "offer_approval.approved"
 
@@ -609,6 +643,16 @@ async def _transition_offer(
                 "offer_version": offer.version,
             },
         )
+        if event_type is OfferLifecycleEventType.SENT:
+            await enqueue_notification_for_subject(
+                session,
+                context=context,
+                subject=offer.created_by_subject,
+                notification_event_type=NotificationEventType.OFFER_SENT,
+                entity_type="offer",
+                entity_id=offer.id,
+                template_key="offer_sent",
+            )
 
         await session.flush()
         await session.refresh(offer)
@@ -798,6 +842,15 @@ async def accept_offer(
                 "application_version": application.version,
                 "offer_version": offer.version,
             },
+        )
+        await enqueue_notification_for_subject(
+            session,
+            context=context,
+            subject=offer.created_by_subject,
+            notification_event_type=NotificationEventType.OFFER_ACCEPTED,
+            entity_type="offer",
+            entity_id=offer.id,
+            template_key="offer_accepted",
         )
 
         await session.flush()

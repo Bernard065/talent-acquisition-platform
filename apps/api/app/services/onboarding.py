@@ -20,6 +20,7 @@ from app.db.models.onboarding import (
 )
 from app.db.transactions import transactional
 from app.domains.candidates.enums import ApplicationStatus
+from app.domains.notifications.enums import NotificationEventType
 from app.domains.onboarding.enums import (
     OnboardingInstanceEventType,
     OnboardingInstanceStatus,
@@ -32,6 +33,10 @@ from app.domains.onboarding.transitions import (
 )
 from app.services.audit import record_audit_event
 from app.services.candidate_errors import ApplicationNotFoundError
+from app.services.notification_publishing import (
+    enqueue_notification_request,
+    enqueue_notifications_for_roles,
+)
 from app.services.onboarding_errors import (
     OnboardingAccessDeniedError,
     OnboardingAlreadyExistsError,
@@ -440,6 +445,15 @@ async def start_onboarding(
                 "task_count": len(tasks),
             },
         )
+        await enqueue_notifications_for_roles(
+            session,
+            context=context,
+            roles=(Role.PEOPLE_OPERATIONS,),
+            notification_event_type=NotificationEventType.ONBOARDING_STARTED,
+            entity_type="onboarding_instance",
+            entity_id=instance.id,
+            template_key="onboarding_started",
+        )
 
         await session.flush()
         await session.refresh(instance)
@@ -548,6 +562,15 @@ async def assign_onboarding_task(
                 "assignee_user_id": str(assignee.id),
             },
         )
+        enqueue_notification_request(
+            session,
+            context=context,
+            recipient_user_id=assignee.id,
+            notification_event_type=NotificationEventType.ONBOARDING_TASK_ASSIGNED,
+            entity_type="onboarding_task",
+            entity_id=task.id,
+            template_key="onboarding_task_assigned",
+        )
 
         await session.flush()
         await session.refresh(task)
@@ -617,6 +640,29 @@ async def update_onboarding_task_status(
                 "to_status": task.status.value,
             },
         )
+        if event_type in {
+            OnboardingTaskEventType.BLOCKED,
+            OnboardingTaskEventType.COMPLETED,
+        }:
+            notification_event_type = (
+                NotificationEventType.ONBOARDING_TASK_BLOCKED
+                if event_type is OnboardingTaskEventType.BLOCKED
+                else NotificationEventType.ONBOARDING_TASK_COMPLETED
+            )
+            template_key = (
+                "onboarding_task_blocked"
+                if event_type is OnboardingTaskEventType.BLOCKED
+                else "onboarding_task_completed"
+            )
+            await enqueue_notifications_for_roles(
+                session,
+                context=context,
+                roles=(Role.PEOPLE_OPERATIONS,),
+                notification_event_type=notification_event_type,
+                entity_type="onboarding_task",
+                entity_id=task.id,
+                template_key=template_key,
+            )
 
         await session.flush()
         await session.refresh(task)
