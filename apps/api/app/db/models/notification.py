@@ -134,6 +134,11 @@ class Notification(Base):
             "scheduled_at",
         ),
         Index(
+            "ix_notifications_status_next_attempt_at",
+            "status",
+            "next_attempt_at",
+        ),
+        Index(
             "ix_notifications_recipient_status",
             "recipient_user_id",
             "status",
@@ -192,6 +197,19 @@ class Notification(Base):
         DateTime(timezone=True),
         nullable=False,
         server_default=text("CURRENT_TIMESTAMP"),
+    )
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    locked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    locked_by: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
     )
     sent_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
