@@ -76,6 +76,10 @@ from app.services.interview_scheduling_errors import (
     InterviewSchedulingAccessDeniedError,
     InterviewSchedulingValidationError,
 )
+from app.services.notification_preference_errors import (
+    NotificationPreferenceAccessDeniedError,
+    NotificationPreferenceVersionConflictError,
+)
 from app.services.offer_errors import (
     OfferAccessDeniedError,
     OfferAlreadyExistsError,
@@ -544,6 +548,14 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         InvalidOutboxCursorError,
         invalid_outbox_cursor,
+    )
+    application.add_exception_handler(
+        NotificationPreferenceAccessDeniedError,
+        forbidden,
+    )
+    application.add_exception_handler(
+        NotificationPreferenceVersionConflictError,
+        conflict,
     )
 
     application.add_exception_handler(ApprovalPolicyNotFoundError, not_found)
