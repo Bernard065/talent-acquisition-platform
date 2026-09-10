@@ -23,6 +23,7 @@ from app.db.models.interview_feedback import InterviewFeedback
 from app.db.models.interview_session_lifecycle import (
     InterviewSessionLifecycleHistory,
 )
+from app.db.models.notification import Notification, NotificationPreference
 from app.db.models.offer import Offer, OfferLifecycleHistory
 from app.db.models.offer_approval import OfferApproval, OfferApprovalDecision
 from app.db.models.onboarding import (
@@ -52,6 +53,8 @@ __all__ = [
     "InterviewParticipant",
     "InterviewSession",
     "InterviewSessionLifecycleHistory",
+    "Notification",
+    "NotificationPreference",
     "Offer",
     "OfferApproval",
     "OfferApprovalDecision",
