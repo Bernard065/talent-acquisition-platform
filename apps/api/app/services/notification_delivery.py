@@ -229,6 +229,8 @@ async def process_pending_notifications(
                 User.tenant_id == notification.tenant_id,
             )
         )
+        if session.in_transaction():
+            await session.commit()
 
         if recipient_email is None:
             await retry_or_fail_notification(

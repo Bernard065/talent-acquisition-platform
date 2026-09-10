@@ -1,5 +1,6 @@
 """PostgreSQL integration tests for durable notification outbox publishing."""
 
+import re
 from uuid import UUID, uuid4
 
 import pytest
@@ -144,14 +145,21 @@ async def test_queues_one_private_notification_event_per_recipient(
 
     assert event is not None
     assert event.event_type == "notification.requested"
-    assert event.payload == {
+    assert event.payload | {
+        "notification_deduplication_key": None,
+    } == {
         "recipient_user_id": str(users["recipient"].id),
         "channel": "email",
         "notification_event_type": notification_event_type.value,
         "entity_type": "workflow_entity",
         "entity_id": str(entity_id),
         "template_key": template_key,
+        "notification_deduplication_key": None,
     }
+    assert re.fullmatch(
+        r"[0-9a-f]{64}",
+        str(event.payload["notification_deduplication_key"]),
+    )
 
     serialized_payload = str(event.payload).lower()
     for prohibited_value in (
