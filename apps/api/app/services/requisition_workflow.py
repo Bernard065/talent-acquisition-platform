@@ -11,6 +11,9 @@ from app.db.transactions import transactional
 from app.domains.requisitions.enums import RequisitionStatus
 from app.domains.requisitions.transitions import transition_requisition
 from app.services.audit import record_audit_event
+from app.services.job_postings import (
+    unpublish_job_postings_for_requisition,
+)
 from app.services.requisition_errors import (
     RequisitionAccessDeniedError,
     RequisitionNotFoundError,
@@ -98,5 +101,21 @@ async def transition_requisition_status(
                 "version": requisition.version,
             },
         )
+
+        automatic_unpublish_reasons = {
+            RequisitionStatus.CLOSED: "requisition_closed",
+            RequisitionStatus.CANCELLED: "requisition_cancelled",
+        }
+        automatic_unpublish_reason = automatic_unpublish_reasons.get(
+            target_status
+        )
+
+        if automatic_unpublish_reason is not None:
+            await unpublish_job_postings_for_requisition(
+                session=session,
+                context=context,
+                requisition_id=requisition.id,
+                reason=automatic_unpublish_reason,
+            )
 
     return requisition
