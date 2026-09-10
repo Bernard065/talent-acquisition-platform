@@ -105,6 +105,10 @@ from app.services.outbox_inspection_errors import (
     InvalidOutboxCursorError,
     OutboxInspectionAccessDeniedError,
 )
+from app.services.public_job_errors import (
+    InvalidPublicJobCursorError,
+    PublicJobNotFoundError,
+)
 from app.services.requisition_errors import (
     InvalidRequisitionCursorError,
     RequisitionAccessDeniedError,
@@ -509,6 +513,30 @@ async def invalid_onboarding_request(
     )
 
 
+async def public_job_not_found(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Hide unpublished, expired, closed, and nonexistent postings alike."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Job posting not found.",
+    )
+
+
+async def invalid_public_job_cursor(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Return a safe validation error for malformed public pagination state."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail="Invalid public job cursor.",
+    )
+
+
 def register_exception_handlers(application: FastAPI) -> None:
     """Register application-wide exception handlers."""
     application.add_exception_handler(RequisitionNotFoundError, not_found)
@@ -533,6 +561,14 @@ def register_exception_handlers(application: FastAPI) -> None:
     )
     application.add_exception_handler(StaleDataError, conflict)
     application.add_exception_handler(InvalidRequisitionCursorError, invalid_cursor)
+    application.add_exception_handler(
+        PublicJobNotFoundError,
+        public_job_not_found,
+    )
+    application.add_exception_handler(
+        InvalidPublicJobCursorError,
+        invalid_public_job_cursor,
+    )
     application.add_exception_handler(
         InvalidIdempotencyKeyError,
         invalid_idempotency_key,
