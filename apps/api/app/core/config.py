@@ -121,6 +121,11 @@ class Settings(BaseSettings):
         le=900,
     )
 
+    public_application_abuse_control_provider: Literal[
+        "local_allow_all",
+        "captcha",
+    ] = "local_allow_all"
+
     jwt_issuer: AnyHttpUrl
     jwt_audience: str = Field(min_length=1)
     jwt_jwks_url: AnyHttpUrl
