@@ -549,11 +549,13 @@ async def public_application_job_not_found(
     _: Exception,
 ) -> JSONResponse:
     """Do not reveal hidden, expired, or nonexistent job posting state."""
-    return _error_response(
+    response = _error_response(
         request,
         status_code=status.HTTP_404_NOT_FOUND,
         detail="Job posting not found.",
     )
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 async def public_application_rejected(
@@ -561,11 +563,13 @@ async def public_application_rejected(
     _: Exception,
 ) -> JSONResponse:
     """Reject failed abuse checks without disclosing provider details."""
-    return _error_response(
+    response = _error_response(
         request,
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Application submission could not be accepted.",
     )
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 async def public_application_abuse_unavailable(
@@ -578,6 +582,7 @@ async def public_application_abuse_unavailable(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         detail="Application submission service is temporarily unavailable.",
     )
+    response.headers["Cache-Control"] = "no-store"
     response.headers["Retry-After"] = "5"
     return response
 

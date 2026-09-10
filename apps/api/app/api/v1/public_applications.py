@@ -102,6 +102,7 @@ async def submit_public_application_endpoint(
         },
         operation=operation,
     )
+    await session.commit()
 
     response = idempotency_response(result)
     response.headers["Cache-Control"] = "no-store"

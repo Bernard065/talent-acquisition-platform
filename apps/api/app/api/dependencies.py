@@ -135,7 +135,7 @@ async def enforce_public_application_body_limit(request: Request) -> None:
         try:
             if int(content_length) > _PUBLIC_APPLICATION_MAX_BODY_BYTES:
                 raise HTTPException(
-                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                     detail="Application submission is too large.",
                 )
         except ValueError:
@@ -147,6 +147,6 @@ async def enforce_public_application_body_limit(request: Request) -> None:
     body = await request.body()
     if len(body) > _PUBLIC_APPLICATION_MAX_BODY_BYTES:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail="Application submission is too large.",
         )
