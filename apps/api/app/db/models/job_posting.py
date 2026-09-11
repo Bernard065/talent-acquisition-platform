@@ -54,6 +54,12 @@ class JobPosting(Base):
             "public_id",
             "status",
         ),
+        Index(
+            "ix_job_postings_tenant_updated_at_id",
+            "tenant_id",
+            "updated_at",
+            "id",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(

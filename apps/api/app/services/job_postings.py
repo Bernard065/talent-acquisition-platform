@@ -1,12 +1,15 @@
 """Tenant-scoped job posting publication workflow service."""
 
+import base64
+import binascii
+import json
 import re
 import unicodedata
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select, text
+from sqlalchemy import and_, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authorization import Role, TenantContext
@@ -23,6 +26,7 @@ from app.domains.job_postings.transitions import (
 from app.domains.requisitions.enums import RequisitionStatus
 from app.services.audit import record_audit_event
 from app.services.job_posting_errors import (
+    InvalidJobPostingCursorError,
     JobPostingAccessDeniedError,
     JobPostingNotFoundError,
     JobPostingRequisitionNotOpenError,
@@ -38,6 +42,15 @@ _JOB_POSTING_WRITE_ROLES = frozenset(
     }
 )
 
+_JOB_POSTING_READ_ROLES = frozenset(
+    {
+        Role.TENANT_ADMIN,
+        Role.RECRUITER,
+        Role.HIRING_MANAGER,
+        Role.ANALYST,
+    }
+)
+
 _SLUG_PATTERN = re.compile(r"[^a-z0-9]+")
 
 
@@ -49,9 +62,92 @@ class CreateJobPostingCommand:
     expires_at: datetime | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class JobPostingSearchFilters:
+    """Safe tenant-private filters for job posting management."""
+
+    requisition_id: UUID | None = None
+    status: JobPostingStatus | None = None
+    employment_type: EmploymentType | None = None
+    published_after: datetime | None = None
+    published_before: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class JobPostingPage:
+    """Cursor-paginated tenant job-posting management results."""
+
+    items: list[JobPosting]
+    next_cursor: str | None
+
+
 def _now() -> datetime:
     """Return the current timezone-aware UTC timestamp."""
     return datetime.now(UTC)
+
+
+def _require_read_role(context: TenantContext) -> None:
+    """Allow authorized recruiting roles to inspect tenant job postings."""
+    if context.roles.isdisjoint(_JOB_POSTING_READ_ROLES):
+        raise JobPostingAccessDeniedError(
+            "Caller lacks job posting read permission."
+        )
+
+
+def _normalize_aware_datetime(
+    value: datetime,
+    *,
+    field_name: str,
+) -> datetime:
+    """Require timezone-aware publication date filters."""
+    if value.tzinfo is None:
+        raise JobPostingValidationError(
+            f"{field_name} must include a UTC offset."
+        )
+
+    return value.astimezone(UTC)
+
+
+def _encode_cursor(posting: JobPosting) -> str:
+    """Encode the final result as opaque management-pagination state."""
+    updated_at = posting.updated_at
+    if updated_at.tzinfo is None:
+        updated_at = updated_at.replace(tzinfo=UTC)
+
+    payload = json.dumps(
+        {
+            "updated_at": updated_at.astimezone(UTC).isoformat(),
+            "id": str(posting.id),
+        },
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def _decode_cursor(cursor: str) -> tuple[datetime, UUID]:
+    """Decode and validate opaque job-posting pagination state."""
+    try:
+        padded_cursor = cursor + "=" * (-len(cursor) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded_cursor))
+        updated_at = datetime.fromisoformat(payload["updated_at"])
+        posting_id = UUID(payload["id"])
+
+        if updated_at.tzinfo is None:
+            raise ValueError("Cursor timestamp must include a timezone.")
+
+        return updated_at.astimezone(UTC), posting_id
+    except (
+        KeyError,
+        TypeError,
+        ValueError,
+        UnicodeDecodeError,
+        binascii.Error,
+        json.JSONDecodeError,
+    ) as error:
+        raise InvalidJobPostingCursorError(
+            "Invalid job posting cursor."
+        ) from error
 
 
 def _require_management_role(context: TenantContext) -> None:
@@ -466,3 +562,124 @@ async def unpublish_job_postings_for_requisition(
         await session.flush()
 
     return tuple(postings)
+
+
+async def get_job_posting(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    job_posting_id: UUID,
+) -> JobPosting:
+    """Return one tenant-owned job posting for authorized internal users."""
+    _require_read_role(context)
+
+    posting = await session.scalar(
+        select(JobPosting).where(
+            JobPosting.id == job_posting_id,
+            JobPosting.tenant_id == context.tenant_id,
+        )
+    )
+    if posting is None:
+        raise JobPostingNotFoundError("Job posting was not found.")
+
+    return posting
+
+
+async def list_job_postings(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    filters: JobPostingSearchFilters | None = None,
+    limit: int = 50,
+    cursor: str | None = None,
+) -> JobPostingPage:
+    """List tenant job postings with safe filters and stable keyset pagination."""
+    _require_read_role(context)
+
+    if filters is None:
+        filters = JobPostingSearchFilters()
+
+    if not 1 <= limit <= 100:
+        raise JobPostingValidationError(
+            "Job posting list limit must be between 1 and 100."
+        )
+
+    if (
+        filters.published_after is not None
+        and filters.published_before is not None
+        and _normalize_aware_datetime(
+            filters.published_after,
+            field_name="published_after",
+        )
+        > _normalize_aware_datetime(
+            filters.published_before,
+            field_name="published_before",
+        )
+    ):
+        raise JobPostingValidationError(
+            "published_after must not be later than published_before."
+        )
+
+    statement = select(JobPosting).where(
+        JobPosting.tenant_id == context.tenant_id
+    )
+
+    if filters.requisition_id is not None:
+        statement = statement.where(
+            JobPosting.requisition_id == filters.requisition_id
+        )
+
+    if filters.status is not None:
+        statement = statement.where(JobPosting.status == filters.status)
+
+    if filters.employment_type is not None:
+        statement = statement.where(
+            JobPosting.employment_type == filters.employment_type
+        )
+
+    if filters.published_after is not None:
+        statement = statement.where(
+            JobPosting.published_at
+            >= _normalize_aware_datetime(
+                filters.published_after,
+                field_name="published_after",
+            )
+        )
+
+    if filters.published_before is not None:
+        statement = statement.where(
+            JobPosting.published_at
+            <= _normalize_aware_datetime(
+                filters.published_before,
+                field_name="published_before",
+            )
+        )
+
+    if cursor is not None:
+        cursor_updated_at, cursor_id = _decode_cursor(cursor)
+        statement = statement.where(
+            or_(
+                JobPosting.updated_at < cursor_updated_at,
+                and_(
+                    JobPosting.updated_at == cursor_updated_at,
+                    JobPosting.id < cursor_id,
+                ),
+            )
+        )
+
+    postings = list(
+        await session.scalars(
+            statement.order_by(
+                JobPosting.updated_at.desc(),
+                JobPosting.id.desc(),
+            ).limit(limit + 1)
+        )
+    )
+
+    has_next_page = len(postings) > limit
+    items = postings[:limit]
+
+    return JobPostingPage(
+        items=items,
+        next_cursor=_encode_cursor(items[-1]) if has_next_page else None,
+    )
