@@ -2,8 +2,10 @@
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 from sqlalchemy import extract, select
+from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.functions import Function, count
 
@@ -270,32 +272,35 @@ async def get_recruiting_metrics(
         for source in sources
     )
 
-    time_to_hire_row = (
-        await session.execute(
-            select(
-                count(ApplicationStageHistory.id),
-                Function(
-                    "avg",
-                    extract(
-                        "epoch",
-                        ApplicationStageHistory.transitioned_at
-                        - Application.applied_at,
-                    )
-                ),
+    time_to_hire_row = cast(
+        Row[tuple[int, float | None]],
+        (
+            await session.execute(
+                select(
+                    count(ApplicationStageHistory.id),
+                    Function(
+                        "avg",
+                        extract(
+                            "epoch",
+                            ApplicationStageHistory.transitioned_at
+                            - Application.applied_at,
+                        ),
+                    ),
+                )
+                .join(
+                    Application,
+                    Application.id == ApplicationStageHistory.application_id,
+                )
+                .where(
+                    *history_scope,
+                    ApplicationStageHistory.to_status == ApplicationStatus.HIRED,
+                    Application.tenant_id == context.tenant_id,
+                    ApplicationStageHistory.transitioned_at
+                    >= Application.applied_at,
+                )
             )
-            .join(
-                Application,
-                Application.id == ApplicationStageHistory.application_id,
-            )
-            .where(
-                *history_scope,
-                ApplicationStageHistory.to_status == ApplicationStatus.HIRED,
-                Application.tenant_id == context.tenant_id,
-                ApplicationStageHistory.transitioned_at
-                >= Application.applied_at,
-            )
-        )
-    ).one()
+        ).one(),
+    )
 
     hired_count = int(time_to_hire_row[0] or 0)
     average_seconds = time_to_hire_row[1]
