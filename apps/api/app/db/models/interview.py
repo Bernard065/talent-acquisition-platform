@@ -22,7 +22,7 @@ from sqlalchemy.dialects.postgresql import (
     UUID as PostgreSQLUUID,
 )
 from sqlalchemy.dialects.postgresql.ranges import Range
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.domains.interviews.enums import (
@@ -147,6 +147,10 @@ class InterviewSession(Base):
         nullable=False,
         default=1,
     )
+    participants: Mapped[list["InterviewParticipant"]] = relationship(
+        back_populates="interview_session",
+        cascade="all, delete-orphan",
+    )
 
     __mapper_args__ = {"version_id_col": version}
 
@@ -224,4 +228,7 @@ class InterviewParticipant(Base):
         DateTime(timezone=True),
         nullable=False,
         server_default=text("CURRENT_TIMESTAMP"),
+    )
+    interview_session: Mapped[InterviewSession] = relationship(
+        back_populates="participants",
     )

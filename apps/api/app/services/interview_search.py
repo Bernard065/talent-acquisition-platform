@@ -9,6 +9,7 @@ from uuid import UUID
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.authorization import Role, TenantContext
 from app.db.models.identity import User
@@ -196,8 +197,10 @@ async def search_interviews(
         requested_participant_user_id=filters.participant_user_id,
     )
 
-    statement = select(InterviewSession).where(
-        InterviewSession.tenant_id == context.tenant_id
+    statement = (
+        select(InterviewSession)
+        .options(selectinload(InterviewSession.participants))
+        .where(InterviewSession.tenant_id == context.tenant_id)
     )
 
     if participant_user_id is not None:
