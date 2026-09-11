@@ -67,6 +67,12 @@ class InterviewSession(Base):
             "status",
             "scheduled_start_at",
         ),
+        Index(
+            "ix_interview_sessions_tenant_start_id",
+            "tenant_id",
+            "scheduled_start_at",
+            "id",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -172,6 +178,12 @@ class InterviewParticipant(Base):
             "ix_interview_participants_tenant_user",
             "tenant_id",
             "user_id",
+        ),
+        Index(
+            "ix_interview_participants_tenant_user_session",
+            "tenant_id",
+            "user_id",
+            "interview_session_id",
         ),
     )
 
