@@ -623,7 +623,7 @@ async def job_posting_validation_handler(
 ) -> JSONResponse:
     """Return a generic validation failure for job-posting queries."""
     return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         content={"detail": "Invalid job posting query."},
         headers={"Cache-Control": "private, no-store"},
     )
