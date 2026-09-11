@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from app.domains.candidates.enums import ApplicationStatus
 
@@ -56,3 +56,8 @@ class RecruitingMetricsResponse(BaseModel):
     stage_transitions: list[StageTransitionMetricResponse]
     source_effectiveness: list[SourceEffectivenessMetricResponse]
     time_to_hire: TimeToHireMetricResponse
+
+    @field_serializer("starts_at", "ends_at")
+    def serialize_timestamp(self, value: datetime) -> str:
+        """Preserve the explicit UTC offset in analytics timestamps."""
+        return value.isoformat()
