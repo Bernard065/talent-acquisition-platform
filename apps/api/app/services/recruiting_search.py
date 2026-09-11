@@ -1,0 +1,320 @@
+"""Tenant-scoped, cursor-paginated recruiter candidate and application search."""
+
+import base64
+import binascii
+import json
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from uuid import UUID
+
+from sqlalchemy import and_, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.authorization import Role, TenantContext
+from app.db.models.application import Application
+from app.db.models.candidate import Candidate
+from app.domains.candidates.enums import (
+    ApplicationStatus,
+    CandidateConsentStatus,
+)
+from app.services.candidate_errors import CandidateAccessDeniedError
+from app.services.recruiting_search_errors import (
+    InvalidRecruitingSearchCursorError,
+)
+
+_RECRUITING_READ_ROLES = frozenset(
+    {
+        Role.TENANT_ADMIN,
+        Role.RECRUITER,
+        Role.PEOPLE_OPERATIONS,
+    }
+)
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateSearchFilters:
+    """Safe filters for tenant-scoped candidate discovery."""
+
+    query: str | None = None
+    source: str | None = None
+    location: str | None = None
+    consent_status: CandidateConsentStatus | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ApplicationSearchFilters:
+    """Safe filters for tenant-scoped application discovery."""
+
+    requisition_id: UUID | None = None
+    candidate_id: UUID | None = None
+    status: ApplicationStatus | None = None
+    applied_after: datetime | None = None
+    applied_before: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateSearchPage:
+    """Cursor-paginated candidate search results."""
+
+    items: list[Candidate]
+    next_cursor: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ApplicationSearchPage:
+    """Cursor-paginated application search results."""
+
+    items: list[Application]
+    next_cursor: str | None
+
+
+def _require_recruiting_read_role(context: TenantContext) -> None:
+    """Protect candidate PII from roles without broad recruiting access."""
+    if context.roles.isdisjoint(_RECRUITING_READ_ROLES):
+        raise CandidateAccessDeniedError(
+            "Caller is not permitted to search recruiting records."
+        )
+
+
+def _normalize_aware_datetime(value: datetime, *, field_name: str) -> datetime:
+    """Require UTC-aware filter values and normalize equivalent offsets."""
+    if value.tzinfo is None:
+        raise ValueError(f"{field_name} must include a UTC offset.")
+
+    return value.astimezone(UTC)
+
+
+def _contains_pattern(value: str) -> str:
+    """Build a literal case-insensitive SQL LIKE pattern safely."""
+    escaped = (
+        value.strip()
+        .replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+    )
+    return f"%{escaped}%"
+
+
+def _encode_cursor(*, timestamp: datetime, record_id: UUID) -> str:
+    """Encode a final page record as opaque keyset pagination state."""
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=UTC)
+
+    payload = json.dumps(
+        {
+            "timestamp": timestamp.astimezone(UTC).isoformat(),
+            "id": str(record_id),
+        },
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def _decode_cursor(cursor: str) -> tuple[datetime, UUID]:
+    """Decode and validate opaque recruiter-search pagination state."""
+    try:
+        padded_cursor = cursor + "=" * (-len(cursor) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded_cursor))
+        timestamp = datetime.fromisoformat(payload["timestamp"])
+        record_id = UUID(payload["id"])
+
+        if timestamp.tzinfo is None:
+            raise ValueError("Cursor timestamp must include a timezone.")
+
+        return timestamp.astimezone(UTC), record_id
+    except (
+        KeyError,
+        TypeError,
+        ValueError,
+        UnicodeDecodeError,
+        binascii.Error,
+        json.JSONDecodeError,
+    ) as error:
+        raise InvalidRecruitingSearchCursorError(
+            "Invalid recruiter search cursor."
+        ) from error
+
+
+async def search_candidates(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    filters: CandidateSearchFilters | None = None,
+    limit: int = 50,
+    cursor: str | None = None,
+) -> CandidateSearchPage:
+    """Search tenant candidates without crossing the candidate-data boundary."""
+    _require_recruiting_read_role(context)
+    if filters is None:
+        filters = CandidateSearchFilters()
+
+    if not 1 <= limit <= 100:
+        raise ValueError("Candidate search limit must be between 1 and 100.")
+
+    statement = select(Candidate).where(
+        Candidate.tenant_id == context.tenant_id
+    )
+
+    if filters.query is not None and filters.query.strip():
+        pattern = _contains_pattern(filters.query)
+        statement = statement.where(
+            or_(
+                Candidate.full_name.ilike(pattern, escape="\\"),
+                Candidate.email.ilike(pattern, escape="\\"),
+            )
+        )
+
+    if filters.source is not None and filters.source.strip():
+        statement = statement.where(Candidate.source == filters.source.strip())
+
+    if filters.location is not None and filters.location.strip():
+        statement = statement.where(
+            Candidate.location.ilike(
+                _contains_pattern(filters.location),
+                escape="\\",
+            )
+        )
+
+    if filters.consent_status is not None:
+        statement = statement.where(
+            Candidate.consent_status == filters.consent_status
+        )
+
+    if cursor is not None:
+        cursor_created_at, cursor_id = _decode_cursor(cursor)
+        statement = statement.where(
+            or_(
+                Candidate.created_at < cursor_created_at,
+                and_(
+                    Candidate.created_at == cursor_created_at,
+                    Candidate.id < cursor_id,
+                ),
+            )
+        )
+
+    candidates = list(
+        await session.scalars(
+            statement.order_by(
+                Candidate.created_at.desc(),
+                Candidate.id.desc(),
+            ).limit(limit + 1)
+        )
+    )
+
+    has_next_page = len(candidates) > limit
+    items = candidates[:limit]
+
+    return CandidateSearchPage(
+        items=items,
+        next_cursor=(
+            _encode_cursor(
+                timestamp=items[-1].created_at,
+                record_id=items[-1].id,
+            )
+            if has_next_page
+            else None
+        ),
+    )
+
+
+async def search_applications(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    filters: ApplicationSearchFilters | None = None,
+    limit: int = 50,
+    cursor: str | None = None,
+) -> ApplicationSearchPage:
+    """Search tenant applications with stable ordering and bounded filters."""
+    _require_recruiting_read_role(context)
+    if filters is None:
+        filters = ApplicationSearchFilters()
+
+    if not 1 <= limit <= 100:
+        raise ValueError("Application search limit must be between 1 and 100.")
+
+    if (
+        filters.applied_after is not None
+        and filters.applied_before is not None
+        and _normalize_aware_datetime(
+            filters.applied_after,
+            field_name="applied_after",
+        )
+        > _normalize_aware_datetime(
+            filters.applied_before,
+            field_name="applied_before",
+        )
+    ):
+        raise ValueError("applied_after must not be later than applied_before.")
+
+    statement = select(Application).where(
+        Application.tenant_id == context.tenant_id
+    )
+
+    if filters.requisition_id is not None:
+        statement = statement.where(
+            Application.requisition_id == filters.requisition_id
+        )
+
+    if filters.candidate_id is not None:
+        statement = statement.where(
+            Application.candidate_id == filters.candidate_id
+        )
+
+    if filters.status is not None:
+        statement = statement.where(Application.status == filters.status)
+
+    if filters.applied_after is not None:
+        statement = statement.where(
+            Application.applied_at
+            >= _normalize_aware_datetime(
+                filters.applied_after,
+                field_name="applied_after",
+            )
+        )
+
+    if filters.applied_before is not None:
+        statement = statement.where(
+            Application.applied_at
+            <= _normalize_aware_datetime(
+                filters.applied_before,
+                field_name="applied_before",
+            )
+        )
+
+    if cursor is not None:
+        cursor_applied_at, cursor_id = _decode_cursor(cursor)
+        statement = statement.where(
+            or_(
+                Application.applied_at < cursor_applied_at,
+                and_(
+                    Application.applied_at == cursor_applied_at,
+                    Application.id < cursor_id,
+                ),
+            )
+        )
+
+    applications = list(
+        await session.scalars(
+            statement.order_by(
+                Application.applied_at.desc(),
+                Application.id.desc(),
+            ).limit(limit + 1)
+        )
+    )
+
+    has_next_page = len(applications) > limit
+    items = applications[:limit]
+
+    return ApplicationSearchPage(
+        items=items,
+        next_cursor=(
+            _encode_cursor(
+                timestamp=items[-1].applied_at,
+                record_id=items[-1].id,
+            )
+            if has_next_page
+            else None
+        ),
+    )

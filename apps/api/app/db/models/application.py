@@ -43,6 +43,12 @@ class Application(Base):
             "tenant_id",
             "candidate_id",
         ),
+        Index(
+            "ix_applications_tenant_applied_at_id",
+            "tenant_id",
+            "applied_at",
+            "id",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
