@@ -116,6 +116,9 @@ from app.services.public_job_errors import (
     InvalidPublicJobCursorError,
     PublicJobNotFoundError,
 )
+from app.services.recruiting_search_errors import (
+    InvalidRecruitingSearchCursorError,
+)
 from app.services.requisition_errors import (
     InvalidRequisitionCursorError,
     RequisitionAccessDeniedError,
@@ -544,6 +547,18 @@ async def invalid_public_job_cursor(
     )
 
 
+async def invalid_recruiting_search_cursor(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Return a safe validation response for malformed recruiter cursors."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail="Invalid recruiter search cursor.",
+    )
+
+
 async def public_application_job_not_found(
     request: Request,
     _: Exception,
@@ -618,6 +633,10 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         InvalidPublicJobCursorError,
         invalid_public_job_cursor,
+    )
+    application.add_exception_handler(
+        InvalidRecruitingSearchCursorError,
+        invalid_recruiting_search_cursor,
     )
     application.add_exception_handler(
         PublicApplicationJobNotFoundError,

@@ -28,6 +28,12 @@ class Candidate(Base):
             "tenant_id",
             "created_at",
         ),
+        Index(
+            "ix_candidates_tenant_created_at_id",
+            "tenant_id",
+            "created_at",
+            "id",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(

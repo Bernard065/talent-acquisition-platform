@@ -30,3 +30,12 @@ class ApplicationResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     version: int
+
+
+class ApplicationListResponse(BaseModel):
+    """Cursor-paginated internal application search results."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[ApplicationResponse]
+    next_cursor: str | None = None
