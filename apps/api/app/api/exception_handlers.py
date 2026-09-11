@@ -129,6 +129,10 @@ from app.services.public_job_errors import (
     InvalidPublicJobCursorError,
     PublicJobNotFoundError,
 )
+from app.services.recruiting_metrics_errors import (
+    RecruitingMetricsAccessDeniedError,
+    RecruitingMetricsValidationError,
+)
 from app.services.recruiting_search_errors import (
     InvalidRecruitingSearchCursorError,
 )
@@ -194,6 +198,34 @@ async def forbidden(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Insufficient permission.",
     )
+
+
+async def recruiting_metrics_forbidden(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Return a private authorization failure for analytics."""
+    response = _error_response(
+        request,
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Insufficient permission.",
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+async def invalid_recruiting_metrics_request(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Return a private validation failure for analytics."""
+    response = _error_response(
+        request,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail="Invalid recruiting analytics request.",
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
 
 
 async def conflict(
@@ -738,6 +770,14 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         InvalidRecruitingSearchCursorError,
         invalid_recruiting_search_cursor,
+    )
+    application.add_exception_handler(
+        RecruitingMetricsAccessDeniedError,
+        recruiting_metrics_forbidden,
+    )
+    application.add_exception_handler(
+        RecruitingMetricsValidationError,
+        invalid_recruiting_metrics_request,
     )
     application.add_exception_handler(
         InterviewSearchAccessDeniedError,

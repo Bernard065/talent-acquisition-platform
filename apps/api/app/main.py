@@ -32,6 +32,9 @@ from app.api.v1.public_applications import (
     router as public_applications_router,
 )
 from app.api.v1.public_jobs import router as public_jobs_router
+from app.api.v1.recruiting_metrics import (
+    router as recruiting_metrics_router,
+)
 from app.api.v1.requisitions import router as requisitions_router
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
@@ -231,6 +234,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application.include_router(
         operations_router,
+        prefix=active_settings.api_prefix,
+    )
+
+    application.include_router(
+        recruiting_metrics_router,
         prefix=active_settings.api_prefix,
     )
 
