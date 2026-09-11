@@ -80,6 +80,10 @@ from app.services.interview_scheduling_errors import (
     InterviewSchedulingAccessDeniedError,
     InterviewSchedulingValidationError,
 )
+from app.services.interview_search_errors import (
+    InterviewSearchAccessDeniedError,
+    InvalidInterviewSearchCursorError,
+)
 from app.services.notification_preference_errors import (
     NotificationPreferenceAccessDeniedError,
     NotificationPreferenceVersionConflictError,
@@ -559,6 +563,30 @@ async def invalid_recruiting_search_cursor(
     )
 
 
+async def interview_search_forbidden(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Reject callers without permission to inspect the interview calendar."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Insufficient permission.",
+    )
+
+
+async def invalid_interview_search_cursor(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Return a safe validation response for malformed calendar cursors."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail="Invalid interview search cursor.",
+    )
+
+
 async def public_application_job_not_found(
     request: Request,
     _: Exception,
@@ -637,6 +665,14 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         InvalidRecruitingSearchCursorError,
         invalid_recruiting_search_cursor,
+    )
+    application.add_exception_handler(
+        InterviewSearchAccessDeniedError,
+        interview_search_forbidden,
+    )
+    application.add_exception_handler(
+        InvalidInterviewSearchCursorError,
+        invalid_interview_search_cursor,
     )
     application.add_exception_handler(
         PublicApplicationJobNotFoundError,

@@ -50,3 +50,27 @@ class InterviewSessionResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     version: int
+
+
+class InterviewParticipantSummaryResponse(BaseModel):
+    """Participant identity metadata safe for tenant interview calendars."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    user_id: UUID
+    role: InterviewParticipantRole
+
+
+class InterviewSearchResultResponse(InterviewSessionResponse):
+    """Calendar-safe interview session details without feedback content."""
+
+    participants: list[InterviewParticipantSummaryResponse]
+
+
+class InterviewSearchListResponse(BaseModel):
+    """Cursor-paginated tenant interview schedule search results."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[InterviewSearchResultResponse]
+    next_cursor: str | None = None
