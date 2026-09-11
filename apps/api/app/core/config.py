@@ -97,6 +97,29 @@ class Settings(BaseSettings):
         ge=10,
         le=900,
     )
+    job_posting_expiry_worker_poll_interval_seconds: int = Field(
+        default=60,
+        ge=1,
+        le=300,
+    )
+    job_posting_expiry_worker_batch_size: int = Field(
+        default=50,
+        ge=1,
+        le=100,
+    )
+    job_posting_expiry_worker_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=255,
+    )
+    job_posting_expiry_worker_heartbeat_path: Path = Path(
+        "/tmp/tap-job-posting-expiry-worker.heartbeat"  # noqa: S108
+    )
+    job_posting_expiry_worker_heartbeat_max_age_seconds: int = Field(
+        default=180,
+        ge=10,
+        le=900,
+    )
     notification_worker_poll_interval_seconds: int = Field(
         default=5,
         ge=1,

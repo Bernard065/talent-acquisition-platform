@@ -90,6 +90,32 @@ services:
       postgres:
         condition: service_healthy
 
+  job-posting-expiry-worker:
+    build:
+      context: ./apps/api
+    container_name: tap-job-posting-expiry-worker
+    restart: unless-stopped
+    command: python -m app.workers.job_posting_expiry_worker
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-m",
+          "app.workers.job_posting_expiry_worker_health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   notification-worker:
     build:
       context: ./apps/api
