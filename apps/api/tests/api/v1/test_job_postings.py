@@ -96,6 +96,40 @@ def _set_context(
     )
 
 
+def _idempotency_headers() -> dict[str, str]:
+    """Return a unique idempotency key for one write request."""
+    return {"Idempotency-Key": str(uuid4())}
+
+
+async def _seed_requisition(
+    engine: AsyncEngine,
+    *,
+    tenant_id: UUID,
+    requisition_status: RequisitionStatus = RequisitionStatus.OPEN,
+) -> Requisition:
+    """Persist one requisition for job-posting endpoint preconditions."""
+    session_factory = async_sessionmaker(
+        bind=engine,
+        autoflush=False,
+        expire_on_commit=False,
+    )
+
+    async with session_factory.begin() as session:
+        requisition = Requisition(
+            tenant_id=tenant_id,
+            title="Senior Platform Engineer",
+            description="Build reliable recruiting platform services.",
+            department="Engineering",
+            location="Nairobi, Kenya",
+            headcount=1,
+            status=requisition_status,
+            created_by_subject="seed",
+        )
+        session.add(requisition)
+        await session.flush()
+        return requisition
+
+
 @pytest_asyncio.fixture(name="tenant_id")
 async def tenant_id_fixture(database_engine: AsyncEngine) -> UUID:
     """Create the primary tenant used by the API tests."""
@@ -157,6 +191,7 @@ async def _seed_job_posting(
     posting_status: JobPostingStatus = JobPostingStatus.DRAFT,
     employment_type: EmploymentType = EmploymentType.FULL_TIME,
     published_at: datetime | None = None,
+    requisition_status: RequisitionStatus = RequisitionStatus.OPEN,
 ) -> JobPosting:
     """Persist one tenant-owned posting with deterministic ordering values."""
     session_factory = async_sessionmaker(
@@ -173,7 +208,7 @@ async def _seed_job_posting(
             department="Engineering",
             location="Nairobi, Kenya",
             headcount=1,
-            status=RequisitionStatus.OPEN,
+            status=requisition_status,
             created_by_subject="seed",
         )
         session.add(requisition)
@@ -435,3 +470,245 @@ async def test_detail_response_has_only_safe_private_fields(
 
     for prohibited_field in ("tenant_id", "created_by_subject"):
         assert prohibited_field not in payload
+
+
+@pytest.mark.asyncio
+async def test_replays_job_posting_creation_for_same_idempotency_key(
+    job_postings_api_app: FastAPI,
+    database_engine: AsyncEngine,
+    tenant_id: UUID,
+) -> None:
+    """Create one draft posting and replay its exact persisted response."""
+    requisition = await _seed_requisition(
+        database_engine,
+        tenant_id=tenant_id,
+    )
+    headers = _idempotency_headers()
+    payload = {
+        "employment_type": "full_time",
+        "expires_at": (datetime.now(UTC) + timedelta(days=30)).isoformat(),
+    }
+
+    async with AsyncClient(
+        transport=ASGITransport(app=job_postings_api_app),
+        base_url="http://testserver",
+    ) as client:
+        first = await client.post(
+            f"/api/v1/requisitions/{requisition.id}/job-postings",
+            json=payload,
+            headers=headers,
+        )
+        second = await client.post(
+            f"/api/v1/requisitions/{requisition.id}/job-postings",
+            json=payload,
+            headers=headers,
+        )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json() == second.json()
+    assert first.json()["status"] == "draft"
+    assert first.headers["Idempotent-Replayed"] == "false"
+    assert second.headers["Idempotent-Replayed"] == "true"
+    assert first.headers["Cache-Control"] == "private, no-store"
+    assert second.headers["Cache-Control"] == "private, no-store"
+
+
+@pytest.mark.asyncio
+async def test_publishes_and_unpublishes_a_job_posting(
+    job_postings_api_app: FastAPI,
+    database_engine: AsyncEngine,
+    tenant_id: UUID,
+) -> None:
+    """Publish an eligible draft and explicitly remove it from public visibility."""
+    posting = await _seed_job_posting(
+        database_engine,
+        tenant_id=tenant_id,
+        position=50,
+        updated_at=datetime.now(UTC),
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=job_postings_api_app),
+        base_url="http://testserver",
+    ) as client:
+        published = await client.post(
+            f"/api/v1/job-postings/{posting.id}/publish",
+            json={"expected_version": posting.version},
+            headers=_idempotency_headers(),
+        )
+        unpublished = await client.post(
+            f"/api/v1/job-postings/{posting.id}/unpublish",
+            json={"expected_version": published.json()["version"]},
+            headers=_idempotency_headers(),
+        )
+
+    assert published.status_code == 200
+    assert published.json()["status"] == "published"
+    assert published.json()["published_at"] is not None
+    assert published.headers["Cache-Control"] == "private, no-store"
+
+    assert unpublished.status_code == 200
+    assert unpublished.json()["status"] == "unpublished"
+    assert unpublished.json()["unpublished_at"] is not None
+    assert unpublished.headers["Cache-Control"] == "private, no-store"
+
+
+@pytest.mark.asyncio
+async def test_rejects_stale_job_posting_version(
+    job_postings_api_app: FastAPI,
+    database_engine: AsyncEngine,
+    tenant_id: UUID,
+) -> None:
+    """Reject a workflow update that does not use the current version."""
+    posting = await _seed_job_posting(
+        database_engine,
+        tenant_id=tenant_id,
+        position=51,
+        updated_at=datetime.now(UTC),
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=job_postings_api_app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post(
+            f"/api/v1/job-postings/{posting.id}/publish",
+            json={"expected_version": posting.version + 1},
+            headers=_idempotency_headers(),
+        )
+
+    assert response.status_code == 409
+    assert response.headers["Cache-Control"] == "private, no-store"
+
+
+@pytest.mark.asyncio
+async def test_rejects_publication_for_non_open_requisition(
+    job_postings_api_app: FastAPI,
+    database_engine: AsyncEngine,
+    tenant_id: UUID,
+) -> None:
+    """Do not allow public visibility when the requisition is not open."""
+    posting = await _seed_job_posting(
+        database_engine,
+        tenant_id=tenant_id,
+        position=52,
+        updated_at=datetime.now(UTC),
+        requisition_status=RequisitionStatus.ON_HOLD,
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=job_postings_api_app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post(
+            f"/api/v1/job-postings/{posting.id}/publish",
+            json={"expected_version": posting.version},
+            headers=_idempotency_headers(),
+        )
+
+    assert response.status_code == 409
+    assert response.headers["Cache-Control"] == "private, no-store"
+
+
+@pytest.mark.asyncio
+async def test_rejects_job_posting_workflow_for_unauthorized_role(
+    job_postings_api_app: FastAPI,
+    database_engine: AsyncEngine,
+    tenant_id: UUID,
+) -> None:
+    """Interviewers cannot create or publish job postings."""
+    requisition = await _seed_requisition(
+        database_engine,
+        tenant_id=tenant_id,
+    )
+    _set_context(
+        job_postings_api_app,
+        tenant_id=tenant_id,
+        roles=frozenset({Role.INTERVIEWER}),
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=job_postings_api_app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post(
+            f"/api/v1/requisitions/{requisition.id}/job-postings",
+            json={"employment_type": "full_time"},
+            headers=_idempotency_headers(),
+        )
+
+    assert response.status_code == 403
+    assert response.headers["Cache-Control"] == "private, no-store"
+
+
+@pytest.mark.asyncio
+async def test_hides_job_posting_workflow_outside_callers_tenant(
+    job_postings_api_app: FastAPI,
+    database_engine: AsyncEngine,
+) -> None:
+    """Do not disclose another tenant's workflow resource."""
+    other_tenant_id = uuid4()
+    session_factory = async_sessionmaker(
+        bind=database_engine,
+        autoflush=False,
+        expire_on_commit=False,
+    )
+
+    async with session_factory.begin() as session:
+        session.add(
+            Tenant(
+                id=other_tenant_id,
+                name="Other Job Posting Tenant",
+                slug=f"other-job-posting-{other_tenant_id.hex[:12]}",
+            )
+        )
+
+    other_posting = await _seed_job_posting(
+        database_engine,
+        tenant_id=other_tenant_id,
+        position=53,
+        updated_at=datetime.now(UTC),
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=job_postings_api_app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post(
+            f"/api/v1/job-postings/{other_posting.id}/publish",
+            json={"expected_version": other_posting.version},
+            headers=_idempotency_headers(),
+        )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Job posting not found."
+    assert response.headers["Cache-Control"] == "private, no-store"
+
+
+@pytest.mark.asyncio
+async def test_rejects_unknown_job_posting_workflow_fields(
+    job_postings_api_app: FastAPI,
+    database_engine: AsyncEngine,
+    tenant_id: UUID,
+) -> None:
+    """Reject unknown JSON input instead of silently accepting it."""
+    requisition = await _seed_requisition(
+        database_engine,
+        tenant_id=tenant_id,
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=job_postings_api_app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post(
+            f"/api/v1/requisitions/{requisition.id}/job-postings",
+            json={
+                "employment_type": "full_time",
+                "unexpected_internal_field": "not accepted",
+            },
+            headers=_idempotency_headers(),
+        )
+
+    assert response.status_code == 422

@@ -1,9 +1,10 @@
 """Private API contracts for job-posting management."""
 
 from datetime import datetime
+from typing import Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.domains.job_postings.enums import EmploymentType, JobPostingStatus
 
@@ -38,3 +39,28 @@ class JobPostingListResponse(BaseModel):
 
     items: list[JobPostingResponse]
     next_cursor: str | None
+
+
+class CreateJobPostingRequest(BaseModel):
+    """Validated input for creating a draft posting from a requisition."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    employment_type: EmploymentType
+    expires_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def validate_expiry(self) -> Self:
+        """Require an explicit UTC offset when an expiry is supplied."""
+        if self.expires_at is not None and self.expires_at.tzinfo is None:
+            raise ValueError("expires_at must include a UTC offset.")
+
+        return self
+
+
+class ExpectedJobPostingVersionRequest(BaseModel):
+    """Optimistic-concurrency input for a job-posting state change."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
