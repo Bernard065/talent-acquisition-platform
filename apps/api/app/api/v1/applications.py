@@ -1,9 +1,10 @@
 """Version 1 job-application HTTP endpoints."""
 
+from datetime import datetime
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,9 +15,11 @@ from app.api.v1.schemas.application_pipeline import (
 )
 from app.api.v1.schemas.applications import (
     ApplicationCreateRequest,
+    ApplicationListResponse,
     ApplicationResponse,
 )
 from app.core.authorization import TenantContext
+from app.domains.candidates.enums import ApplicationStatus
 from app.services.application_pipeline import (
     TransitionApplicationStageCommand,
     transition_application_stage,
@@ -27,6 +30,10 @@ from app.services.candidates import (
     get_application,
 )
 from app.services.idempotency import IdempotencyResult, execute_idempotently
+from app.services.recruiting_search import (
+    ApplicationSearchFilters,
+    search_applications,
+)
 
 router = APIRouter(prefix="/applications", tags=["Applications"])
 
@@ -127,6 +134,51 @@ async def transition_application_stage_endpoint(
     )
 
     return _private_idempotency_response(result)
+
+
+@router.get(
+    "",
+    response_model=ApplicationListResponse,
+    summary="Search applications",
+)
+async def search_applications_endpoint(
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    cursor: Annotated[str | None, Query(max_length=512)] = None,
+    requisition_id: UUID | None = None,
+    candidate_id: UUID | None = None,
+    application_status: Annotated[
+        ApplicationStatus | None,
+        Query(alias="status"),
+    ] = None,
+    applied_after: datetime | None = None,
+    applied_before: datetime | None = None,
+) -> ApplicationListResponse:
+    """Search tenant applications using safe filters and keyset pagination."""
+    page = await search_applications(
+        session,
+        context=context,
+        filters=ApplicationSearchFilters(
+            requisition_id=requisition_id,
+            candidate_id=candidate_id,
+            status=application_status,
+            applied_after=applied_after,
+            applied_before=applied_before,
+        ),
+        limit=limit,
+        cursor=cursor,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+
+    return ApplicationListResponse(
+        items=[
+            ApplicationResponse.model_validate(application)
+            for application in page.items
+        ],
+        next_cursor=page.next_cursor,
+    )
 
 
 @router.get(

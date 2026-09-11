@@ -58,3 +58,12 @@ class CandidateResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     version: int
+
+
+class CandidateListResponse(BaseModel):
+    """Cursor-paginated internal candidate search results."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[CandidateResponse]
+    next_cursor: str | None = None

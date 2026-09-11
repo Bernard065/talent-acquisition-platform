@@ -3,7 +3,7 @@
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,15 +11,21 @@ from app.api.dependencies import get_db_session, get_tenant_context
 from app.api.idempotency import IdempotencyKey, idempotency_response
 from app.api.v1.schemas.candidates import (
     CandidateCreateRequest,
+    CandidateListResponse,
     CandidateResponse,
 )
 from app.core.authorization import TenantContext
+from app.domains.candidates.enums import CandidateConsentStatus
 from app.services.candidates import (
     CreateCandidateCommand,
     create_candidate,
     get_candidate,
 )
 from app.services.idempotency import IdempotencyResult, execute_idempotently
+from app.services.recruiting_search import (
+    CandidateSearchFilters,
+    search_candidates,
+)
 
 router = APIRouter(prefix="/candidates", tags=["Candidates"])
 
@@ -79,6 +85,46 @@ async def create_candidate_endpoint(
     )
 
     return _private_idempotency_response(result)
+
+
+@router.get(
+    "",
+    response_model=CandidateListResponse,
+    summary="Search candidates",
+)
+async def search_candidates_endpoint(
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    cursor: Annotated[str | None, Query(max_length=512)] = None,
+    query: Annotated[str | None, Query(max_length=200)] = None,
+    source: Annotated[str | None, Query(max_length=100)] = None,
+    location: Annotated[str | None, Query(max_length=200)] = None,
+    consent_status: CandidateConsentStatus | None = None,
+) -> CandidateListResponse:
+    """Search candidate records visible to the authenticated tenant."""
+    page = await search_candidates(
+        session,
+        context=context,
+        filters=CandidateSearchFilters(
+            query=query,
+            source=source,
+            location=location,
+            consent_status=consent_status,
+        ),
+        limit=limit,
+        cursor=cursor,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+
+    return CandidateListResponse(
+        items=[
+            CandidateResponse.model_validate(candidate)
+            for candidate in page.items
+        ],
+        next_cursor=page.next_cursor,
+    )
 
 
 @router.get(
