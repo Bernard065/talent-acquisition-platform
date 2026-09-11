@@ -84,6 +84,12 @@ from app.services.interview_search_errors import (
     InterviewSearchAccessDeniedError,
     InvalidInterviewSearchCursorError,
 )
+from app.services.job_posting_errors import (
+    InvalidJobPostingCursorError,
+    JobPostingAccessDeniedError,
+    JobPostingNotFoundError,
+    JobPostingValidationError,
+)
 from app.services.notification_preference_errors import (
     NotificationPreferenceAccessDeniedError,
     NotificationPreferenceVersionConflictError,
@@ -587,6 +593,42 @@ async def invalid_interview_search_cursor(
     )
 
 
+async def job_posting_not_found_handler(
+    _request: Request,
+    _exc: Exception,
+) -> JSONResponse:
+    """Hide tenant job-posting existence from the caller."""
+    return JSONResponse(
+        status_code=status.HTTP_404_NOT_FOUND,
+        content={"detail": "Job posting not found."},
+        headers={"Cache-Control": "private, no-store"},
+    )
+
+
+async def job_posting_access_denied_handler(
+    _request: Request,
+    _exc: Exception,
+) -> JSONResponse:
+    """Return a generic authorization failure for job-posting access."""
+    return JSONResponse(
+        status_code=status.HTTP_403_FORBIDDEN,
+        content={"detail": "You are not authorized to access this resource."},
+        headers={"Cache-Control": "private, no-store"},
+    )
+
+
+async def job_posting_validation_handler(
+    _request: Request,
+    _exc: Exception,
+) -> JSONResponse:
+    """Return a generic validation failure for job-posting queries."""
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        content={"detail": "Invalid job posting query."},
+        headers={"Cache-Control": "private, no-store"},
+    )
+
+
 async def public_application_job_not_found(
     request: Request,
     _: Exception,
@@ -673,6 +715,22 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         InvalidInterviewSearchCursorError,
         invalid_interview_search_cursor,
+    )
+    application.add_exception_handler(
+        JobPostingNotFoundError,
+        job_posting_not_found_handler,
+    )
+    application.add_exception_handler(
+        JobPostingAccessDeniedError,
+        job_posting_access_denied_handler,
+    )
+    application.add_exception_handler(
+        JobPostingValidationError,
+        job_posting_validation_handler,
+    )
+    application.add_exception_handler(
+        InvalidJobPostingCursorError,
+        job_posting_validation_handler,
     )
     application.add_exception_handler(
         PublicApplicationJobNotFoundError,

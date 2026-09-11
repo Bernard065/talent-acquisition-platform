@@ -19,3 +19,7 @@ class JobPostingRequisitionNotOpenError(ValueError):
 
 class JobPostingValidationError(ValueError):
     """Raised when job posting input is structurally invalid."""
+
+
+class InvalidJobPostingCursorError(ValueError):
+    """Raised when job-posting pagination state is malformed."""
