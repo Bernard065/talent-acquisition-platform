@@ -21,6 +21,7 @@ from app.api.v1.interview_feedback import router as interview_feedback_router
 from app.api.v1.interview_lifecycle import router as interview_lifecycle_router
 from app.api.v1.interview_search import router as interview_search_router
 from app.api.v1.interviews import router as interviews_router
+from app.api.v1.job_postings import router as job_postings_router
 from app.api.v1.notification_preferences import (
     router as notification_preferences_router,
 )
@@ -170,6 +171,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application.include_router(
         candidates_router,
+        prefix=active_settings.api_prefix,
+    )
+
+    application.include_router(
+        job_postings_router,
         prefix=active_settings.api_prefix,
     )
 
