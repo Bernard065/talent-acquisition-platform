@@ -30,6 +30,18 @@ class ApplicationStageHistory(Base):
             "application_id",
             "transitioned_at",
         ),
+        Index(
+            "ix_application_stage_history_tenant_transitioned_at_to_status",
+            "tenant_id",
+            "transitioned_at",
+            "to_status",
+        ),
+        Index(
+            "ix_application_stage_history_tenant_to_status_transitioned_at",
+            "tenant_id",
+            "to_status",
+            "transitioned_at",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
