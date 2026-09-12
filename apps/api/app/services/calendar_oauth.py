@@ -24,6 +24,10 @@ class CalendarOAuthStateError(ValueError):
     """Raised when OAuth state is missing, expired, invalid, or already used."""
 
 
+class CalendarOAuthStateStoreUnavailableError(RuntimeError):
+    """Raised when server-side OAuth state storage is unavailable."""
+
+
 @dataclass(frozen=True, slots=True)
 class CalendarOAuthState:
     """
