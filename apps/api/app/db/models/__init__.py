@@ -13,6 +13,7 @@ from app.db.models.approval import (
     RequisitionApprovalDecision,
 )
 from app.db.models.audit import AuditEvent
+from app.db.models.calendar import CalendarConnection, InterviewCalendarSync
 from app.db.models.candidate import Candidate
 from app.db.models.candidate_document import CandidateDocument
 from app.db.models.candidate_document_scan import CandidateDocumentScan
@@ -49,7 +50,9 @@ __all__ = [
     "Candidate",
     "CandidateDocument",
     "CandidateDocumentScan",
+    "CalendarConnection",
     "IdempotencyRecord",
+    "InterviewCalendarSync",
     "InterviewFeedback",
     "InterviewParticipant",
     "InterviewSession",
