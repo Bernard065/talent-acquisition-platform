@@ -14,6 +14,7 @@ from app.db.models.audit import AuditEvent
 from app.db.models.candidate import Candidate
 from app.db.models.identity import Tenant, User
 from app.db.models.interview import InterviewSession
+from app.db.models.outbox import OutboxEvent
 from app.db.models.requisition import Requisition
 from app.domains.candidates.enums import (
     ApplicationStatus,
@@ -192,6 +193,60 @@ async def test_schedules_interview_and_records_atomic_audit_event(
 
 
 @pytest.mark.asyncio
+async def test_scheduling_enqueues_one_privacy_safe_calendar_sync_event(
+    session: AsyncSession,
+) -> None:
+    """Schedule state, audit data, and calendar work commit together."""
+    tenant_id = uuid4()
+    applications, interviewer = await _seed_interview_data(
+        session,
+        tenant_id=tenant_id,
+    )
+
+    scheduled = await schedule_interview(
+        session,
+        context=_context(tenant_id),
+        application_id=applications[0].id,
+        command=_command(interviewer.id),
+    )
+
+    events = list(
+        await session.scalars(
+            select(OutboxEvent).where(
+                OutboxEvent.tenant_id == tenant_id,
+                OutboxEvent.event_type == "interview.calendar_sync_requested",
+                OutboxEvent.aggregate_id == str(scheduled.id),
+            )
+        )
+    )
+
+    assert len(events) == 1
+
+    event = events[0]
+    assert event.aggregate_type == "interview_session"
+    assert event.deduplication_key == (
+        f"calendar-sync:{scheduled.id}:{scheduled.version}:upsert"
+    )
+    assert event.payload == {
+        "interview_session_id": str(scheduled.id),
+        "operation": "upsert",
+        "interview_version": scheduled.version,
+    }
+
+    rendered = str(event.payload)
+    for prohibited_value in (
+        str(applications[0].candidate_id),
+        str(interviewer.id),
+        "candidate",
+        "participant",
+        "email",
+        "scheduled_start_at",
+        "scheduled_end_at",
+    ):
+        assert prohibited_value not in rendered
+
+
+@pytest.mark.asyncio
 async def test_rejects_application_not_in_interview_stage(
     session: AsyncSession,
 ) -> None:
@@ -310,9 +365,18 @@ async def test_rejects_overlapping_participant_booking_and_keeps_audit_atomic(
             select(AuditEvent).where(AuditEvent.action == "interview_session.scheduled")
         )
     )
+    calendar_events = list(
+        await session.scalars(
+            select(OutboxEvent).where(
+                OutboxEvent.event_type
+                == "interview.calendar_sync_requested",
+            )
+        )
+    )
 
     assert len(sessions) == 1
     assert len(audit_events) == 1
+    assert len(calendar_events) == 1
 
 
 @pytest.mark.asyncio
