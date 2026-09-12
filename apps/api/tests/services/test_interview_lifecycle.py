@@ -17,6 +17,7 @@ from app.db.models.interview import InterviewParticipant, InterviewSession
 from app.db.models.interview_session_lifecycle import (
     InterviewSessionLifecycleHistory,
 )
+from app.db.models.outbox import OutboxEvent
 from app.db.models.requisition import Requisition
 from app.domains.candidates.enums import (
     ApplicationStatus,
@@ -255,6 +256,65 @@ async def test_cancels_session_with_controlled_reason_and_audit(
 
 
 @pytest.mark.asyncio
+async def test_cancellation_enqueues_one_calendar_cancel_event(
+    session: AsyncSession,
+) -> None:
+    """Cancellation and calendar deletion work commit atomically."""
+    tenant_id = uuid4()
+    participant = await _create_tenant_and_participant(session, tenant_id)
+    interview_session = await _create_scheduled_interview(
+        session,
+        tenant_id=tenant_id,
+        participant=participant,
+        start_at=datetime(2026, 2, 2, 9, 0, tzinfo=UTC),
+        end_at=datetime(2026, 2, 2, 10, 0, tzinfo=UTC),
+    )
+
+    cancelled = await cancel_interview_session(
+        session,
+        context=_context(tenant_id),
+        interview_session_id=interview_session.id,
+        command=CancelInterviewSessionCommand(
+            expected_version=1,
+            cancellation_reason=InterviewCancellationReason.OTHER,
+        ),
+    )
+
+    events = list(
+        await session.scalars(
+            select(OutboxEvent).where(
+                OutboxEvent.tenant_id == tenant_id,
+                OutboxEvent.event_type == "interview.calendar_sync_requested",
+                OutboxEvent.aggregate_id == str(cancelled.id),
+            )
+        )
+    )
+
+    assert len(events) == 1
+
+    event = events[0]
+    assert event.aggregate_type == "interview_session"
+    assert event.deduplication_key == (
+        f"calendar-sync:{cancelled.id}:{cancelled.version}:cancel"
+    )
+    assert event.payload == {
+        "interview_session_id": str(cancelled.id),
+        "operation": "cancel",
+        "interview_version": cancelled.version,
+    }
+
+    rendered = str(event.payload)
+    for prohibited_value in (
+        str(participant.id),
+        "cancellation_reason",
+        "candidate",
+        "participant",
+        "email",
+    ):
+        assert prohibited_value not in rendered
+
+
+@pytest.mark.asyncio
 async def test_reschedules_session_and_updates_participant_reservation(
     session: AsyncSession,
 ) -> None:
@@ -311,6 +371,69 @@ async def test_reschedules_session_and_updates_participant_reservation(
         tzinfo=UTC,
     )
     assert history.scheduled_start_at == new_start_at
+
+
+@pytest.mark.asyncio
+async def test_rescheduling_enqueues_one_calendar_upsert_event(
+    session: AsyncSession,
+) -> None:
+    """Rescheduling and calendar update work commit atomically."""
+    tenant_id = uuid4()
+    participant = await _create_tenant_and_participant(session, tenant_id)
+    interview_session = await _create_scheduled_interview(
+        session,
+        tenant_id=tenant_id,
+        participant=participant,
+        start_at=datetime(2026, 2, 2, 9, 0, tzinfo=UTC),
+        end_at=datetime(2026, 2, 2, 10, 0, tzinfo=UTC),
+    )
+    new_start_at = datetime(2026, 2, 2, 13, 0, tzinfo=UTC)
+    new_end_at = datetime(2026, 2, 2, 14, 0, tzinfo=UTC)
+
+    rescheduled = await reschedule_interview_session(
+        session,
+        context=_context(tenant_id),
+        interview_session_id=interview_session.id,
+        command=RescheduleInterviewSessionCommand(
+            expected_version=1,
+            scheduled_start_at=new_start_at,
+            scheduled_end_at=new_end_at,
+        ),
+    )
+
+    events = list(
+        await session.scalars(
+            select(OutboxEvent).where(
+                OutboxEvent.tenant_id == tenant_id,
+                OutboxEvent.event_type == "interview.calendar_sync_requested",
+                OutboxEvent.aggregate_id == str(rescheduled.id),
+            )
+        )
+    )
+
+    assert len(events) == 1
+
+    event = events[0]
+    assert event.aggregate_type == "interview_session"
+    assert event.deduplication_key == (
+        f"calendar-sync:{rescheduled.id}:{rescheduled.version}:upsert"
+    )
+    assert event.payload == {
+        "interview_session_id": str(rescheduled.id),
+        "operation": "upsert",
+        "interview_version": rescheduled.version,
+    }
+
+    rendered = str(event.payload)
+    for prohibited_value in (
+        str(participant.id),
+        "candidate",
+        "participant",
+        "email",
+        "scheduled_start_at",
+        "scheduled_end_at",
+    ):
+        assert prohibited_value not in rendered
 
 
 @pytest.mark.asyncio
