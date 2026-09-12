@@ -17,6 +17,7 @@ from app.db.transactions import transactional
 from app.domains.candidates.enums import ApplicationStatus
 from app.domains.interviews.enums import InterviewParticipantRole, InterviewSessionStatus
 from app.services.audit import record_audit_event
+from app.services.calendar_sync_events import enqueue_interview_calendar_sync
 from app.services.candidate_errors import ApplicationNotFoundError
 from app.services.interview_scheduling_errors import (
     InterviewApplicationNotReadyError,
@@ -185,6 +186,13 @@ async def schedule_interview(
             # PostgreSQL's exclusion constraint is the authoritative,
             # concurrency-safe double-booking check.
             await session.flush()
+
+            enqueue_interview_calendar_sync(
+                session,
+                context=context,
+                interview_session=interview_session,
+                operation="upsert",
+            )
 
             record_audit_event(
                 session,

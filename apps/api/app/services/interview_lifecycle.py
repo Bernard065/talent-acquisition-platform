@@ -26,6 +26,7 @@ from app.domains.interviews.transitions import (
     validate_interview_reschedule,
 )
 from app.services.audit import record_audit_event
+from app.services.calendar_sync_events import enqueue_interview_calendar_sync
 from app.services.interview_lifecycle_errors import (
     InterviewLifecycleAccessDeniedError,
     InterviewLifecycleValidationError,
@@ -265,6 +266,13 @@ async def cancel_interview_session(
         interview_session.cancellation_reason = command.cancellation_reason
         await session.flush()
 
+        enqueue_interview_calendar_sync(
+            session,
+            context=context,
+            interview_session=interview_session,
+            operation="cancel",
+        )
+
         _append_lifecycle_history(
             session,
             context=context,
@@ -338,6 +346,13 @@ async def reschedule_interview_session(
                 )
 
             await session.flush()
+
+            enqueue_interview_calendar_sync(
+                session,
+                context=context,
+                interview_session=interview_session,
+                operation="upsert",
+            )
 
             _append_lifecycle_history(
                 session,
