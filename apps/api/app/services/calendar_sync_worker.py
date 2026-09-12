@@ -12,7 +12,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.calendar import CalendarConnection, InterviewCalendarSync
-from app.db.models.interview import InterviewSession
+from app.db.models.interview import InterviewParticipant, InterviewSession
 from app.db.models.outbox import OutboxEvent
 from app.db.transactions import transactional
 from app.domains.calendar.enums import (
@@ -216,12 +216,18 @@ async def _prepare_calendar_syncs(
         if interview_session is None:
             raise LookupError("Interview session no longer exists.")
 
+        participant_user_ids = select(InterviewParticipant.user_id).where(
+            InterviewParticipant.tenant_id == event.tenant_id,
+            InterviewParticipant.interview_session_id == interview_session.id,
+        )
+
         connections = list(
             await session.scalars(
                 select(CalendarConnection)
                 .where(
                     CalendarConnection.tenant_id == event.tenant_id,
                     CalendarConnection.status == CalendarConnectionStatus.ACTIVE,
+                    CalendarConnection.owner_user_id.in_(participant_user_ids),
                 )
                 .order_by(CalendarConnection.id)
                 .with_for_update()

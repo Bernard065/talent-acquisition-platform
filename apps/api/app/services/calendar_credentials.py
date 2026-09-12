@@ -49,3 +49,26 @@ class CalendarCredentialResolver(Protocol):
         credential_reference: str,
     ) -> ResolvedCalendarCredentials:
         """Resolve credentials into memory only for one provider operation."""
+
+
+class CalendarCredentialVault(Protocol):
+    """
+    Store provider credentials outside the application database.
+
+    Implementations may use a cloud secret manager, HSM-backed vault, or an
+    encrypted internal secret service. They return only an opaque reference
+    suitable for persistence in `CalendarConnection.credential_reference`.
+    """
+
+    async def store(
+        self,
+        *,
+        provider: str,
+        tenant_id: str,
+        owner_user_id: str,
+        credentials: ResolvedCalendarCredentials,
+    ) -> str:
+        """Persist credentials externally and return an opaque reference."""
+
+    async def delete(self, *, credential_reference: str) -> None:
+        """Delete or revoke the externally stored credential material."""

@@ -7,13 +7,14 @@ from uuid import UUID, uuid4
 import pytest
 from pydantic import SecretStr
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql.ranges import Range
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.application import Application
 from app.db.models.calendar import CalendarConnection, InterviewCalendarSync
 from app.db.models.candidate import Candidate
 from app.db.models.identity import Tenant, User
-from app.db.models.interview import InterviewSession
+from app.db.models.interview import InterviewParticipant, InterviewSession
 from app.db.models.outbox import OutboxEvent
 from app.db.models.requisition import Requisition
 from app.domains.calendar.enums import (
@@ -27,6 +28,7 @@ from app.domains.candidates.enums import (
 )
 from app.domains.interviews.enums import (
     InterviewCancellationReason,
+    InterviewParticipantRole,
     InterviewSessionStatus,
 )
 from app.domains.outbox.enums import OutboxEventStatus
@@ -214,6 +216,16 @@ async def _seed_calendar_work(
     )
     session.add(interview_session)
     await session.flush()
+
+    session.add(
+        InterviewParticipant(
+            tenant_id=tenant_id,
+            interview_session_id=interview_session.id,
+            user_id=owner.id,
+            role=InterviewParticipantRole.INTERVIEWER,
+            scheduled_time_range=Range(start_at, end_at, bounds="[)"),
+        )
+    )
 
     connection = CalendarConnection(
         tenant_id=tenant_id,
