@@ -33,6 +33,15 @@ from app.services.approval_errors import (
     RequisitionApprovalNotFoundError,
     SelfApprovalNotAllowedError,
 )
+from app.services.calendar_connection_errors import (
+    CalendarConnectionAccessDeniedError,
+    CalendarConnectionValidationError,
+)
+from app.services.calendar_oauth import (
+    CalendarOAuthError,
+    CalendarOAuthStateError,
+    CalendarOAuthStateStoreUnavailableError,
+)
 from app.services.candidate_document_errors import (
     CandidateDocumentAccessDeniedError,
     CandidateDocumentNotFoundError,
@@ -735,6 +744,66 @@ async def public_application_abuse_unavailable(
     return response
 
 
+async def calendar_oauth_forbidden(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Return a private authorization failure for calendar OAuth."""
+    return _private_error_response(
+        request,
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Insufficient permission.",
+    )
+
+
+async def invalid_calendar_oauth_request(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Avoid exposing OAuth state or provider failure details."""
+    return _private_error_response(
+        request,
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Calendar authorization could not be completed.",
+    )
+
+
+async def calendar_oauth_unavailable(
+    request: Request,
+    error: Exception,
+) -> JSONResponse:
+    """Return a safe retryable error for OAuth infrastructure failures."""
+    logger.error(
+        "calendar_oauth_unavailable",
+        request_id=request.headers.get("X-Request-ID", "unknown"),
+        error_type=type(error).__name__,
+    )
+    response = _private_error_response(
+        request,
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Calendar authorization service is temporarily unavailable.",
+    )
+    response.headers["Retry-After"] = "5"
+    return response
+
+
+async def calendar_oauth_provider_error(
+    request: Request,
+    error: Exception,
+) -> JSONResponse:
+    """Map provider errors without disclosing provider codes or token data."""
+    if (
+        isinstance(error, CalendarOAuthError)
+        and (
+            error.retryable
+            or error.code == "calendar_oauth_provider_not_configured"
+        )
+    ):
+        return await calendar_oauth_unavailable(request, error)
+
+    return await invalid_calendar_oauth_request(request, error)
+
+
 def register_exception_handlers(application: FastAPI) -> None:
     """Register application-wide exception handlers."""
     application.add_exception_handler(RequisitionNotFoundError, not_found)
@@ -1051,6 +1120,27 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         OnboardingValidationError,
         invalid_onboarding_request,
+    )
+
+    application.add_exception_handler(
+        CalendarConnectionAccessDeniedError,
+        calendar_oauth_forbidden,
+    )
+    application.add_exception_handler(
+        CalendarConnectionValidationError,
+        invalid_calendar_oauth_request,
+    )
+    application.add_exception_handler(
+        CalendarOAuthStateError,
+        invalid_calendar_oauth_request,
+    )
+    application.add_exception_handler(
+        CalendarOAuthError,
+        calendar_oauth_provider_error,
+    )
+    application.add_exception_handler(
+        CalendarOAuthStateStoreUnavailableError,
+        calendar_oauth_unavailable,
     )
 
     application.add_exception_handler(OperationalError, database_unavailable)
