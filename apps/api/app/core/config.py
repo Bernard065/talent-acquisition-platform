@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AnyHttpUrl, Field, PostgresDsn, SecretStr
+from pydantic import AnyHttpUrl, Field, PostgresDsn, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 API_ROOT = Path(__file__).resolve().parents[2]
@@ -157,6 +157,29 @@ class Settings(BaseSettings):
     jwt_jwks_url: AnyHttpUrl
     jwt_algorithm: Literal["RS256"]
     jwt_leeway_seconds: int = Field(ge=0, le=300)
+
+    # External credential vault for calendar OAuth tokens.
+    credential_vault_provider: Literal[
+        "google_secret_manager",
+        "none",
+    ] = "none"
+    gcp_project_id: str | None = Field(
+        default=None,
+        min_length=6,
+        max_length=30,
+    )
+
+    @model_validator(mode="after")
+    def _validate_vault_provider(self) -> "Settings":
+        if (
+            self.credential_vault_provider == "google_secret_manager"
+            and not self.gcp_project_id
+        ):
+            raise ValueError(
+                "gcp_project_id is required when "
+                "credential_vault_provider is 'google_secret_manager'"
+            )
+        return self
 
 
 @lru_cache

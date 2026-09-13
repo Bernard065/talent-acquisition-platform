@@ -81,6 +81,18 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
         else None
     )
 
+    if settings.credential_vault_provider == "google_secret_manager":
+        from app.infrastructure.calendar.google_secret_manager_vault import (
+            GoogleSecretManagerCredentialVault,
+        )
+
+        assert settings.gcp_project_id is not None  # guaranteed by validator
+        vault = GoogleSecretManagerCredentialVault(
+            project_id=settings.gcp_project_id,
+        )
+        application.state.calendar_credential_vault = vault
+        application.state.calendar_credential_resolver = vault
+
     logger.info("application_started", environment=settings.app_env)
 
     yield
