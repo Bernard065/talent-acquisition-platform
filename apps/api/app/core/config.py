@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     database_url: PostgresDsn | None = None
     redis_url: str
     allowed_origins: list[str] = Field(default_factory=list)
+    # OAuth callbacks are server-controlled. Never accept redirect URIs from API requests.
+    calendar_google_oauth_redirect_uri: AnyHttpUrl | None = None
+    calendar_microsoft_oauth_redirect_uri: AnyHttpUrl | None = None
 
     # Object storage. The adapter validates these when it is constructed.
     s3_endpoint_url: AnyHttpUrl | None = None
