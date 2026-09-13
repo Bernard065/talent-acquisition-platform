@@ -219,10 +219,10 @@ async def test_authorizes_and_upserts_connection_with_privacy_safe_audit(
 
     first = await complete_calendar_authorization(
         session,
-        context=context,
         provider=CalendarProvider.GOOGLE,
         state_token=state_token,
         authorization_code=SecretStr("first-provider-code"),
+        request_id="calendar-oauth-test-request",
         oauth_state_store=state_store,
         oauth_providers={CalendarProvider.GOOGLE: provider},
         credential_vault=vault,
@@ -238,10 +238,10 @@ async def test_authorizes_and_upserts_connection_with_privacy_safe_audit(
     )
     second = await complete_calendar_authorization(
         session,
-        context=context,
         provider=CalendarProvider.GOOGLE,
         state_token=second_state_token,
         authorization_code=SecretStr("second-provider-code"),
+        request_id="calendar-oauth-test-request",
         oauth_state_store=state_store,
         oauth_providers={CalendarProvider.GOOGLE: provider},
         credential_vault=vault,
@@ -307,10 +307,10 @@ async def test_state_is_consumed_once(
 
     await complete_calendar_authorization(
         session,
-        context=context,
         provider=CalendarProvider.GOOGLE,
         state_token=state_token,
         authorization_code=SecretStr("provider-code"),
+        request_id="calendar-oauth-test-request",
         oauth_state_store=state_store,
         oauth_providers={CalendarProvider.GOOGLE: provider},
         credential_vault=vault,
@@ -320,10 +320,10 @@ async def test_state_is_consumed_once(
     with pytest.raises(CalendarOAuthStateError):
         await complete_calendar_authorization(
             session,
-            context=context,
             provider=CalendarProvider.GOOGLE,
             state_token=state_token,
             authorization_code=SecretStr("replayed-provider-code"),
+            request_id="calendar-oauth-test-request",
             oauth_state_store=state_store,
             oauth_providers={CalendarProvider.GOOGLE: provider},
             credential_vault=vault,
@@ -335,31 +335,17 @@ async def test_state_is_consumed_once(
 
 
 @pytest.mark.asyncio
-async def test_rejects_expired_tenant_mismatched_and_user_mismatched_state(
+async def test_rejects_expired_and_provider_mismatched_state(
     session: AsyncSession,
 ) -> None:
-    """State is bound to the original provider, tenant, and user."""
+    """State expiry and provider binding are enforced before code exchange."""
     tenant_id = uuid4()
-    other_tenant_id = uuid4()
     first_subject = "first-user"
-    second_subject = "second-user"
-    other_subject = "other-tenant-user"
 
     await _seed_user(
         session,
         tenant_id=tenant_id,
         subject=first_subject,
-    )
-    await _seed_user(
-        session,
-        tenant_id=tenant_id,
-        subject=second_subject,
-        create_tenant=False,
-    )
-    await _seed_user(
-        session,
-        tenant_id=other_tenant_id,
-        subject=other_subject,
     )
 
     state_store = _FakeOAuthStateStore()
@@ -377,17 +363,17 @@ async def test_rejects_expired_tenant_mismatched_and_user_mismatched_state(
     with pytest.raises(CalendarOAuthStateError, match="expired"):
         await complete_calendar_authorization(
             session,
-            context=first_context,
             provider=CalendarProvider.GOOGLE,
             state_token=state_token,
             authorization_code=SecretStr("provider-code"),
+            request_id="calendar-oauth-test-request",
             oauth_state_store=state_store,
             oauth_providers={CalendarProvider.GOOGLE: provider},
             credential_vault=vault,
             now=_NOW + timedelta(minutes=11),
         )
 
-    user_state_token = await _start_authorization(
+    provider_state_token = await _start_authorization(
         session,
         context=first_context,
         state_store=state_store,
@@ -396,31 +382,14 @@ async def test_rejects_expired_tenant_mismatched_and_user_mismatched_state(
     with pytest.raises(CalendarOAuthStateError, match="invalid"):
         await complete_calendar_authorization(
             session,
-            context=_context(tenant_id, subject=second_subject),
-            provider=CalendarProvider.GOOGLE,
-            state_token=user_state_token,
+            provider=CalendarProvider.MICROSOFT,
+            state_token=provider_state_token,
             authorization_code=SecretStr("provider-code"),
+            request_id="calendar-oauth-test-request",
             oauth_state_store=state_store,
-            oauth_providers={CalendarProvider.GOOGLE: provider},
-            credential_vault=vault,
-            now=_NOW,
-        )
-
-    tenant_state_token = await _start_authorization(
-        session,
-        context=first_context,
-        state_store=state_store,
-        provider=provider,
-    )
-    with pytest.raises(CalendarOAuthStateError, match="invalid"):
-        await complete_calendar_authorization(
-            session,
-            context=_context(other_tenant_id, subject=other_subject),
-            provider=CalendarProvider.GOOGLE,
-            state_token=tenant_state_token,
-            authorization_code=SecretStr("provider-code"),
-            oauth_state_store=state_store,
-            oauth_providers={CalendarProvider.GOOGLE: provider},
+            oauth_providers={
+                CalendarProvider.MICROSOFT: provider,
+            },
             credential_vault=vault,
             now=_NOW,
         )
@@ -462,10 +431,10 @@ async def test_deletes_new_vault_secret_when_database_persistence_fails(
     with pytest.raises(RuntimeError, match="simulated"):
         await complete_calendar_authorization(
             session,
-            context=context,
             provider=CalendarProvider.GOOGLE,
             state_token=state_token,
             authorization_code=SecretStr("provider-code"),
+            request_id="calendar-oauth-test-request",
             oauth_state_store=state_store,
             oauth_providers={CalendarProvider.GOOGLE: provider},
             credential_vault=vault,

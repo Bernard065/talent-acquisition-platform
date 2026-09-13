@@ -125,6 +125,27 @@ async def _current_tenant_user(
     return user
 
 
+async def _state_owner(
+    session: AsyncSession,
+    *,
+    state: CalendarOAuthState,
+    lock: bool = False,
+) -> User:
+    """Load the tenant user bound to a consumed OAuth state record."""
+    statement = select(User).where(
+        User.tenant_id == state.tenant_id,
+        User.id == state.owner_user_id,
+    )
+    if lock:
+        statement = statement.with_for_update()
+
+    owner = await session.scalar(statement)
+    if owner is None:
+        raise CalendarOAuthStateError("Calendar OAuth state is invalid.")
+
+    return owner
+
+
 async def begin_calendar_authorization(
     session: AsyncSession,
     *,
@@ -185,24 +206,21 @@ async def begin_calendar_authorization(
 async def complete_calendar_authorization(
     session: AsyncSession,
     *,
-    context: TenantContext,
     provider: CalendarProvider,
     state_token: str,
     authorization_code: SecretStr,
+    request_id: str,
     oauth_state_store: CalendarOAuthStateStore,
     oauth_providers: Mapping[CalendarProvider, CalendarOAuthProvider],
     credential_vault: CalendarCredentialVault,
     now: datetime | None = None,
 ) -> CalendarConnection:
     """
-    Consume one OAuth callback and activate the caller's calendar connection.
+    Consume one OAuth callback and activate its state-bound calendar connection.
 
-    OAuth credentials are exchanged and stored externally before the database
-    transaction. If database persistence fails, the new external secret is
-    deleted best-effort to avoid orphaned credentials.
+    The one-time state token acts as a short-lived capability created by an
+    authenticated caller. A provider callback must not require a bearer token.
     """
-    _require_connection_access(context)
-
     oauth_provider = oauth_providers.get(provider)
     if oauth_provider is None:
         raise CalendarOAuthError(
@@ -211,20 +229,23 @@ async def complete_calendar_authorization(
         )
 
     callback_time = now or _now()
+    if (
+        callback_time.tzinfo is None
+        or callback_time.utcoffset() is None
+    ):
+        raise CalendarConnectionValidationError(
+            "Calendar authorization time must include a UTC offset."
+        )
+
     state = await oauth_state_store.consume(state_token=state_token)
 
-    if state.expires_at <= callback_time.astimezone(UTC):
-        raise CalendarOAuthStateError("Calendar OAuth state has expired.")
-
     if (
-        state.provider is not provider
-        or state.tenant_id != context.tenant_id
+        state.expires_at <= callback_time.astimezone(UTC)
+        or state.provider != provider
     ):
         raise CalendarOAuthStateError("Calendar OAuth state is invalid.")
 
-    owner = await _current_tenant_user(session, context=context)
-    if state.owner_user_id != owner.id:
-        raise CalendarOAuthStateError("Calendar OAuth state is invalid.")
+    owner = await _state_owner(session, state=state)
 
     credentials = await oauth_provider.exchange_code(
         exchange=CalendarOAuthCodeExchange(
@@ -236,23 +257,23 @@ async def complete_calendar_authorization(
 
     new_credential_reference = await credential_vault.store(
         provider=provider.value,
-        tenant_id=str(context.tenant_id),
+        tenant_id=str(state.tenant_id),
         owner_user_id=str(owner.id),
         credentials=credentials,
     )
 
     try:
         async with transactional(session):
-            locked_owner = await _current_tenant_user(
+            locked_owner = await _state_owner(
                 session,
-                context=context,
+                state=state,
                 lock=True,
             )
 
             connection = await session.scalar(
                 select(CalendarConnection)
                 .where(
-                    CalendarConnection.tenant_id == context.tenant_id,
+                    CalendarConnection.tenant_id == state.tenant_id,
                     CalendarConnection.owner_user_id == locked_owner.id,
                     CalendarConnection.provider == provider,
                 )
@@ -261,7 +282,7 @@ async def complete_calendar_authorization(
 
             if connection is None:
                 connection = CalendarConnection(
-                    tenant_id=context.tenant_id,
+                    tenant_id=state.tenant_id,
                     owner_user_id=locked_owner.id,
                     provider=provider,
                     status=CalendarConnectionStatus.ACTIVE,
@@ -276,7 +297,12 @@ async def complete_calendar_authorization(
 
             record_audit_event(
                 session,
-                context=context,
+                context=TenantContext(
+                    tenant_id=state.tenant_id,
+                    subject=locked_owner.external_subject,
+                    roles=frozenset(),
+                    request_id=request_id,
+                ),
                 action="calendar_connection.authorized",
                 entity_type="calendar_connection",
                 entity_id=str(connection.id),
