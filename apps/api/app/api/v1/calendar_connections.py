@@ -69,7 +69,10 @@ def _redirect_uri_for_provider(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Calendar authorization service is unavailable.",
-            headers={"Retry-After": "5"},
+            headers={
+                "Retry-After": "5",
+                "Cache-Control": "private, no-store",
+            },
         )
 
     return str(redirect_uri)

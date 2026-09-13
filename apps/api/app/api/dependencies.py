@@ -90,7 +90,10 @@ async def get_db_session(request: Request) -> AsyncIterator[AsyncSession]:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Database service is unavailable.",
-            headers={"Retry-After": "5"},
+            headers={
+                "Retry-After": "5",
+                "Cache-Control": "private, no-store",
+            },
         )
 
     async with database.session_factory() as session:
@@ -109,7 +112,10 @@ async def get_object_storage(request: Request) -> ObjectStorage:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Document storage service is unavailable.",
-            headers={"Retry-After": "5"},
+            headers={
+                "Retry-After": "5",
+                "Cache-Control": "private, no-store",
+            },
         )
 
     return cast(ObjectStorage, storage)
@@ -127,7 +133,10 @@ async def get_public_application_abuse_guard(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Application submission service is unavailable.",
-            headers={"Retry-After": "5"},
+            headers={
+                "Retry-After": "5",
+                "Cache-Control": "private, no-store",
+            },
         )
 
     return cast(PublicApplicationAbuseGuard, guard)
@@ -167,7 +176,10 @@ async def get_calendar_oauth_state_store(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Calendar authorization service is unavailable.",
-            headers={"Retry-After": "5"},
+            headers={
+                "Retry-After": "5",
+                "Cache-Control": "private, no-store",
+            },
         )
 
     return cast(CalendarOAuthStateStore, state_store)
@@ -182,7 +194,10 @@ async def get_calendar_oauth_providers(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Calendar authorization service is unavailable.",
-            headers={"Retry-After": "5"},
+            headers={
+                "Retry-After": "5",
+                "Cache-Control": "private, no-store",
+            },
         )
 
     return cast(Mapping[CalendarProvider, CalendarOAuthProvider], providers)
@@ -201,7 +216,10 @@ async def get_calendar_credential_vault(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Calendar authorization service is unavailable.",
-            headers={"Retry-After": "5"},
+            headers={
+                "Retry-After": "5",
+                "Cache-Control": "private, no-store",
+            },
         )
 
     return cast(CalendarCredentialVault, credential_vault)
