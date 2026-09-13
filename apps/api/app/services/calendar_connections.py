@@ -239,10 +239,10 @@ async def complete_calendar_authorization(
 
     state = await oauth_state_store.consume(state_token=state_token)
 
-    if (
-        state.expires_at <= callback_time.astimezone(UTC)
-        or state.provider != provider
-    ):
+    if state.expires_at <= callback_time.astimezone(UTC):
+        raise CalendarOAuthStateError("Calendar OAuth state has expired.")
+
+    if state.provider != provider:
         raise CalendarOAuthStateError("Calendar OAuth state is invalid.")
 
     credentials = await oauth_provider.exchange_code(
