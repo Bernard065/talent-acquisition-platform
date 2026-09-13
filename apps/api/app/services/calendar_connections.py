@@ -245,8 +245,6 @@ async def complete_calendar_authorization(
     ):
         raise CalendarOAuthStateError("Calendar OAuth state is invalid.")
 
-    owner = await _state_owner(session, state=state)
-
     credentials = await oauth_provider.exchange_code(
         exchange=CalendarOAuthCodeExchange(
             authorization_code=authorization_code,
@@ -258,7 +256,7 @@ async def complete_calendar_authorization(
     new_credential_reference = await credential_vault.store(
         provider=provider.value,
         tenant_id=str(state.tenant_id),
-        owner_user_id=str(owner.id),
+        owner_user_id=str(state.owner_user_id),
         credentials=credentials,
     )
 
