@@ -1,10 +1,11 @@
-"""Tests for the Infisical calendar credential vault."""
+"""Tests for the hardened Infisical calendar credential vault."""
 
 from __future__ import annotations
 
 import json
+import threading
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from infisical_sdk import InfisicalError  # type: ignore[import-untyped]
@@ -13,113 +14,117 @@ from pydantic import SecretStr
 from app.infrastructure.calendar.infisical_vault import InfisicalCredentialVault
 from app.services.calendar_credentials import (
     CalendarCredentialResolutionError,
+    CalendarCredentialVaultError,
     ResolvedCalendarCredentials,
 )
-
-# ---------------------------------------------------------------------------
-# Fake Infisical secret type
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class _FakeBaseSecret:
-    """Minimal stand-in for ``infisical_sdk.api_types.BaseSecret``."""
-
-    # These names mirror the third-party Infisical SDK response fields.
-    # pylint: disable=invalid-name
-
-    secretKey: str
-    secretValue: str
-    id: str = "fake-id"
-    _id: str = "fake-id"
-    workspace: str = "fake-workspace"
-    environment: str = "dev"
-    version: int = 1
-    type: str = "shared"
-    secretComment: str = ""
-    createdAt: str = "2026-01-01T00:00:00Z"
-    updatedAt: str = "2026-01-01T00:00:00Z"
-
-
-# ---------------------------------------------------------------------------
-# Fake Infisical secrets resource
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class _FakeSecrets:
-    """Records calls and returns canned responses for unit testing."""
-
-    stored: dict[str, _FakeBaseSecret] = field(default_factory=dict)
-    created: list[dict[str, Any]] = field(default_factory=list)
-    deleted: list[dict[str, Any]] = field(default_factory=list)
-
-    # If set, get_secret_by_name raises this instead of returning.
-    get_error: Exception | None = None
-
-    # If set, delete_secret_by_name raises this instead of succeeding.
-    delete_error: Exception | None = None
-
-    def create_secret_by_name(self, **kwargs: Any) -> _FakeBaseSecret:
-        """Record and store a newly created fake secret."""
-        self.created.append(kwargs)
-        secret = _FakeBaseSecret(
-            secretKey=kwargs["secret_name"],
-            secretValue=kwargs["secret_value"],
-        )
-        self.stored[kwargs["secret_name"]] = secret
-        return secret
-
-    def get_secret_by_name(self, **kwargs: Any) -> _FakeBaseSecret:
-        """Return a stored fake secret or raise the configured error."""
-        if self.get_error is not None:
-            raise self.get_error
-
-        name = kwargs["secret_name"]
-        if name not in self.stored:
-            raise InfisicalError(f"Secret not found: {name}")
-        return self.stored[name]
-
-    def delete_secret_by_name(self, **kwargs: Any) -> _FakeBaseSecret:
-        """Record deletion and remove the fake secret from storage."""
-        if self.delete_error is not None:
-            raise self.delete_error
-        self.deleted.append(kwargs)
-        name = kwargs["secret_name"]
-        return self.stored.pop(name, _FakeBaseSecret(secretKey=name, secretValue=""))
-
-
-# ---------------------------------------------------------------------------
-# Fake Infisical client
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class _FakeInfisicalClient:
-    """Minimal stand-in for ``InfisicalSDKClient``."""
-
-    secrets: _FakeSecrets = field(default_factory=_FakeSecrets)
-
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
 
 PROJECT_ID = "test-project-id"
 ENVIRONMENT = "dev"
 
 
+class _InfisicalApiError(InfisicalError):
+    """Infisical test error with an explicit non-sensitive HTTP status."""
+
+    def __init__(self, message: str, *, status_code: int) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+@dataclass
+class _FakeBaseSecret:
+    """Minimal stand-in for an Infisical secret response."""
+
+    # These names mirror the third-party Infisical SDK response fields.
+    # pylint: disable=invalid-name
+    secretKey: str
+    secretValue: str
+
+
+@dataclass
+class _FakeSecrets:
+    """Records calls and permits deterministic provider failures."""
+
+    stored: dict[str, _FakeBaseSecret] = field(default_factory=dict)
+    created: list[dict[str, Any]] = field(default_factory=list)
+    deleted: list[dict[str, Any]] = field(default_factory=list)
+    operation_thread_ids: list[int] = field(default_factory=list)
+
+    create_error: Exception | None = None
+    get_error: Exception | None = None
+    delete_error: Exception | None = None
+
+    def create_secret_by_name(self, **kwargs: object) -> _FakeBaseSecret:
+        """Record a secret creation request."""
+        self.operation_thread_ids.append(threading.get_ident())
+
+        if self.create_error is not None:
+            raise self.create_error
+
+        payload = dict(kwargs)
+        self.created.append(cast(dict[str, Any], payload))
+
+        secret_name = cast(str, kwargs["secret_name"])
+        secret_value = cast(str, kwargs["secret_value"])
+        secret = _FakeBaseSecret(
+            secretKey=secret_name,
+            secretValue=secret_value,
+        )
+        self.stored[secret_name] = secret
+        return secret
+
+    def get_secret_by_name(self, **kwargs: object) -> _FakeBaseSecret:
+        """Return a stored secret or raise the configured error."""
+        self.operation_thread_ids.append(threading.get_ident())
+
+        if self.get_error is not None:
+            raise self.get_error
+
+        secret_name = cast(str, kwargs["secret_name"])
+        secret = self.stored.get(secret_name)
+        if secret is None:
+            raise _InfisicalApiError(
+                "missing",
+                status_code=404,
+            )
+
+        return secret
+
+    def delete_secret_by_name(self, **kwargs: object) -> _FakeBaseSecret:
+        """Delete a stored secret or raise the configured error."""
+        self.operation_thread_ids.append(threading.get_ident())
+
+        if self.delete_error is not None:
+            raise self.delete_error
+
+        payload = dict(kwargs)
+        self.deleted.append(cast(dict[str, Any], payload))
+
+        secret_name = cast(str, kwargs["secret_name"])
+        secret = self.stored.pop(
+            secret_name,
+            _FakeBaseSecret(secretKey=secret_name, secretValue=""),
+        )
+        return secret
+
+
+@dataclass
+class _FakeInfisicalClient:
+    """Minimal authenticated Infisical client substitute."""
+
+    secrets: _FakeSecrets = field(default_factory=_FakeSecrets)
+
+
 @pytest.fixture(name="fake_infisical_client")
-def _fake_infisical_client_fixture() -> _FakeInfisicalClient:
-    """Return a fake Infisical client for vault tests."""
+def fake_infisical_client_fixture() -> _FakeInfisicalClient:
+    """Provide an isolated fake client."""
     return _FakeInfisicalClient()
 
 
 @pytest.fixture(name="vault")
-def _vault_fixture(
+def vault_fixture(
     fake_infisical_client: _FakeInfisicalClient,
 ) -> InfisicalCredentialVault:
-    """Return a vault configured with the fake Infisical client."""
+    """Provide a vault using the fake client."""
     return InfisicalCredentialVault(
         project_id=PROJECT_ID,
         environment_slug=ENVIRONMENT,
@@ -128,180 +133,256 @@ def _vault_fixture(
 
 
 def _sample_credentials() -> ResolvedCalendarCredentials:
-    """Return deterministic credentials for vault tests."""
+    """Return representative OAuth credentials."""
     return ResolvedCalendarCredentials(
         values={
-            "access_token": SecretStr("at-test-123"),
-            "refresh_token": SecretStr("rt-test-456"),
+            "access_token": SecretStr("test-access-token"),
+            "refresh_token": SecretStr("test-refresh-token"),
         },
     )
 
 
-# ---------------------------------------------------------------------------
-# store() tests
-# ---------------------------------------------------------------------------
+async def test_store_generates_opaque_unique_references(
+    vault: InfisicalCredentialVault,
+) -> None:
+    """Secret references must not disclose provider, tenant, or owner IDs."""
+    first = await vault.store(
+        provider="google",
+        tenant_id="tenant-private-value",
+        owner_user_id="owner-private-value",
+        credentials=_sample_credentials(),
+    )
+    second = await vault.store(
+        provider="google",
+        tenant_id="tenant-private-value",
+        owner_user_id="owner-private-value",
+        credentials=_sample_credentials(),
+    )
+
+    assert first != second
+    assert first.startswith("tap-calendar-")
+    assert "google" not in first
+    assert "tenant-private-value" not in first
+    assert "owner-private-value" not in first
 
 
-async def test_store_creates_secret(
+async def test_store_serializes_credentials_without_extra_metadata(
     vault: InfisicalCredentialVault,
     fake_infisical_client: _FakeInfisicalClient,
 ) -> None:
-    """Store credentials by creating one Infisical secret."""
-    reference = await vault.store(
-        provider="google",
-        tenant_id="tenant-abc",
-        owner_user_id="user-xyz",
-        credentials=_sample_credentials(),
-    )
-
-    assert len(fake_infisical_client.secrets.created) == 1
-    assert reference.startswith("tap-calendar-")
-    assert len(reference) == len("tap-calendar-") + 32
-
-
-async def test_store_generates_unique_references(
-    vault: InfisicalCredentialVault,
-) -> None:
-    """Generate a unique opaque reference for each credential set."""
-    ref1 = await vault.store(
-        provider="google",
-        tenant_id="t1",
-        owner_user_id="u1",
-        credentials=_sample_credentials(),
-    )
-    ref2 = await vault.store(
-        provider="google",
-        tenant_id="t1",
-        owner_user_id="u1",
-        credentials=_sample_credentials(),
-    )
-
-    assert ref1 != ref2
-
-
-async def test_store_serializes_credentials_as_json(
-    vault: InfisicalCredentialVault,
-    fake_infisical_client: _FakeInfisicalClient,
-) -> None:
-    """Serialize credential values as a JSON secret payload."""
+    """Only credential values belong in the secret payload."""
     await vault.store(
-        provider="microsoft",
-        tenant_id="t1",
-        owner_user_id="u1",
+        provider="google",
+        tenant_id="tenant-id",
+        owner_user_id="owner-id",
         credentials=_sample_credentials(),
     )
 
-    create_call = fake_infisical_client.secrets.created[0]
-    payload = json.loads(create_call["secret_value"])
+    created = fake_infisical_client.secrets.created[0]
 
-    assert payload == {
-        "access_token": "at-test-123",
-        "refresh_token": "rt-test-456",
+    assert created["project_id"] == PROJECT_ID
+    assert created["environment_slug"] == ENVIRONMENT
+    assert created["secret_path"] == "/calendar-credentials/"  # noqa: S105
+    assert json.loads(cast(str, created["secret_value"])) == {
+        "access_token": "test-access-token",
+        "refresh_token": "test-refresh-token",
     }
 
 
-async def test_secret_name_does_not_include_request_identifiers(
+async def test_store_rejects_invalid_credential_field_name(
     vault: InfisicalCredentialVault,
-    fake_infisical_client: _FakeInfisicalClient,
 ) -> None:
-    """Keep provider, tenant, and owner identifiers out of secret names."""
-    await vault.store(
-        provider="google",
-        tenant_id="tid-111",
-        owner_user_id="uid-222",
-        credentials=_sample_credentials(),
+    """Do not write unrecognised or unsafe credential field names."""
+    credentials = ResolvedCalendarCredentials(
+        values={"refresh-token": SecretStr("secret")}
     )
 
-    secret_name = fake_infisical_client.secrets.created[0]["secret_name"]
-    assert secret_name.startswith("tap-calendar-")
-    assert "google" not in secret_name
-    assert "tid-111" not in secret_name
-    assert "uid-222" not in secret_name
+    with pytest.raises(CalendarCredentialVaultError) as exc_info:
+        await vault.store(
+            provider="google",
+            tenant_id="tenant-id",
+            owner_user_id="owner-id",
+            credentials=credentials,
+        )
+
+    assert exc_info.value.code == "calendar_credential_field_invalid"
+    assert exc_info.value.retryable is False
 
 
-# ---------------------------------------------------------------------------
-# delete() tests
-# ---------------------------------------------------------------------------
-
-
-async def test_delete_destroys_secret(
+async def test_store_classifies_provider_outage_as_retryable(
     vault: InfisicalCredentialVault,
     fake_infisical_client: _FakeInfisicalClient,
 ) -> None:
-    """Delete the secret associated with a credential reference."""
-    reference = await vault.store(
-        provider="google",
-        tenant_id="t1",
-        owner_user_id="u1",
-        credentials=_sample_credentials(),
+    """Temporary Infisical failures must be safe to retry."""
+    fake_infisical_client.secrets.create_error = _InfisicalApiError(
+        "unavailable",
+        status_code=503,
     )
 
-    await vault.delete(credential_reference=reference)
+    with pytest.raises(CalendarCredentialVaultError) as exc_info:
+        await vault.store(
+            provider="google",
+            tenant_id="tenant-id",
+            owner_user_id="owner-id",
+            credentials=_sample_credentials(),
+        )
 
-    assert len(fake_infisical_client.secrets.deleted) == 1
-    assert fake_infisical_client.secrets.deleted[0]["secret_name"] == reference
-
-
-async def test_delete_ignores_not_found(
-    vault: InfisicalCredentialVault,
-    fake_infisical_client: _FakeInfisicalClient,
-) -> None:
-    """Treat a missing secret as an idempotent delete."""
-    not_found_error = InfisicalError("Secret not found")
-    not_found_error.status_code = 404
-    fake_infisical_client.secrets.delete_error = not_found_error
-
-    # Should not raise.
-    await vault.delete(credential_reference="tap-calendar-" + "0" * 32)
+    assert exc_info.value.code == "calendar_credential_store_failed"
+    assert exc_info.value.retryable is True
 
 
-# ---------------------------------------------------------------------------
-# resolve() tests
-# ---------------------------------------------------------------------------
-
-
-async def test_resolve_returns_credentials(
+async def test_resolve_returns_in_memory_credentials(
     vault: InfisicalCredentialVault,
 ) -> None:
-    """Resolve stored JSON into secret credential values."""
+    """Resolve persisted credentials without changing their values."""
     reference = await vault.store(
         provider="google",
-        tenant_id="t1",
-        owner_user_id="u1",
+        tenant_id="tenant-id",
+        owner_user_id="owner-id",
         credentials=_sample_credentials(),
     )
 
     resolved = await vault.resolve(credential_reference=reference)
 
-    assert resolved.required("access_token").get_secret_value() == "at-test-123"
-    assert resolved.required("refresh_token").get_secret_value() == "rt-test-456"
+    assert resolved.required("access_token").get_secret_value() == (
+        "test-access-token"
+    )
+    assert resolved.required("refresh_token").get_secret_value() == (
+        "test-refresh-token"
+    )
 
 
-async def test_resolve_not_found_raises_non_retryable(
+async def test_resolve_rejects_invalid_reference(
+    vault: InfisicalCredentialVault,
+) -> None:
+    """Workers may resolve only application-owned credential references."""
+    with pytest.raises(CalendarCredentialResolutionError) as exc_info:
+        await vault.resolve(
+            credential_reference="other-application-secret"
+        )
+
+    assert exc_info.value.code == "calendar_credential_reference_invalid"
+    assert exc_info.value.retryable is False
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "not-json",
+        "[]",
+        '{"refresh-token":"value"}',
+        '{"refresh_token":123}',
+    ],
+)
+async def test_resolve_rejects_malformed_secret_payloads(
+    vault: InfisicalCredentialVault,
+    fake_infisical_client: _FakeInfisicalClient,
+    payload: str,
+) -> None:
+    """Malformed vault content must never reach calendar providers."""
+    reference = "tap-calendar-" + "a" * 32
+    fake_infisical_client.secrets.stored[reference] = _FakeBaseSecret(
+        secretKey=reference,
+        secretValue=payload,
+    )
+
+    with pytest.raises(CalendarCredentialResolutionError) as exc_info:
+        await vault.resolve(credential_reference=reference)
+
+    assert exc_info.value.code == "calendar_credential_payload_invalid"
+    assert exc_info.value.retryable is False
+
+
+async def test_resolve_classifies_not_found_as_non_retryable(
     vault: InfisicalCredentialVault,
     fake_infisical_client: _FakeInfisicalClient,
 ) -> None:
-    """Classify a missing Infisical secret as non-retryable."""
-    not_found_error = InfisicalError("Secret not found")
-    not_found_error.status_code = 404
-    fake_infisical_client.secrets.get_error = not_found_error
+    """A deleted credential must not cause endless worker retries."""
+    fake_infisical_client.secrets.get_error = _InfisicalApiError(
+        "missing",
+        status_code=404,
+    )
 
     with pytest.raises(CalendarCredentialResolutionError) as exc_info:
-        await vault.resolve(credential_reference="tap-calendar-" + "0" * 32)
+        await vault.resolve(
+            credential_reference="tap-calendar-" + "b" * 32
+        )
 
     assert exc_info.value.code == "calendar_credential_not_found"
     assert exc_info.value.retryable is False
 
 
-async def test_resolve_transient_error_raises_retryable(
+async def test_resolve_classifies_provider_outage_as_retryable(
     vault: InfisicalCredentialVault,
     fake_infisical_client: _FakeInfisicalClient,
 ) -> None:
-    """Classify a transient Infisical failure as retryable."""
-    fake_infisical_client.secrets.get_error = InfisicalError("service unavailable")
+    """Temporary provider failures must permit the outbox worker to retry."""
+    fake_infisical_client.secrets.get_error = _InfisicalApiError(
+        "unavailable",
+        status_code=503,
+    )
 
     with pytest.raises(CalendarCredentialResolutionError) as exc_info:
-        await vault.resolve(credential_reference="tap-calendar-" + "0" * 32)
+        await vault.resolve(
+            credential_reference="tap-calendar-" + "c" * 32
+        )
 
     assert exc_info.value.code == "calendar_credential_resolution_failed"
     assert exc_info.value.retryable is True
+
+
+async def test_delete_is_idempotent_only_for_not_found(
+    vault: InfisicalCredentialVault,
+    fake_infisical_client: _FakeInfisicalClient,
+) -> None:
+    """A confirmed missing secret is safe to treat as already deleted."""
+    fake_infisical_client.secrets.delete_error = _InfisicalApiError(
+        "missing",
+        status_code=404,
+    )
+
+    await vault.delete(
+        credential_reference="tap-calendar-" + "d" * 32
+    )
+
+
+async def test_delete_propagates_provider_outage(
+    vault: InfisicalCredentialVault,
+    fake_infisical_client: _FakeInfisicalClient,
+) -> None:
+    """Do not silently lose a failed cleanup operation."""
+    fake_infisical_client.secrets.delete_error = _InfisicalApiError(
+        "unavailable",
+        status_code=503,
+    )
+
+    with pytest.raises(CalendarCredentialVaultError) as exc_info:
+        await vault.delete(
+            credential_reference="tap-calendar-" + "e" * 32
+        )
+
+    assert exc_info.value.code == "calendar_credential_delete_failed"
+    assert exc_info.value.retryable is True
+
+
+async def test_sdk_operations_run_outside_the_event_loop(
+    vault: InfisicalCredentialVault,
+    fake_infisical_client: _FakeInfisicalClient,
+) -> None:
+    """The synchronous SDK must not block the async application event loop."""
+    event_loop_thread = threading.get_ident()
+
+    reference = await vault.store(
+        provider="google",
+        tenant_id="tenant-id",
+        owner_user_id="owner-id",
+        credentials=_sample_credentials(),
+    )
+    await vault.resolve(credential_reference=reference)
+    await vault.delete(credential_reference=reference)
+
+    assert fake_infisical_client.secrets.operation_thread_ids
+    assert all(
+        thread_id != event_loop_thread
+        for thread_id in fake_infisical_client.secrets.operation_thread_ids
+    )
