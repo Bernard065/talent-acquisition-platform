@@ -160,25 +160,31 @@ class Settings(BaseSettings):
 
     # External credential vault for calendar OAuth tokens.
     credential_vault_provider: Literal[
-        "google_secret_manager",
+        "infisical",
         "none",
     ] = "none"
-    gcp_project_id: str | None = Field(
-        default=None,
-        min_length=6,
-        max_length=30,
-    )
+    infisical_client_id: str | None = None
+    infisical_client_secret: SecretStr | None = None
+    infisical_project_id: str | None = None
+    infisical_environment: str = "dev"
 
     @model_validator(mode="after")
     def _validate_vault_provider(self) -> "Settings":
-        if (
-            self.credential_vault_provider == "google_secret_manager"
-            and not self.gcp_project_id
-        ):
-            raise ValueError(
-                "gcp_project_id is required when "
-                "credential_vault_provider is 'google_secret_manager'"
-            )
+        if self.credential_vault_provider == "infisical":
+            missing = [
+                name
+                for name in (
+                    "infisical_client_id",
+                    "infisical_client_secret",
+                    "infisical_project_id",
+                )
+                if getattr(self, name) is None
+            ]
+            if missing:
+                raise ValueError(
+                    f"{', '.join(f.upper() for f in missing)} required when "
+                    "CREDENTIAL_VAULT_PROVIDER=infisical."
+                )
         return self
 
 
