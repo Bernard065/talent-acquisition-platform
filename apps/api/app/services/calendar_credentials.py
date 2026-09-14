@@ -16,6 +16,15 @@ class CalendarCredentialResolutionError(RuntimeError):
         self.retryable = retryable
 
 
+class CalendarCredentialVaultError(RuntimeError):
+    """A classified failure while storing or deleting calendar credentials."""
+
+    def __init__(self, code: str, *, retryable: bool) -> None:
+        super().__init__(code)
+        self.code = code
+        self.retryable = retryable
+
+
 @dataclass(frozen=True, slots=True)
 class ResolvedCalendarCredentials:
     """
