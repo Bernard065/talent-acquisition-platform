@@ -155,7 +155,8 @@ async def test_store_creates_secret(
     )
 
     assert len(fake_infisical_client.secrets.created) == 1
-    assert reference.startswith("calendar-creds-google-tenant-abc-user-xyz-")
+    assert reference.startswith("tap-calendar-")
+    assert len(reference) == len("tap-calendar-") + 32
 
 
 async def test_store_generates_unique_references(
@@ -199,11 +200,11 @@ async def test_store_serializes_credentials_as_json(
     }
 
 
-async def test_secret_name_uses_opaque_ids(
+async def test_secret_name_does_not_include_request_identifiers(
     vault: InfisicalCredentialVault,
     fake_infisical_client: _FakeInfisicalClient,
 ) -> None:
-    """Include provider, tenant, and owner identifiers in secret names."""
+    """Keep provider, tenant, and owner identifiers out of secret names."""
     await vault.store(
         provider="google",
         tenant_id="tid-111",
@@ -212,9 +213,10 @@ async def test_secret_name_uses_opaque_ids(
     )
 
     secret_name = fake_infisical_client.secrets.created[0]["secret_name"]
-    assert "google" in secret_name
-    assert "tid-111" in secret_name
-    assert "uid-222" in secret_name
+    assert secret_name.startswith("tap-calendar-")
+    assert "google" not in secret_name
+    assert "tid-111" not in secret_name
+    assert "uid-222" not in secret_name
 
 
 # ---------------------------------------------------------------------------
@@ -245,10 +247,12 @@ async def test_delete_ignores_not_found(
     fake_infisical_client: _FakeInfisicalClient,
 ) -> None:
     """Treat a missing secret as an idempotent delete."""
-    fake_infisical_client.secrets.delete_error = InfisicalError("Secret not found")
+    not_found_error = InfisicalError("Secret not found")
+    not_found_error.status_code = 404
+    fake_infisical_client.secrets.delete_error = not_found_error
 
     # Should not raise.
-    await vault.delete(credential_reference="nonexistent-secret")
+    await vault.delete(credential_reference="tap-calendar-" + "0" * 32)
 
 
 # ---------------------------------------------------------------------------
@@ -278,10 +282,12 @@ async def test_resolve_not_found_raises_non_retryable(
     fake_infisical_client: _FakeInfisicalClient,
 ) -> None:
     """Classify a missing Infisical secret as non-retryable."""
-    fake_infisical_client.secrets.get_error = InfisicalError("Secret not found")
+    not_found_error = InfisicalError("Secret not found")
+    not_found_error.status_code = 404
+    fake_infisical_client.secrets.get_error = not_found_error
 
     with pytest.raises(CalendarCredentialResolutionError) as exc_info:
-        await vault.resolve(credential_reference="gone-secret")
+        await vault.resolve(credential_reference="tap-calendar-" + "0" * 32)
 
     assert exc_info.value.code == "calendar_credential_not_found"
     assert exc_info.value.retryable is False
@@ -295,7 +301,7 @@ async def test_resolve_transient_error_raises_retryable(
     fake_infisical_client.secrets.get_error = InfisicalError("service unavailable")
 
     with pytest.raises(CalendarCredentialResolutionError) as exc_info:
-        await vault.resolve(credential_reference="temp-fail-secret")
+        await vault.resolve(credential_reference="tap-calendar-" + "0" * 32)
 
     assert exc_info.value.code == "calendar_credential_resolution_failed"
     assert exc_info.value.retryable is True

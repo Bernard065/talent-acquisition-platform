@@ -43,6 +43,7 @@ from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.core.security import JwtVerifier
 from app.db.session import Database
+from app.infrastructure.calendar.infisical_vault import InfisicalCredentialVault
 from app.infrastructure.object_storage.s3 import S3ObjectStorage
 from app.services.public_application_abuse_control import (
     build_public_application_abuse_guard,
@@ -82,19 +83,12 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     )
 
     if settings.credential_vault_provider == "infisical":
-        from app.infrastructure.calendar.infisical_vault import (
-            InfisicalCredentialVault,
-        )
-
-        vault = InfisicalCredentialVault(
+        vault = await InfisicalCredentialVault.from_universal_auth(
             project_id=settings.infisical_project_id,  # type: ignore[arg-type]
             environment_slug=settings.infisical_environment,
-            client_id=settings.infisical_client_id,
-            client_secret=(
-                settings.infisical_client_secret.get_secret_value()
-                if settings.infisical_client_secret
-                else None
-            ),
+            client_id=settings.infisical_client_id,  # type: ignore[arg-type]
+            client_secret=settings.infisical_client_secret.get_secret_value(),  # type: ignore[union-attr]
+            host=str(settings.infisical_host),
         )
         application.state.calendar_credential_vault = vault
         application.state.calendar_credential_resolver = vault

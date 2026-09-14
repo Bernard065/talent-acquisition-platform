@@ -37,6 +37,7 @@ from app.services.calendar_connection_errors import (
     CalendarConnectionAccessDeniedError,
     CalendarConnectionValidationError,
 )
+from app.services.calendar_credentials import CalendarCredentialVaultError
 from app.services.calendar_oauth import (
     CalendarOAuthError,
     CalendarOAuthStateError,
@@ -1140,6 +1141,10 @@ def register_exception_handlers(application: FastAPI) -> None:
     )
     application.add_exception_handler(
         CalendarOAuthStateStoreUnavailableError,
+        calendar_oauth_unavailable,
+    )
+    application.add_exception_handler(
+        CalendarCredentialVaultError,
         calendar_oauth_unavailable,
     )
 

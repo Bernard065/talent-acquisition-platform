@@ -167,6 +167,7 @@ class Settings(BaseSettings):
     infisical_client_secret: SecretStr | None = None
     infisical_project_id: str | None = None
     infisical_environment: str = "dev"
+    infisical_host: AnyHttpUrl = AnyHttpUrl("https://app.infisical.com")
 
     @model_validator(mode="after")
     def _validate_vault_provider(self) -> "Settings":
