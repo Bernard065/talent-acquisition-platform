@@ -147,7 +147,7 @@ class GoogleSecretManagerCredentialVault:
             raise CalendarCredentialResolutionError(
                 "calendar_credential_not_found",
                 retryable=False,
-            )
+            ) from None
         except GoogleAPICallError as exc:
             retryable = getattr(exc, "grpc_status_code", None) is not None
             raise CalendarCredentialResolutionError(
