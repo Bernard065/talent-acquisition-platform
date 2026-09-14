@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import structlog
@@ -15,6 +14,7 @@ from google.cloud.secretmanager_v1 import (
     CreateSecretRequest,
     DeleteSecretRequest,
     Secret,
+    SecretManagerServiceClient,
     SecretPayload,
 )
 from pydantic import SecretStr
@@ -23,9 +23,6 @@ from app.services.calendar_credentials import (
     CalendarCredentialResolutionError,
     ResolvedCalendarCredentials,
 )
-
-if TYPE_CHECKING:
-    from google.cloud.secretmanager_v1 import SecretManagerServiceClient
 
 logger = structlog.get_logger()
 
@@ -55,11 +52,7 @@ class GoogleSecretManagerCredentialVault:
         if client is not None:
             self._client = client
         else:
-            from google.cloud.secretmanager_v1 import (
-                SecretManagerServiceClient as _Client,
-            )
-
-            self._client = _Client()
+            self._client = SecretManagerServiceClient()
 
     # -- CalendarCredentialVault ------------------------------------------
 

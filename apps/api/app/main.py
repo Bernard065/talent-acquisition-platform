@@ -43,6 +43,9 @@ from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.core.security import JwtVerifier
 from app.db.session import Database
+from app.infrastructure.calendar.google_secret_manager_vault import (
+    GoogleSecretManagerCredentialVault,
+)
 from app.infrastructure.object_storage.s3 import S3ObjectStorage
 from app.services.public_application_abuse_control import (
     build_public_application_abuse_guard,
@@ -82,11 +85,10 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     )
 
     if settings.credential_vault_provider == "google_secret_manager":
-        from app.infrastructure.calendar.google_secret_manager_vault import (
-            GoogleSecretManagerCredentialVault,
-        )
-
-        assert settings.gcp_project_id is not None  # guaranteed by validator
+        if settings.gcp_project_id is None:
+            raise RuntimeError(
+                "gcp_project_id is required for Google Secret Manager."
+            )
         vault = GoogleSecretManagerCredentialVault(
             project_id=settings.gcp_project_id,
         )
