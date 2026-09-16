@@ -278,6 +278,41 @@ class InfisicalCredentialVault:
 
         return self._deserialize_credentials(getattr(secret, "secretValue", None))
 
+    async def read_runtime_secret(self, *, secret_name: str) -> SecretStr:
+        """Read one runtime configuration secret from Infisical.
+
+        This is only for application-level configuration such as OAuth client
+        credentials. Tenant-owned refresh tokens continue to use ``resolve``.
+        """
+        if not secret_name or len(secret_name) > 255:
+            raise CalendarCredentialVaultError(
+                "invalid_runtime_secret_reference",
+                retryable=False,
+            )
+
+        try:
+            response = await asyncio.to_thread(
+                self._client.secrets.get_secret_by_name,
+                secret_name=secret_name,
+                project_id=self._project_id,
+                environment_slug=self._environment_slug,
+                secret_path="/",  # noqa: S106
+            )
+        except Exception as error:
+            raise CalendarCredentialVaultError(
+                "calendar_credential_runtime_secret_read_failed",
+                retryable=_is_retryable(error),
+            ) from error
+
+        secret_value = getattr(response, "secretValue", None)
+        if not isinstance(secret_value, str) or not secret_value:
+            raise CalendarCredentialVaultError(
+                "invalid_runtime_secret_value",
+                retryable=False,
+            )
+
+        return SecretStr(secret_value)
+
     async def delete(self, *, credential_reference: str) -> None:
         """Delete one application-owned credential secret."""
         secret_name = self._validate_reference(credential_reference)
