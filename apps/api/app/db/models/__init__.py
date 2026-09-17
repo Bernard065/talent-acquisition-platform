@@ -38,6 +38,11 @@ from app.db.models.onboarding import (
 )
 from app.db.models.outbox import OutboxEvent
 from app.db.models.requisition import Requisition
+from app.db.models.webhook import (
+    WebhookDelivery,
+    WebhookEndpoint,
+    WebhookSubscription,
+)
 
 __all__ = [
     "Application",
@@ -77,4 +82,7 @@ __all__ = [
     "Tenant",
     "User",
     "UserRoleAssignment",
+    "WebhookDelivery",
+    "WebhookEndpoint",
+    "WebhookSubscription",
 ]
