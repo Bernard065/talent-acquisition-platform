@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from re import compile as re_compile
-from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
@@ -51,7 +49,6 @@ async def publish_webhook_event(
     aggregate_type: str,
     aggregate_id: str,
     deduplication_key: str,
-    payload: Mapping[str, Any] | None = None,
 ) -> WebhookEvent:
     """
     Persist one immutable event and create matching delivery intents atomically.
@@ -77,10 +74,6 @@ async def publish_webhook_event(
         maximum_length=255,
     )
 
-    # Payloads are intentionally identifier-only. Domain services must supply
-    # only approved, externally safe fields.
-    safe_payload = dict(payload or {})
-
     async with transactional(session):
         statement = (
             insert(WebhookEvent)
@@ -90,7 +83,7 @@ async def publish_webhook_event(
                 aggregate_type=normalized_aggregate_type,
                 aggregate_id=normalized_aggregate_id,
                 deduplication_key=normalized_deduplication_key,
-                payload=safe_payload,
+                payload={},
             )
             .on_conflict_do_nothing(
                 constraint="uq_webhook_events_tenant_event_deduplication"
