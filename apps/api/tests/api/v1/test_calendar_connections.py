@@ -35,6 +35,7 @@ from app.services.calendar_credentials import (
 from app.services.calendar_oauth import (
     CalendarAuthorizationRequest,
     CalendarOAuthCodeExchange,
+    CalendarOAuthError,
     CalendarOAuthProvider,
     CalendarOAuthState,
     CalendarOAuthStateError,
@@ -99,6 +100,28 @@ class FakeCalendarOAuthProvider:
                 "refresh_token": SecretStr("test-refresh-token"),
             }
         )
+
+
+class FailingCalendarOAuthProvider(FakeCalendarOAuthProvider):
+    """Provider fake that returns a classified exchange failure."""
+
+    def __init__(
+        self,
+        provider: CalendarProvider,
+        *,
+        error: CalendarOAuthError,
+    ) -> None:
+        super().__init__(provider)
+        self.error = error
+
+    async def exchange_code(
+        self,
+        *,
+        exchange: CalendarOAuthCodeExchange,
+    ) -> ResolvedCalendarCredentials:
+        """Raise a controlled provider failure without external I/O."""
+        self.code_exchanges.append(exchange)
+        raise self.error
 
 
 class FakeCalendarCredentialVault:
@@ -568,3 +591,143 @@ async def test_returns_private_service_unavailable_when_state_store_missing(
     assert response.status_code == 503
     assert response.headers["Cache-Control"] == "private, no-store"
     assert response.headers["Retry-After"] == "5"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error", "expected_status"),
+    [
+        (
+            CalendarOAuthError(
+                "invalid_grant",
+                retryable=False,
+            ),
+            400,
+        ),
+        (
+            CalendarOAuthError(
+                "provider_temporarily_unavailable",
+                retryable=True,
+            ),
+            503,
+        ),
+    ],
+)
+async def test_callback_maps_provider_failures_without_leaking_details(
+    api_app: FastAPI,
+    error: CalendarOAuthError,
+    expected_status: int,
+) -> None:
+    """Classify provider failures without exposing codes or credential data."""
+    failing_provider = FailingCalendarOAuthProvider(
+        CalendarProvider.GOOGLE,
+        error=error,
+    )
+
+    api_app.dependency_overrides[
+        get_calendar_oauth_providers
+    ] = lambda: cast(
+        Mapping[CalendarProvider, CalendarOAuthProvider],
+        {CalendarProvider.GOOGLE: failing_provider},
+    )
+
+    state_store = FakeCalendarOAuthStateStore()
+    api_app.dependency_overrides[
+        get_calendar_oauth_state_store
+    ] = lambda: cast(CalendarOAuthStateStore, state_store)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=api_app),
+        base_url="http://testserver",
+    ) as client:
+        start = await client.post(
+            "/api/v1/calendar-connections/google/authorization"
+        )
+        state = _extract_state(start.json()["authorization_url"])
+
+        response = await client.get(
+            "/api/v1/calendar-connections/google/callback",
+            params={
+                "code": "provider-one-time-code",
+                "state": state,
+            },
+        )
+
+    body = response.json()
+
+    assert response.status_code == expected_status
+    assert response.headers["Cache-Control"] == "private, no-store"
+    assert "provider_temporarily_unavailable" not in str(body)
+    assert "invalid_grant" not in str(body)
+    assert "provider-one-time-code" not in str(body)
+    assert "access_token" not in str(body)
+    assert "refresh_token" not in str(body)
+
+    if expected_status == 503:
+        assert response.headers["Retry-After"] == "5"
+        assert body["detail"] == (
+            "Calendar authorization service is temporarily unavailable."
+        )
+    else:
+        assert body["detail"] == "Calendar authorization could not be completed."
+
+
+@pytest.mark.asyncio
+async def test_callback_rejects_unknown_state_without_leaking_state_value(
+    api_app: FastAPI,
+) -> None:
+    """An unrecognised state is rejected with the generic private error."""
+    unknown_state = "unknown-state-" + "x" * 40
+
+    async with AsyncClient(
+        transport=ASGITransport(app=api_app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get(
+            "/api/v1/calendar-connections/google/callback",
+            params={
+                "code": "provider-one-time-code",
+                "state": unknown_state,
+            },
+        )
+
+    body = response.json()
+
+    assert response.status_code == 400
+    assert response.headers["Cache-Control"] == "private, no-store"
+    assert body["detail"] == "Calendar authorization could not be completed."
+    assert unknown_state not in str(body)
+    assert "provider-one-time-code" not in str(body)
+
+
+@pytest.mark.asyncio
+async def test_callback_requires_well_formed_query_parameters(
+    api_app: FastAPI,
+) -> None:
+    """FastAPI rejects absent, empty, and undersized callback parameters."""
+    async with AsyncClient(
+        transport=ASGITransport(app=api_app),
+        base_url="http://testserver",
+    ) as client:
+        missing_code = await client.get(
+            "/api/v1/calendar-connections/google/callback",
+            params={"state": "s" * 32},
+        )
+        empty_code = await client.get(
+            "/api/v1/calendar-connections/google/callback",
+            params={
+                "code": "",
+                "state": "s" * 32,
+            },
+        )
+        short_state = await client.get(
+            "/api/v1/calendar-connections/google/callback",
+            params={
+                "code": "provider-one-time-code",
+                "state": "too-short",
+            },
+        )
+
+    assert missing_code.status_code == 422
+    assert empty_code.status_code == 422
+    assert short_state.status_code == 422

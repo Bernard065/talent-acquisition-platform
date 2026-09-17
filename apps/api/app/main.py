@@ -4,6 +4,7 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
+import httpx
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -43,6 +44,8 @@ from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.core.security import JwtVerifier
 from app.db.session import Database
+from app.domains.calendar.enums import CalendarProvider
+from app.infrastructure.calendar.google_oauth import GoogleCalendarOAuthProvider
 from app.infrastructure.calendar.infisical_vault import InfisicalCredentialVault
 from app.infrastructure.object_storage.s3 import S3ObjectStorage
 from app.services.public_application_abuse_control import (
@@ -56,6 +59,12 @@ logger = structlog.get_logger()
 async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     """Initialize application resources on startup and clean them up on shutdown."""
     settings: Settings = application.state.settings
+    application.state.calendar_credential_vault = None
+    application.state.calendar_credential_resolver = None
+    application.state.calendar_oauth_providers = {}
+
+    oauth_http_client: httpx.AsyncClient | None = None
+
     configure_logging(settings.log_level)
 
     application.state.jwt_verifier = JwtVerifier(settings)
@@ -93,14 +102,50 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
         application.state.calendar_credential_vault = vault
         application.state.calendar_credential_resolver = vault
 
-    logger.info("application_started", environment=settings.app_env)
+    if settings.calendar_oauth_provider == "google":
+        vault = application.state.calendar_credential_vault
+        if vault is None:
+            raise RuntimeError(
+                "Google Calendar OAuth requires an initialized credential vault."
+            )
 
-    yield
+        client_id_secret = await vault.read_runtime_secret(
+            secret_name=settings.google_calendar_oauth_client_id_secret_name,
+        )
+        client_secret = await vault.read_runtime_secret(
+            secret_name=settings.google_calendar_oauth_client_secret_secret_name,
+        )
 
-    if application.state.database is not None:
-        await application.state.database.dispose()
+        oauth_http_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(
+                connect=settings.calendar_oauth_http_connect_timeout_seconds,
+                read=settings.calendar_oauth_http_read_timeout_seconds,
+                write=settings.calendar_oauth_http_read_timeout_seconds,
+                pool=settings.calendar_oauth_http_connect_timeout_seconds,
+            ),
+            follow_redirects=False,
+        )
 
-    logger.info("application_stopped")
+        application.state.calendar_oauth_providers = {
+            CalendarProvider.GOOGLE: GoogleCalendarOAuthProvider(
+                client_id=client_id_secret.get_secret_value(),
+                client_secret=client_secret,
+                http_client=oauth_http_client,
+            ),
+        }
+
+    try:
+        logger.info("application_started", environment=settings.app_env)
+        yield
+    finally:
+        if oauth_http_client is not None:
+            await oauth_http_client.aclose()
+
+        database = getattr(application.state, "database", None)
+        if database is not None:
+            await database.dispose()
+
+        logger.info("application_stopped")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

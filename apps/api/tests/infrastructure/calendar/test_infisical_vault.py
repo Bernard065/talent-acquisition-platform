@@ -46,6 +46,7 @@ class _FakeSecrets:
 
     stored: dict[str, _FakeBaseSecret] = field(default_factory=dict)
     created: list[dict[str, Any]] = field(default_factory=list)
+    get_requests: list[dict[str, object]] = field(default_factory=list)
     deleted: list[dict[str, Any]] = field(default_factory=list)
     operation_thread_ids: list[int] = field(default_factory=list)
 
@@ -75,6 +76,7 @@ class _FakeSecrets:
     def get_secret_by_name(self, **kwargs: object) -> _FakeBaseSecret:
         """Return a stored secret or raise the configured error."""
         self.operation_thread_ids.append(threading.get_ident())
+        self.get_requests.append(dict(kwargs))
 
         if self.get_error is not None:
             raise self.get_error
@@ -250,6 +252,83 @@ async def test_resolve_returns_in_memory_credentials(
     assert resolved.required("refresh_token").get_secret_value() == (
         "test-refresh-token"
     )
+
+
+async def test_read_runtime_secret_returns_secret_string(
+    vault: InfisicalCredentialVault,
+    fake_infisical_client: _FakeInfisicalClient,
+) -> None:
+    """Runtime configuration secrets are read without exposing their value."""
+    fake_infisical_client.secrets.stored["google-client-id"] = _FakeBaseSecret(
+        secretKey="google-client-id",
+        secretValue="google-client-id-value",
+    )
+
+    secret = await vault.read_runtime_secret(
+        secret_name="google-client-id",  # noqa: S106
+    )
+
+    assert isinstance(secret, SecretStr)
+    assert secret.get_secret_value() == "google-client-id-value"
+    assert fake_infisical_client.secrets.get_requests[-1] == {
+        "secret_name": "google-client-id",
+        "project_id": PROJECT_ID,
+        "environment_slug": ENVIRONMENT,
+        "secret_path": "/",
+    }
+
+
+@pytest.mark.parametrize("secret_name", ["", "a" * 256])
+async def test_read_runtime_secret_rejects_invalid_reference(
+    vault: InfisicalCredentialVault,
+    secret_name: str,
+) -> None:
+    """Runtime secret names are bounded before calling Infisical."""
+    with pytest.raises(CalendarCredentialVaultError) as exc_info:
+        await vault.read_runtime_secret(secret_name=secret_name)
+
+    assert exc_info.value.code == "invalid_runtime_secret_reference"
+    assert exc_info.value.retryable is False
+
+
+async def test_read_runtime_secret_rejects_empty_value(
+    vault: InfisicalCredentialVault,
+    fake_infisical_client: _FakeInfisicalClient,
+) -> None:
+    """Missing runtime secret values fail closed without returning empties."""
+    fake_infisical_client.secrets.stored["google-client-secret"] = _FakeBaseSecret(
+        secretKey="google-client-secret",
+        secretValue="",
+    )
+
+    with pytest.raises(CalendarCredentialVaultError) as exc_info:
+        await vault.read_runtime_secret(
+            secret_name="google-client-secret",  # noqa: S106
+        )
+
+    assert exc_info.value.code == "invalid_runtime_secret_value"
+    assert exc_info.value.retryable is False
+
+
+async def test_read_runtime_secret_classifies_provider_outage_as_retryable(
+    vault: InfisicalCredentialVault,
+    fake_infisical_client: _FakeInfisicalClient,
+) -> None:
+    """Temporary Infisical failures remain safe to retry at startup."""
+    fake_infisical_client.secrets.get_error = _InfisicalApiError(
+        "unavailable",
+        status_code=503,
+    )
+
+    with pytest.raises(CalendarCredentialVaultError) as exc_info:
+        await vault.read_runtime_secret(
+            secret_name="google-client-secret",  # noqa: S106
+        )
+
+    assert exc_info.value.code == (
+        "calendar_credential_runtime_secret_read_failed"
+    )
+    assert exc_info.value.retryable is True
 
 
 async def test_resolve_rejects_invalid_reference(

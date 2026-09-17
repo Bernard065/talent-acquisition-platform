@@ -158,6 +158,28 @@ class Settings(BaseSettings):
     jwt_algorithm: Literal["RS256"]
     jwt_leeway_seconds: int = Field(ge=0, le=300)
 
+    calendar_oauth_provider: Literal["none", "google"] = "none"
+    google_calendar_oauth_client_id_secret_name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=255,
+    )
+    google_calendar_oauth_client_secret_secret_name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=255,
+    )
+    calendar_oauth_http_connect_timeout_seconds: float = Field(
+        default=3.0,
+        gt=0,
+        le=30,
+    )
+    calendar_oauth_http_read_timeout_seconds: float = Field(
+        default=10.0,
+        gt=0,
+        le=60,
+    )
+
     # External credential vault for calendar OAuth tokens.
     credential_vault_provider: Literal[
         "infisical",
@@ -186,6 +208,26 @@ class Settings(BaseSettings):
                     f"{', '.join(f.upper() for f in missing)} required when "
                     "CREDENTIAL_VAULT_PROVIDER=infisical."
                 )
+
+        if self.calendar_oauth_provider == "google":
+            if self.credential_vault_provider != "infisical":
+                raise ValueError(
+                    "credential_vault_provider must be 'infisical' when "
+                    "calendar_oauth_provider is 'google'."
+                )
+
+            if not self.google_calendar_oauth_client_id_secret_name:
+                raise ValueError(
+                    "google_calendar_oauth_client_id_secret_name is required "
+                    "when calendar_oauth_provider is 'google'."
+                )
+
+            if not self.google_calendar_oauth_client_secret_secret_name:
+                raise ValueError(
+                    "google_calendar_oauth_client_secret_secret_name is "
+                    "required when calendar_oauth_provider is 'google'."
+                )
+
         return self
 
 
