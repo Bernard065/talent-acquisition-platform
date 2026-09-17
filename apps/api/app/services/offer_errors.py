@@ -43,6 +43,10 @@ class OfferApplicationNotEligibleError(ValueError):
     """Raised when an application is not eligible for an offer action."""
 
 
+class OfferSignatureRequiredError(ValueError):
+    """Raised when offer acceptance lacks a completed signature request."""
+
+
 __all__ = [
     "InvalidOfferTransitionError",
     "OfferAccessDeniedError",
@@ -53,6 +57,7 @@ __all__ = [
     "OfferApprovalNotFoundError",
     "OfferNotFoundError",
     "OfferSelfApprovalError",
+    "OfferSignatureRequiredError",
     "OfferValidationError",
     "OfferVersionConflictError",
 ]

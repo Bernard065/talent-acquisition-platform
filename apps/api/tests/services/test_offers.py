@@ -17,6 +17,7 @@ from app.db.models.candidate import Candidate
 from app.db.models.identity import Tenant, User
 from app.db.models.offer import Offer, OfferLifecycleHistory
 from app.db.models.offer_approval import OfferApprovalDecision
+from app.db.models.offer_signature import OfferSignatureRequest
 from app.db.models.outbox import OutboxEvent
 from app.db.models.requisition import Requisition
 from app.domains.approvals.enums import ApprovalDecisionStatus, ApprovalStatus
@@ -28,6 +29,7 @@ from app.domains.offers.enums import (
 )
 from app.domains.offers.transitions import InvalidOfferTransitionError
 from app.domains.requisitions.enums import RequisitionStatus
+from app.domains.signatures.enums import OfferSignatureStatus
 from app.services.offer_errors import (
     OfferAccessDeniedError,
     OfferAlreadyExistsError,
@@ -248,6 +250,26 @@ async def test_creates_submits_approves_sends_and_accepts_offer_atomically(
     )
     assert sent.status is OfferStatus.SENT
     assert sent.sent_at is not None
+
+    session.add(
+        OfferSignatureRequest(
+            tenant_id=tenant_id,
+            offer_id=offer.id,
+            provider="test-provider",
+            document_reference="signed-offer-document",
+            status=OfferSignatureStatus.SIGNED,
+            offer_version=offer.version,
+            currency=offer.currency,
+            base_salary=offer.base_salary,
+            pay_period=offer.pay_period,
+            bonus_amount=offer.bonus_amount,
+            proposed_start_date=offer.proposed_start_date,
+            expires_at=offer.expires_at,
+            signed_at=datetime.now(UTC),
+            created_by_subject="recruiter-subject",
+        )
+    )
+    await session.flush()
 
     accepted = await accept_offer(
         session,
