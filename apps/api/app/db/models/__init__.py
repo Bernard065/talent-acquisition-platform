@@ -41,6 +41,7 @@ from app.db.models.requisition import Requisition
 from app.db.models.webhook import (
     WebhookDelivery,
     WebhookEndpoint,
+    WebhookEvent,
     WebhookSubscription,
 )
 
@@ -84,5 +85,6 @@ __all__ = [
     "UserRoleAssignment",
     "WebhookDelivery",
     "WebhookEndpoint",
+    "WebhookEvent",
     "WebhookSubscription",
 ]

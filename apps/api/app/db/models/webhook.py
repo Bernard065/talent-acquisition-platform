@@ -1,6 +1,7 @@
 """Tenant-scoped webhook endpoint, subscription, and delivery persistence."""
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -15,6 +16,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -166,13 +168,76 @@ class WebhookSubscription(Base):
     __mapper_args__ = {"version_id_col": version}
 
 
+class WebhookEvent(Base):
+    """
+    Immutable, privacy-safe business event eligible for webhook delivery.
+
+    This is intentionally separate from the shared transactional outbox.
+    Webhook deliveries fan out from this record without competing with
+    notification, calendar, or document workers.
+    """
+
+    __tablename__ = "webhook_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "event_type",
+            "deduplication_key",
+            name="uq_webhook_events_tenant_event_deduplication",
+        ),
+        Index(
+            "ix_webhook_events_tenant_event_created_at",
+            "tenant_id",
+            "event_type",
+            "created_at",
+        ),
+        Index(
+            "ix_webhook_events_tenant_aggregate",
+            "tenant_id",
+            "aggregate_type",
+            "aggregate_id",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+    tenant_id: Mapped[UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    aggregate_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    aggregate_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    deduplication_key: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    # The approved external payload contains only these identifier-level fields.
+    payload: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=dict,
+        server_default=text("'{}'::jsonb"),
+    )
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+
 class WebhookDelivery(Base):
     """
-    A durable request to deliver one internal outbox event to one endpoint.
+    Durable request to deliver one immutable webhook event to one endpoint.
 
-    No source payload, response body, authorization header, signature, or
-    secret is persisted here. The later delivery worker will construct an
-    approved event contract from the referenced outbox event.
+    Response bodies, headers, signatures, and secret values are never stored.
     """
 
     __tablename__ = "webhook_deliveries"
@@ -191,8 +256,8 @@ class WebhookDelivery(Base):
         ),
         UniqueConstraint(
             "webhook_endpoint_id",
-            "outbox_event_id",
-            name="uq_webhook_deliveries_endpoint_outbox_event",
+            "webhook_event_id",
+            name="uq_webhook_deliveries_endpoint_webhook_event",
         ),
         Index(
             "ix_webhook_deliveries_status_next_attempt_at",
@@ -226,8 +291,8 @@ class WebhookDelivery(Base):
         nullable=False,
         index=True,
     )
-    outbox_event_id: Mapped[UUID] = mapped_column(
-        ForeignKey("outbox_events.id", ondelete="RESTRICT"),
+    webhook_event_id: Mapped[UUID] = mapped_column(
+        ForeignKey("webhook_events.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )
