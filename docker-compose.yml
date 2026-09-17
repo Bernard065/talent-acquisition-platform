@@ -170,6 +170,34 @@ services:
       postgres:
         condition: service_healthy
 
+  webhook-delivery-worker:
+    profiles:
+      - webhooks
+    build:
+      context: ./apps/api
+    container_name: tap-webhook-delivery-worker
+    restart: unless-stopped
+    command: python -m app.workers.webhook_delivery_worker
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-m",
+          "app.workers.webhook_delivery_worker_health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   postgres:
     image: postgres:16-alpine
     container_name: tap-postgres

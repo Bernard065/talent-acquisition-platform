@@ -294,6 +294,28 @@ async def fail_webhook_delivery(
     return delivery
 
 
+async def disable_webhook_delivery(
+    session: AsyncSession,
+    *,
+    delivery_id: UUID,
+    worker_id: str,
+) -> WebhookDelivery:
+    """Stop a leased delivery when its endpoint was disabled after claiming."""
+    async with transactional(session):
+        delivery = await _get_leased_delivery(
+            session,
+            delivery_id=delivery_id,
+            worker_id=_validate_worker_id(worker_id),
+        )
+        delivery.status = WebhookDeliveryStatus.DISABLED
+        delivery.locked_at = None
+        delivery.locked_by = None
+        delivery.last_error_code = "endpoint_disabled"
+        await session.flush()
+
+    return delivery
+
+
 async def _get_leased_delivery(
     session: AsyncSession,
     *,
