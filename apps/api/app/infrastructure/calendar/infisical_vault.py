@@ -19,12 +19,16 @@ from app.services.calendar_credentials import (
     CalendarCredentialVaultError,
     ResolvedCalendarCredentials,
 )
+from app.services.webhook_secrets import WebhookSigningSecretVaultError
 
 _CREDENTIAL_PATH = "/calendar-credentials/"
 _SECRET_PREFIX = "tap-calendar-"  # noqa: S105
 _SECRET_REFERENCE_PATTERN = re.compile(r"^tap-calendar-[a-f0-9]{32}$")
 _CREDENTIAL_FIELD_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _MAX_CREDENTIAL_PAYLOAD_BYTES = 64 * 1024
+_WEBHOOK_SECRET_PATH = "/webhook-signing-secrets/"  # noqa: S105
+_WEBHOOK_SECRET_PREFIX = "tap-webhook-"  # noqa: S105
+_WEBHOOK_SECRET_REFERENCE_PATTERN = re.compile(r"^tap-webhook-[a-f0-9]{32}$")
 
 class _SecretsClient(Protocol):
     """Minimal Infisical secrets API surface used by this adapter."""
@@ -312,6 +316,79 @@ class InfisicalCredentialVault:
             )
 
         return SecretStr(secret_value)
+
+    @staticmethod
+    def _webhook_secret_reference() -> str:
+        """Generate an opaque reference with no tenant or endpoint identity."""
+        return f"{_WEBHOOK_SECRET_PREFIX}{uuid4().hex}"
+
+    @staticmethod
+    def _validate_webhook_secret_reference(secret_reference: str) -> str:
+        """Reject references outside the application-owned webhook namespace."""
+        if not _WEBHOOK_SECRET_REFERENCE_PATTERN.fullmatch(secret_reference):
+            raise WebhookSigningSecretVaultError(
+                "webhook_secret_reference_invalid",
+                retryable=False,
+            )
+
+        return secret_reference
+
+    async def store_webhook_signing_secret(
+        self,
+        *,
+        secret: SecretStr,
+    ) -> str:
+        """Store one webhook HMAC secret and return an opaque reference."""
+        secret_value = secret.get_secret_value()
+        if not secret_value:
+            raise WebhookSigningSecretVaultError(
+                "webhook_secret_invalid",
+                retryable=False,
+            )
+
+        secret_reference = self._webhook_secret_reference()
+
+        try:
+            await asyncio.to_thread(
+                self._client.secrets.create_secret_by_name,
+                secret_name=secret_reference,
+                secret_value=secret_value,
+                project_id=self._project_id,
+                environment_slug=self._environment_slug,
+                secret_path=_WEBHOOK_SECRET_PATH,
+            )
+        except (InfisicalError, OSError, TimeoutError) as error:
+            raise WebhookSigningSecretVaultError(
+                "webhook_secret_store_failed",
+                retryable=_is_retryable(error),
+            ) from error
+
+        return secret_reference
+
+    async def delete_webhook_signing_secret(
+        self,
+        *,
+        secret_reference: str,
+    ) -> None:
+        """Delete one application-owned webhook signing secret."""
+        secret_name = self._validate_webhook_secret_reference(secret_reference)
+
+        try:
+            await asyncio.to_thread(
+                self._client.secrets.delete_secret_by_name,
+                secret_name=secret_name,
+                project_id=self._project_id,
+                environment_slug=self._environment_slug,
+                secret_path=_WEBHOOK_SECRET_PATH,
+            )
+        except (InfisicalError, OSError, TimeoutError) as error:
+            if _is_not_found(error):
+                return
+
+            raise WebhookSigningSecretVaultError(
+                "webhook_secret_delete_failed",
+                retryable=_is_retryable(error),
+            ) from error
 
     async def delete(self, *, credential_reference: str) -> None:
         """Delete one application-owned credential secret."""
