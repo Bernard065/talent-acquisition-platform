@@ -35,3 +35,10 @@ class WebhookSigningSecretVault(Protocol):
         secret_reference: str,
     ) -> None:
         """Delete a previously stored application-owned signing secret."""
+
+    async def resolve_webhook_signing_secret(
+        self,
+        *,
+        secret_reference: str,
+    ) -> SecretStr:
+        """Resolve one signing secret only for an outbound delivery."""

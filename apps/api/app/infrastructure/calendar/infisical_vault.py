@@ -365,6 +365,43 @@ class InfisicalCredentialVault:
 
         return secret_reference
 
+    async def resolve_webhook_signing_secret(
+        self,
+        *,
+        secret_reference: str,
+    ) -> SecretStr:
+        """Resolve one application-owned webhook HMAC secret into memory."""
+        secret_name = self._validate_webhook_secret_reference(secret_reference)
+
+        try:
+            response = await asyncio.to_thread(
+                self._client.secrets.get_secret_by_name,
+                secret_name=secret_name,
+                project_id=self._project_id,
+                environment_slug=self._environment_slug,
+                secret_path=_WEBHOOK_SECRET_PATH,
+            )
+        except (InfisicalError, OSError, TimeoutError) as error:
+            if _is_not_found(error):
+                raise WebhookSigningSecretVaultError(
+                    "webhook_secret_not_found",
+                    retryable=False,
+                ) from error
+
+            raise WebhookSigningSecretVaultError(
+                "webhook_secret_resolution_failed",
+                retryable=_is_retryable(error),
+            ) from error
+
+        secret_value = getattr(response, "secretValue", None)
+        if not isinstance(secret_value, str) or not secret_value:
+            raise WebhookSigningSecretVaultError(
+                "webhook_secret_invalid",
+                retryable=False,
+            )
+
+        return SecretStr(secret_value)
+
     async def delete_webhook_signing_secret(
         self,
         *,
