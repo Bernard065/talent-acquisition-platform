@@ -20,28 +20,6 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Create offer signature persistence and immutable history enforcement."""
-    offer_signature_status = sa.Enum(
-        "draft",
-        "sent",
-        "signed",
-        "declined",
-        "voided",
-        "expired",
-        name="offer_signature_status",
-    )
-    offer_signature_event_type = sa.Enum(
-        "created",
-        "sent",
-        "signed",
-        "declined",
-        "voided",
-        "expired",
-        name="offer_signature_event_type",
-    )
-
-    offer_signature_status.create(op.get_bind(), checkfirst=True)
-    offer_signature_event_type.create(op.get_bind(), checkfirst=True)
-
     op.create_table(
         "offer_signature_requests",
         sa.Column("id", sa.UUID(), nullable=False),
@@ -56,16 +34,7 @@ def upgrade() -> None:
         sa.Column("document_reference", sa.String(length=255), nullable=False),
         sa.Column(
             "status",
-            sa.Enum(
-                "draft",
-                "sent",
-                "signed",
-                "declined",
-                "voided",
-                "expired",
-                name="offer_signature_status",
-                create_type=False,
-            ),
+            sa.String(length=20),
             server_default="draft",
             nullable=False,
         ),
@@ -186,44 +155,17 @@ def upgrade() -> None:
         sa.Column("offer_signature_request_id", sa.UUID(), nullable=False),
         sa.Column(
             "event_type",
-            sa.Enum(
-                "created",
-                "sent",
-                "signed",
-                "declined",
-                "voided",
-                "expired",
-                name="offer_signature_event_type",
-                create_type=False,
-            ),
+            sa.String(length=20),
             nullable=False,
         ),
         sa.Column(
             "from_status",
-            sa.Enum(
-                "draft",
-                "sent",
-                "signed",
-                "declined",
-                "voided",
-                "expired",
-                name="offer_signature_status",
-                create_type=False,
-            ),
+            sa.String(length=20),
             nullable=True,
         ),
         sa.Column(
             "to_status",
-            sa.Enum(
-                "draft",
-                "sent",
-                "signed",
-                "declined",
-                "voided",
-                "expired",
-                name="offer_signature_status",
-                create_type=False,
-            ),
+            sa.String(length=20),
             nullable=False,
         ),
         sa.Column("occurred_by_subject", sa.String(length=255), nullable=False),
