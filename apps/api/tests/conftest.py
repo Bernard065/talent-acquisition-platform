@@ -4,6 +4,7 @@ import os
 from collections.abc import AsyncIterator
 from importlib import import_module
 
+import pytest
 import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
@@ -67,6 +68,26 @@ async def _database_engine_fixture() -> AsyncIterator[AsyncEngine]:
         await connection.run_sync(Base.metadata.drop_all)
 
     await engine.dispose()
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _clean_database_before_test(
+    request: pytest.FixtureRequest,
+) -> AsyncIterator[None]:
+    """Keep database-backed tests isolated from module-level teardown order."""
+    if "database_engine" not in request.fixturenames:
+        yield
+        return
+
+    engine = request.getfixturevalue("database_engine")
+    table_names = ", ".join(
+        f'"{table.name}"' for table in Base.metadata.sorted_tables
+    )
+
+    async with engine.begin() as connection:
+        await connection.execute(text(f"TRUNCATE TABLE {table_names} CASCADE"))
+
+    yield
 
 
 @pytest_asyncio.fixture
