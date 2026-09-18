@@ -198,6 +198,30 @@ class Settings(BaseSettings):
         le=60.0,
     )
     webhook_allowed_hosts: list[str] = Field(default_factory=list)
+    offer_signature_provider: Literal["none", "local"] = "none"
+    offer_signature_dispatch_worker_poll_interval_seconds: int = Field(
+        default=5,
+        ge=1,
+        le=300,
+    )
+    offer_signature_dispatch_worker_batch_size: int = Field(
+        default=25,
+        ge=1,
+        le=100,
+    )
+    offer_signature_dispatch_worker_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=255,
+    )
+    offer_signature_dispatch_worker_heartbeat_path: Path = Path(
+        "/tmp/tap-offer-signature-dispatch-worker.heartbeat"  # noqa: S108
+    )
+    offer_signature_dispatch_worker_heartbeat_max_age_seconds: int = Field(
+        default=90,
+        ge=10,
+        le=900,
+    )
 
     public_application_abuse_control_provider: Literal[
         "local_allow_all",
