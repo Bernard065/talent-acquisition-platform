@@ -98,6 +98,21 @@ def _validate_expected_version(
         )
 
 
+async def _reload_signature_request(
+    session: AsyncSession,
+    *,
+    signature_request_id: UUID,
+) -> OfferSignatureRequest:
+    """Return a fully loaded detached row so callers can access attributes safely."""
+    signature_request = await session.get(OfferSignatureRequest, signature_request_id)
+    if signature_request is None:
+        raise OfferSignatureNotFoundError("Offer signature request was not found.")
+
+    await session.refresh(signature_request)
+    session.expunge(signature_request)
+    return signature_request
+
+
 async def _load_signature_request_for_update(
     session: AsyncSession,
     *,
@@ -248,7 +263,10 @@ async def create_offer_signature_request(
         await session.flush()
         await session.refresh(signature_request)
 
-    return signature_request
+    return await _reload_signature_request(
+        session,
+        signature_request_id=signature_request.id,
+    )
 
 
 async def send_offer_signature_request(
@@ -314,7 +332,10 @@ async def send_offer_signature_request(
         await session.flush()
         await session.refresh(signature_request)
 
-    return signature_request
+    return await _reload_signature_request(
+        session,
+        signature_request_id=signature_request.id,
+    )
 
 
 async def _transition_signature_request(
@@ -375,7 +396,10 @@ async def _transition_signature_request(
         await session.flush()
         await session.refresh(signature_request)
 
-    return signature_request
+    return await _reload_signature_request(
+        session,
+        signature_request_id=signature_request.id,
+    )
 
 
 async def mark_offer_signature_signed(
@@ -487,4 +511,7 @@ async def expire_offer_signature(
         await session.flush()
         await session.refresh(signature_request)
 
-    return signature_request
+    return await _reload_signature_request(
+        session,
+        signature_request_id=signature_request.id,
+    )
