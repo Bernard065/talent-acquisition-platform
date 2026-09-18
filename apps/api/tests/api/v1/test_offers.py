@@ -359,6 +359,30 @@ async def test_submits_approves_sends_and_accepts_offer(
         )
 
         _set_context(api_app, tenant_id=tenant_id)
+        signature_request = await client.post(
+            f"/api/v1/offers/{offer_id}/signature-requests",
+            json={
+                "expected_offer_version": 3,
+                "provider": "example-sign",
+                "document_reference": "offer-document-reference",
+            },
+            headers=_headers(),
+        )
+        signature_request_id = signature_request.json()["id"]
+
+        sent_signature = await client.post(
+            f"/api/v1/offer-signature-requests/{signature_request_id}/send",
+            json={
+                "expected_version": signature_request.json()["version"],
+                "provider_envelope_reference": "provider-envelope-reference",
+            },
+            headers=_headers(),
+        )
+        signed = await client.post(
+            f"/api/v1/offer-signature-requests/{signature_request_id}/sign",
+            json={"expected_version": sent_signature.json()["version"]},
+            headers=_headers(),
+        )
         sent = await client.post(
             f"/api/v1/offers/{offer_id}/send",
             json={"expected_offer_version": 3},
@@ -377,6 +401,9 @@ async def test_submits_approves_sends_and_accepts_offer(
     assert final_approval.json()["status"] == "approved"
     assert sent.status_code == 200
     assert sent.json()["status"] == "sent"
+    assert signature_request.status_code == 201
+    assert sent_signature.status_code == 200
+    assert signed.status_code == 200
     assert accepted.status_code == 200
     assert accepted.json()["status"] == "accepted"
     assert accepted.json()["version"] == 5
