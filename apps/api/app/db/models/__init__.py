@@ -28,6 +28,10 @@ from app.db.models.job_posting import JobPosting
 from app.db.models.notification import Notification, NotificationPreference
 from app.db.models.offer import Offer, OfferLifecycleHistory
 from app.db.models.offer_approval import OfferApproval, OfferApprovalDecision
+from app.db.models.offer_signature import (
+    OfferSignatureHistory,
+    OfferSignatureRequest,
+)
 from app.db.models.onboarding import (
     OnboardingInstance,
     OnboardingInstanceHistory,
@@ -70,6 +74,8 @@ __all__ = [
     "OfferApproval",
     "OfferApprovalDecision",
     "OfferLifecycleHistory",
+    "OfferSignatureHistory",
+    "OfferSignatureRequest",
     "OnboardingInstance",
     "OnboardingInstanceHistory",
     "OnboardingTask",

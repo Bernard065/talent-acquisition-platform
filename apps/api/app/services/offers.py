@@ -15,6 +15,7 @@ from app.db.models.approval import ApprovalPolicy, ApprovalPolicyStep
 from app.db.models.identity import User
 from app.db.models.offer import Offer, OfferLifecycleHistory
 from app.db.models.offer_approval import OfferApproval, OfferApprovalDecision
+from app.db.models.offer_signature import OfferSignatureRequest
 from app.db.transactions import transactional
 from app.domains.applications.transitions import validate_application_transition
 from app.domains.approvals.enums import ApprovalDecisionStatus, ApprovalStatus
@@ -26,6 +27,7 @@ from app.domains.offers.enums import (
     OfferStatus,
 )
 from app.domains.offers.transitions import validate_offer_transition
+from app.domains.signatures.enums import OfferSignatureStatus
 from app.services.audit import record_audit_event
 from app.services.candidate_errors import ApplicationNotFoundError
 from app.services.notification_publishing import (
@@ -41,6 +43,7 @@ from app.services.offer_errors import (
     OfferApprovalNotFoundError,
     OfferNotFoundError,
     OfferSelfApprovalError,
+    OfferSignatureRequiredError,
     OfferValidationError,
     OfferVersionConflictError,
 )
@@ -785,6 +788,18 @@ async def accept_offer(
 
         previous_status = offer.status
         validate_offer_transition(previous_status, OfferStatus.ACCEPTED)
+
+        signed_signature_id = await session.scalar(
+            select(OfferSignatureRequest.id).where(
+                OfferSignatureRequest.tenant_id == context.tenant_id,
+                OfferSignatureRequest.offer_id == offer.id,
+                OfferSignatureRequest.status == OfferSignatureStatus.SIGNED,
+            )
+        )
+        if signed_signature_id is None:
+            raise OfferSignatureRequiredError(
+                "A completed offer signature is required before acceptance."
+            )
 
         application = await session.scalar(
             select(Application)

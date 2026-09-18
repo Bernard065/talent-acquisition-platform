@@ -11,13 +11,23 @@ from app.api.dependencies import get_db_session, get_tenant_context
 from app.api.idempotency import IdempotencyKey, idempotency_response
 from app.api.v1.schemas.offers import (
     CreateOfferRequest,
+    CreateOfferSignatureRequestRequest,
     ExpectedOfferVersionRequest,
     OfferApprovalDecisionRequest,
     OfferApprovalResponse,
     OfferResponse,
+    OfferSignatureRequestResponse,
+    SendOfferSignatureRequestRequest,
+    SignOfferSignatureRequestRequest,
 )
 from app.core.authorization import TenantContext
 from app.services.idempotency import IdempotencyResult, execute_idempotently
+from app.services.offer_signatures import (
+    CreateOfferSignatureRequestCommand,
+    create_offer_signature_request,
+    mark_offer_signature_signed,
+    send_offer_signature_request,
+)
 from app.services.offers import (
     CreateOfferCommand,
     accept_offer,
@@ -189,6 +199,127 @@ async def _transition_offer_endpoint(
         context=context,
         key=idempotency_key,
         operation_name=f"{operation_name}:{offer_id}",
+        payload=payload.model_dump(mode="json"),
+        operation=operation,
+    )
+    return _private_response(result)
+
+
+@router.post(
+    "/offers/{offer_id}/signature-requests",
+    response_model=OfferSignatureRequestResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a signature request for an approved offer",
+)
+async def create_offer_signature_request_endpoint(
+    offer_id: UUID,
+    payload: CreateOfferSignatureRequestRequest,
+    context: CallerContext,
+    session: DatabaseSession,
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Create a signed-offer request snapshot for one approved offer version."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        signature_request = await create_offer_signature_request(
+            session,
+            context=context,
+            offer_id=offer_id,
+            expected_offer_version=payload.expected_offer_version,
+            command=CreateOfferSignatureRequestCommand(
+                provider=payload.provider,
+                document_reference=payload.document_reference,
+            ),
+        )
+        return (
+            status.HTTP_201_CREATED,
+            OfferSignatureRequestResponse.model_validate(
+                signature_request
+            ).model_dump(mode="json"),
+        )
+
+    result = await execute_idempotently(
+        session,
+        context=context,
+        key=idempotency_key,
+        operation_name=f"offer_signature.create:{offer_id}",
+        payload=payload.model_dump(mode="json"),
+        operation=operation,
+    )
+    return _private_response(result)
+
+
+@router.post(
+    "/offer-signature-requests/{signature_request_id}/send",
+    response_model=OfferSignatureRequestResponse,
+)
+async def send_offer_signature_request_endpoint(
+    signature_request_id: UUID,
+    payload: SendOfferSignatureRequestRequest,
+    context: CallerContext,
+    session: DatabaseSession,
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Record that the provider accepted the signature request for delivery."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        signature_request = await send_offer_signature_request(
+            session,
+            context=context,
+            signature_request_id=signature_request_id,
+            expected_version=payload.expected_version,
+            provider_envelope_reference=payload.provider_envelope_reference,
+        )
+        return (
+            status.HTTP_200_OK,
+            OfferSignatureRequestResponse.model_validate(
+                signature_request
+            ).model_dump(mode="json"),
+        )
+
+    result = await execute_idempotently(
+        session,
+        context=context,
+        key=idempotency_key,
+        operation_name=f"offer_signature.send:{signature_request_id}",
+        payload=payload.model_dump(mode="json"),
+        operation=operation,
+    )
+    return _private_response(result)
+
+
+@router.post(
+    "/offer-signature-requests/{signature_request_id}/sign",
+    response_model=OfferSignatureRequestResponse,
+)
+async def sign_offer_signature_request_endpoint(
+    signature_request_id: UUID,
+    payload: SignOfferSignatureRequestRequest,
+    context: CallerContext,
+    session: DatabaseSession,
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Mark a sent signature request as completed by the provider."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        signature_request = await mark_offer_signature_signed(
+            session,
+            context=context,
+            signature_request_id=signature_request_id,
+            expected_version=payload.expected_version,
+        )
+        return (
+            status.HTTP_200_OK,
+            OfferSignatureRequestResponse.model_validate(
+                signature_request
+            ).model_dump(mode="json"),
+        )
+
+    result = await execute_idempotently(
+        session,
+        context=context,
+        key=idempotency_key,
+        operation_name=f"offer_signature.sign:{signature_request_id}",
         payload=payload.model_dump(mode="json"),
         operation=operation,
     )

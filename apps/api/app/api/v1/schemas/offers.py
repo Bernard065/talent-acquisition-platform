@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.domains.approvals.enums import ApprovalDecisionStatus, ApprovalStatus
 from app.domains.offers.enums import OfferPayPeriod, OfferStatus
+from app.domains.signatures.enums import OfferSignatureStatus
 
 
 class CreateOfferRequest(BaseModel):
@@ -64,6 +65,32 @@ class OfferApprovalDecisionRequest(ExpectedOfferVersionRequest):
         return value
 
 
+class CreateOfferSignatureRequestRequest(ExpectedOfferVersionRequest):
+    """Create a provider-neutral signature request for an approved offer."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str = Field(min_length=1, max_length=50)
+    document_reference: str = Field(min_length=1, max_length=255)
+
+
+class SendOfferSignatureRequestRequest(BaseModel):
+    """Submit an envelope reference for a signature request."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+    provider_envelope_reference: str = Field(min_length=1, max_length=255)
+
+
+class SignOfferSignatureRequestRequest(BaseModel):
+    """Mark an in-flight signature request as signed."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+
+
 class OfferResponse(BaseModel):
     """Private offer metadata and compensation response."""
 
@@ -85,6 +112,35 @@ class OfferResponse(BaseModel):
     accepted_at: datetime | None
     declined_at: datetime | None
     cancelled_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+    version: int
+
+
+class OfferSignatureRequestResponse(BaseModel):
+    """Private state of a single offer signature request."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    tenant_id: UUID
+    offer_id: UUID
+    provider: str
+    provider_envelope_reference: str | None
+    document_reference: str
+    status: OfferSignatureStatus
+    offer_version: int
+    currency: str
+    base_salary: Decimal
+    pay_period: OfferPayPeriod
+    bonus_amount: Decimal | None
+    proposed_start_date: date
+    expires_at: datetime
+    sent_at: datetime | None
+    signed_at: datetime | None
+    declined_at: datetime | None
+    voided_at: datetime | None
+    expired_at: datetime | None
     created_at: datetime
     updated_at: datetime
     version: int
