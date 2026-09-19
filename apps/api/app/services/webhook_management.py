@@ -14,7 +14,7 @@ from urllib.parse import urlsplit
 from uuid import UUID
 
 from pydantic import SecretStr
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authorization import Role, TenantContext
@@ -48,6 +48,15 @@ HostResolver = Callable[[str], Awaitable[tuple[str, ...]]]
 @dataclass(frozen=True, slots=True)
 class CreateWebhookEndpointCommand:
     """Validated intent to create one tenant webhook endpoint and subscriptions."""
+
+    name: str
+    url: str
+    event_types: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class UpdateWebhookEndpointCommand:
+    """Replacement configuration for one existing webhook endpoint."""
 
     name: str
     url: str
@@ -354,3 +363,261 @@ async def disable_webhook_endpoint(
         await session.refresh(endpoint)
 
     return endpoint
+
+
+async def _load_webhook_endpoint_for_update(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    webhook_endpoint_id: UUID,
+) -> WebhookEndpoint:
+    """Lock one tenant-owned endpoint for an authorized lifecycle mutation."""
+
+    endpoint = await session.scalar(
+        select(WebhookEndpoint)
+        .where(
+            WebhookEndpoint.id == webhook_endpoint_id,
+            WebhookEndpoint.tenant_id == context.tenant_id,
+        )
+        .with_for_update()
+    )
+
+    if endpoint is None:
+        raise WebhookEndpointNotFoundError("Webhook endpoint was not found.")
+
+    return endpoint
+
+
+def _validate_expected_version(
+    *,
+    endpoint: WebhookEndpoint,
+    expected_version: int,
+) -> None:
+    """Reject stale writes before changing endpoint configuration."""
+
+    if endpoint.version != expected_version:
+        raise WebhookVersionConflictError(
+            "Webhook endpoint changed; retrieve it and retry."
+        )
+
+
+async def update_webhook_endpoint(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    webhook_endpoint_id: UUID,
+    expected_version: int,
+    command: UpdateWebhookEndpointCommand,
+    allowed_hosts: Sequence[str],
+    host_resolver: HostResolver = resolve_public_host,
+) -> WebhookEndpoint:
+    """Replace endpoint metadata and its complete subscription set."""
+
+    _require_tenant_admin(context)
+
+    name = command.name.strip()
+    if not name or len(name) > _MAX_ENDPOINT_NAME_LENGTH:
+        raise WebhookValidationError("Webhook endpoint name is invalid.")
+
+    event_types = _validate_event_types(command.event_types)
+    destination_url = await validate_webhook_destination(
+        url=command.url.strip(),
+        allowed_hosts=allowed_hosts,
+        host_resolver=host_resolver,
+    )
+
+    async with transactional(session):
+        endpoint = await _load_webhook_endpoint_for_update(
+            session,
+            context=context,
+            webhook_endpoint_id=webhook_endpoint_id,
+        )
+        _validate_expected_version(
+            endpoint=endpoint,
+            expected_version=expected_version,
+        )
+
+        endpoint.name = name
+        endpoint.url = destination_url
+
+        await session.execute(
+            delete(WebhookSubscription).where(
+                WebhookSubscription.tenant_id == context.tenant_id,
+                WebhookSubscription.webhook_endpoint_id == endpoint.id,
+            )
+        )
+
+        session.add_all(
+            [
+                WebhookSubscription(
+                    tenant_id=context.tenant_id,
+                    webhook_endpoint_id=endpoint.id,
+                    event_type=event_type,
+                )
+                for event_type in event_types
+            ]
+        )
+        await session.flush()
+
+        record_audit_event(
+            session,
+            context=context,
+            action="webhook_endpoint.updated",
+            entity_type="webhook_endpoint",
+            entity_id=str(endpoint.id),
+            details={
+                "subscription_count": len(event_types),
+                "status": endpoint.status.value,
+                "version": endpoint.version,
+            },
+        )
+        await session.flush()
+        await session.refresh(endpoint)
+
+    return endpoint
+
+
+async def rotate_webhook_endpoint_secret(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    webhook_endpoint_id: UUID,
+    expected_version: int,
+    signing_secret_vault: WebhookSigningSecretVault,
+) -> WebhookEndpoint:
+    """
+    Replace an endpoint signing secret without exposing either secret value.
+
+    The old secret is deleted only after the database points at the new opaque
+    reference. If cleanup fails, the endpoint remains operational and the old
+    secret is an external-vault cleanup concern rather than a failed API write.
+    """
+
+    _require_tenant_admin(context)
+
+    try:
+        new_secret_reference = await signing_secret_vault.store_webhook_signing_secret(
+            secret=SecretStr(secrets.token_urlsafe(48)),
+        )
+    except WebhookSigningSecretVaultError as error:
+        raise WebhookSecretStorageError(
+            error.code,
+            retryable=error.retryable,
+        ) from error
+
+    if not new_secret_reference or len(new_secret_reference) > 500:
+        raise WebhookSecretStorageError(
+            "webhook_secret_reference_invalid",
+            retryable=False,
+        )
+
+    previous_secret_reference: str | None = None
+
+    try:
+        async with transactional(session):
+            endpoint = await _load_webhook_endpoint_for_update(
+                session,
+                context=context,
+                webhook_endpoint_id=webhook_endpoint_id,
+            )
+            _validate_expected_version(
+                endpoint=endpoint,
+                expected_version=expected_version,
+            )
+
+            previous_secret_reference = endpoint.credential_reference
+            endpoint.credential_reference = new_secret_reference
+
+            await session.flush()
+
+            record_audit_event(
+                session,
+                context=context,
+                action="webhook_endpoint.secret_rotated",
+                entity_type="webhook_endpoint",
+                entity_id=str(endpoint.id),
+                details={
+                    "status": endpoint.status.value,
+                    "version": endpoint.version,
+                },
+            )
+            await session.flush()
+            await session.refresh(endpoint)
+    except Exception:
+        with suppress(WebhookSigningSecretVaultError):
+            await signing_secret_vault.delete_webhook_signing_secret(
+                secret_reference=new_secret_reference,
+            )
+        raise
+
+    if previous_secret_reference is not None:
+        with suppress(WebhookSigningSecretVaultError):
+            await signing_secret_vault.delete_webhook_signing_secret(
+                secret_reference=previous_secret_reference,
+            )
+
+    return endpoint
+
+
+async def delete_webhook_endpoint(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    webhook_endpoint_id: UUID,
+    expected_version: int,
+    signing_secret_vault: WebhookSigningSecretVault,
+) -> None:
+    """
+    Logically delete an endpoint while preserving immutable delivery history.
+
+    Existing delivery and audit rows retain their foreign-key references.
+    Future fan-out is prevented because the endpoint and subscriptions are
+    disabled before best-effort vault secret removal.
+    """
+
+    _require_tenant_admin(context)
+
+    secret_reference: str | None = None
+
+    async with transactional(session):
+        endpoint = await _load_webhook_endpoint_for_update(
+            session,
+            context=context,
+            webhook_endpoint_id=webhook_endpoint_id,
+        )
+        _validate_expected_version(
+            endpoint=endpoint,
+            expected_version=expected_version,
+        )
+
+        secret_reference = endpoint.credential_reference
+        endpoint.status = WebhookEndpointStatus.DISABLED
+
+        await session.execute(
+            update(WebhookSubscription)
+            .where(
+                WebhookSubscription.tenant_id == context.tenant_id,
+                WebhookSubscription.webhook_endpoint_id == endpoint.id,
+            )
+            .values(enabled=False)
+        )
+        await session.flush()
+
+        record_audit_event(
+            session,
+            context=context,
+            action="webhook_endpoint.deleted",
+            entity_type="webhook_endpoint",
+            entity_id=str(endpoint.id),
+            details={
+                "status": endpoint.status.value,
+                "version": endpoint.version,
+            },
+        )
+        await session.flush()
+
+    if secret_reference is not None:
+        with suppress(WebhookSigningSecretVaultError):
+            await signing_secret_vault.delete_webhook_signing_secret(
+                secret_reference=secret_reference,
+            )

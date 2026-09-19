@@ -152,6 +152,13 @@ from app.services.requisition_errors import (
     RequisitionNotEditableError,
     RequisitionNotFoundError,
 )
+from app.services.webhook_management_errors import (
+    WebhookAccessDeniedError,
+    WebhookEndpointNotFoundError,
+    WebhookSecretStorageError,
+    WebhookValidationError,
+    WebhookVersionConflictError,
+)
 
 logger = structlog.get_logger()
 
@@ -805,6 +812,77 @@ async def calendar_oauth_provider_error(
     return await invalid_calendar_oauth_request(request, error)
 
 
+async def webhook_not_found(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Hide webhook endpoint existence outside the caller tenant."""
+    response = _error_response(
+        request,
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Webhook endpoint not found.",
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+async def webhook_forbidden(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Return a private authorization failure."""
+    response = _error_response(
+        request,
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Insufficient permission.",
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+async def invalid_webhook_request(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Return a privacy-safe webhook configuration validation error."""
+    response = _error_response(
+        request,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail="Invalid webhook endpoint request.",
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+async def webhook_conflict(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Require callers to refresh before retrying a stale write."""
+    response = _error_response(
+        request,
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Webhook endpoint has changed; retrieve it and retry.",
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+async def webhook_secret_unavailable(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Avoid exposing vault-provider implementation details."""
+    response = _error_response(
+        request,
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Webhook management service is unavailable.",
+    )
+    response.headers["Retry-After"] = "5"
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
 def register_exception_handlers(application: FastAPI) -> None:
     """Register application-wide exception handlers."""
     application.add_exception_handler(RequisitionNotFoundError, not_found)
@@ -1146,6 +1224,27 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         CalendarCredentialVaultError,
         calendar_oauth_unavailable,
+    )
+
+    application.add_exception_handler(
+        WebhookAccessDeniedError,
+        webhook_forbidden,
+    )
+    application.add_exception_handler(
+        WebhookEndpointNotFoundError,
+        webhook_not_found,
+    )
+    application.add_exception_handler(
+        WebhookValidationError,
+        invalid_webhook_request,
+    )
+    application.add_exception_handler(
+        WebhookVersionConflictError,
+        webhook_conflict,
+    )
+    application.add_exception_handler(
+        WebhookSecretStorageError,
+        webhook_secret_unavailable,
     )
 
     application.add_exception_handler(OperationalError, database_unavailable)

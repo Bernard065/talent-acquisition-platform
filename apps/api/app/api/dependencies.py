@@ -21,6 +21,7 @@ from app.services.calendar_oauth import (
     CalendarOAuthStateStore,
 )
 from app.services.object_storage import ObjectStorage
+from app.services.webhook_secrets import WebhookSigningSecretVault
 
 bearer_scheme = HTTPBearer(auto_error=False)
 logger = structlog.get_logger()
@@ -223,3 +224,23 @@ async def get_calendar_credential_vault(
         )
 
     return cast(CalendarCredentialVault, credential_vault)
+
+
+async def get_webhook_signing_secret_vault(
+    request: Request,
+) -> WebhookSigningSecretVault:
+    """Return the configured vault used only for outbound webhook secrets."""
+
+    vault = getattr(request.app.state, "webhook_signing_secret_vault", None)
+
+    if vault is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Webhook management service is unavailable.",
+            headers={
+                "Retry-After": "5",
+                "Cache-Control": "private, no-store",
+            },
+        )
+
+    return cast(WebhookSigningSecretVault, vault)

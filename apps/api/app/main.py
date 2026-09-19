@@ -40,6 +40,9 @@ from app.api.v1.recruiting_metrics import (
     router as recruiting_metrics_router,
 )
 from app.api.v1.requisitions import router as requisitions_router
+from app.api.v1.webhooks import (
+    router as webhooks_router,  # pyright: ignore[reportAttributeAccessIssue]
+)
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.core.security import JwtVerifier
@@ -61,6 +64,7 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     settings: Settings = application.state.settings
     application.state.calendar_credential_vault = None
     application.state.calendar_credential_resolver = None
+    application.state.webhook_signing_secret_vault = None
     application.state.calendar_oauth_providers = {}
 
     oauth_http_client: httpx.AsyncClient | None = None
@@ -101,6 +105,7 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
         )
         application.state.calendar_credential_vault = vault
         application.state.calendar_credential_resolver = vault
+        application.state.webhook_signing_secret_vault = vault
 
     if settings.calendar_oauth_provider == "google":
         vault = application.state.calendar_credential_vault
@@ -304,6 +309,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application.include_router(
         recruiting_metrics_router,
+        prefix=active_settings.api_prefix,
+    )
+
+    application.include_router(
+        webhooks_router,
         prefix=active_settings.api_prefix,
     )
 
