@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authorization import Role, TenantContext
 from app.db.models.application import Application
+from app.db.models.hris import HrisConnection, HrisHandoff
 from app.db.models.identity import User
 from app.db.models.onboarding import (
     OnboardingInstance,
@@ -20,6 +21,7 @@ from app.db.models.onboarding import (
 )
 from app.db.transactions import transactional
 from app.domains.candidates.enums import ApplicationStatus
+from app.domains.hris.enums import HrisConnectionStatus, HrisHandoffStatus
 from app.domains.notifications.enums import NotificationEventType
 from app.domains.onboarding.enums import (
     OnboardingInstanceEventType,
@@ -46,6 +48,7 @@ from app.services.onboarding_errors import (
     OnboardingValidationError,
     OnboardingVersionConflictError,
 )
+from app.services.outbox import enqueue_outbox_event
 
 _TEMPLATE_ADMIN_ROLES = frozenset(
     {
@@ -306,6 +309,85 @@ async def create_onboarding_template(
     return template
 
 
+async def _queue_hris_handoff_if_configured(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    onboarding_instance: OnboardingInstance,
+    application: Application,
+) -> HrisHandoff | None:
+    """
+    Create one handoff and outbox event only when a tenant HRIS target exists.
+
+    The worker receives identifiers only. Candidate identity, compensation,
+    offer data, résumés, feedback, and onboarding task content remain in the
+    transactional database and are loaded privately only when required.
+    """
+
+    active_connections = list(
+        await session.scalars(
+            select(HrisConnection)
+            .where(
+                HrisConnection.tenant_id == context.tenant_id,
+                HrisConnection.status == HrisConnectionStatus.ACTIVE,
+            )
+            .order_by(HrisConnection.id)
+            .limit(2)
+            .with_for_update()
+        )
+    )
+
+    if not active_connections:
+        return None
+
+    if len(active_connections) > 1:
+        raise OnboardingValidationError(
+            "Tenant has more than one active HRIS connection."
+        )
+
+    connection = active_connections[0]
+
+    handoff = HrisHandoff(
+        tenant_id=context.tenant_id,
+        hris_connection_id=connection.id,
+        onboarding_instance_id=onboarding_instance.id,
+        application_id=application.id,
+        status=HrisHandoffStatus.PENDING,
+    )
+    session.add(handoff)
+    await session.flush()
+
+    enqueue_outbox_event(
+        session,
+        context=context,
+        event_type="hris.handoff_requested",
+        aggregate_type="hris_handoff",
+        aggregate_id=str(handoff.id),
+        deduplication_key=(
+            f"hris-handoff-requested:{handoff.id}:{handoff.version}"
+        ),
+        payload={
+            "hris_handoff_id": str(handoff.id),
+            "onboarding_instance_id": str(onboarding_instance.id),
+            "handoff_version": handoff.version,
+        },
+    )
+
+    record_audit_event(
+        session,
+        context=context,
+        action="hris_handoff.requested",
+        entity_type="hris_handoff",
+        entity_id=str(handoff.id),
+        details={
+            "status": handoff.status.value,
+            "version": handoff.version,
+        },
+    )
+
+    return handoff
+
+
 async def start_onboarding(
     session: AsyncSession,
     *,
@@ -444,6 +526,12 @@ async def start_onboarding(
                 "template_version": template.version,
                 "task_count": len(tasks),
             },
+        )
+        await _queue_hris_handoff_if_configured(
+            session,
+            context=context,
+            onboarding_instance=instance,
+            application=application,
         )
         await enqueue_notifications_for_roles(
             session,
