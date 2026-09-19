@@ -1,6 +1,6 @@
 """Private tenant-admin API for outbound webhook endpoint management."""
 
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, Response, status
@@ -8,9 +8,9 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.authorization import require_any_role
 from app.api.dependencies import (
     get_db_session,
+    get_tenant_context,
     get_webhook_signing_secret_vault,
 )
 from app.api.idempotency import IdempotencyKey, idempotency_response
@@ -28,14 +28,19 @@ from app.db.models.webhook import WebhookEndpoint, WebhookSubscription
 from app.services.idempotency import IdempotencyResult, execute_idempotently
 from app.services.webhook_management import (
     CreateWebhookEndpointCommand,
+    HostResolver,
     UpdateWebhookEndpointCommand,
     create_webhook_endpoint,
     delete_webhook_endpoint,
     disable_webhook_endpoint,
+    resolve_public_host,
     rotate_webhook_endpoint_secret,
     update_webhook_endpoint,
 )
-from app.services.webhook_management_errors import WebhookEndpointNotFoundError
+from app.services.webhook_management_errors import (
+    WebhookAccessDeniedError,
+    WebhookEndpointNotFoundError,
+)
 from app.services.webhook_secrets import WebhookSigningSecretVault
 
 router = APIRouter(
@@ -43,9 +48,21 @@ router = APIRouter(
     tags=["Webhook endpoints"],
 )
 
+async def _require_webhook_tenant_admin(
+    context: Annotated[TenantContext, Depends(get_tenant_context)],
+) -> TenantContext:
+    """Require tenant-admin access with a private mapped error response."""
+    if Role.TENANT_ADMIN not in context.roles:
+        raise WebhookAccessDeniedError(
+            "Tenant administrator permission is required for webhooks."
+        )
+
+    return context
+
+
 TenantAdminContext = Annotated[
     TenantContext,
-    Depends(require_any_role(Role.TENANT_ADMIN)),
+    Depends(_require_webhook_tenant_admin),
 ]
 DatabaseSession = Annotated[AsyncSession, Depends(get_db_session)]
 SigningSecretVault = Annotated[
@@ -63,11 +80,18 @@ def _private_response(result: IdempotencyResult) -> JSONResponse:
 
 def _allowed_hosts(request: Request) -> list[str]:
     """Read only operator-configured outbound destination allow-list entries."""
-    settings = request.app.state.settings
-    if not isinstance(settings, Settings):
-        raise RuntimeError("Application settings are unavailable.")
-
+    settings = cast(Settings, request.app.state.settings)
     return settings.webhook_allowed_hosts
+
+
+def _host_resolver(request: Request) -> HostResolver:
+    """Use the production resolver unless a test explicitly supplies one."""
+    resolver = getattr(request.app.state, "webhook_host_resolver", None)
+
+    if resolver is None:
+        return resolve_public_host
+
+    return cast(HostResolver, resolver)
 
 
 async def _endpoint_response(
@@ -148,6 +172,7 @@ async def create_webhook_endpoint_endpoint(
             ),
             signing_secret_vault=signing_secret_vault,
             allowed_hosts=_allowed_hosts(request),
+            host_resolver=_host_resolver(request),
         )
         response = await _endpoint_response(session, endpoint=endpoint)
 
@@ -245,6 +270,7 @@ async def update_webhook_endpoint_endpoint(
                 event_types=tuple(payload.event_types),
             ),
             allowed_hosts=_allowed_hosts(request),
+            host_resolver=_host_resolver(request),
         )
         endpoint_response = await _endpoint_response(session, endpoint=endpoint)
 
