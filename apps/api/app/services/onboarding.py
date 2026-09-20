@@ -330,6 +330,7 @@ async def _queue_hris_handoff_if_configured(
             .where(
                 HrisConnection.tenant_id == context.tenant_id,
                 HrisConnection.status == HrisConnectionStatus.ACTIVE,
+                HrisConnection.deleted_at.is_(None),
             )
             .order_by(HrisConnection.id)
             .limit(2)

@@ -20,6 +20,9 @@ from app.api.v1.candidates import router as candidates_router
 from app.api.v1.documents import router as documents_router
 from app.api.v1.health import router as health_router
 from app.api.v1.hiring_decisions import router as hiring_decisions_router
+from app.api.v1.hris_connections import (
+    router as hris_connections_router,
+)
 from app.api.v1.identity import router as identity_router
 from app.api.v1.interview_feedback import router as interview_feedback_router
 from app.api.v1.interview_lifecycle import router as interview_lifecycle_router
@@ -50,6 +53,9 @@ from app.db.session import Database
 from app.domains.calendar.enums import CalendarProvider
 from app.infrastructure.calendar.google_oauth import GoogleCalendarOAuthProvider
 from app.infrastructure.calendar.infisical_vault import InfisicalCredentialVault
+from app.infrastructure.hris.infisical_vault import (
+    InfisicalHrisCredentialVault,
+)
 from app.infrastructure.object_storage.s3 import S3ObjectStorage
 from app.services.public_application_abuse_control import (
     build_public_application_abuse_guard,
@@ -64,6 +70,7 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     settings: Settings = application.state.settings
     application.state.calendar_credential_vault = None
     application.state.calendar_credential_resolver = None
+    application.state.hris_credential_vault = None
     application.state.webhook_signing_secret_vault = None
     application.state.calendar_oauth_providers = {}
 
@@ -105,6 +112,15 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
         )
         application.state.calendar_credential_vault = vault
         application.state.calendar_credential_resolver = vault
+        application.state.hris_credential_vault = (
+            await InfisicalHrisCredentialVault.from_universal_auth(
+                project_id=settings.infisical_project_id,  # type: ignore[arg-type]
+                environment_slug=settings.infisical_environment,
+                client_id=settings.infisical_client_id,  # type: ignore[arg-type]
+                client_secret=settings.infisical_client_secret.get_secret_value(),  # type: ignore[union-attr]
+                host=str(settings.infisical_host),
+            )
+        )
         application.state.webhook_signing_secret_vault = vault
 
     if settings.calendar_oauth_provider == "google":
@@ -314,6 +330,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application.include_router(
         webhooks_router,
+        prefix=active_settings.api_prefix,
+    )
+
+    application.include_router(
+        hris_connections_router,
         prefix=active_settings.api_prefix,
     )
 

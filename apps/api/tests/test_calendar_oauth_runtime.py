@@ -127,6 +127,11 @@ async def test_lifespan_wires_google_oauth_from_infisical(
         "from_universal_auth",
         create_vault,
     )
+    monkeypatch.setattr(
+        app_main.InfisicalHrisCredentialVault,
+        "from_universal_auth",
+        create_vault,
+    )
     monkeypatch.setattr(app_main.httpx, "AsyncClient", FakeHttpClient)
     monkeypatch.setattr(
         app_main,
@@ -179,6 +184,11 @@ async def test_lifespan_fails_before_google_client_when_secret_is_unavailable(
     monkeypatch.setattr(app_main, "Database", FakeDatabase)
     monkeypatch.setattr(
         app_main.InfisicalCredentialVault,
+        "from_universal_auth",
+        create_vault,
+    )
+    monkeypatch.setattr(
+        app_main.InfisicalHrisCredentialVault,
         "from_universal_auth",
         create_vault,
     )
