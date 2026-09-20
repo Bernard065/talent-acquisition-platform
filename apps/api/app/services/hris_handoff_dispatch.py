@@ -72,7 +72,7 @@ class _LoadedHrisHandoff:
     handoff: HrisHandoff
     connection: HrisConnection
     candidate: Candidate
-    proposed_start_date: date
+    proposed_start_date: date | None
 
 
 def _worker_context(event: OutboxEvent, worker_id: str) -> TenantContext:
@@ -233,6 +233,32 @@ async def _record_failure(
     return "dead_lettered"
 
 
+async def _mark_terminal_and_dead_letter(
+    session: AsyncSession,
+    *,
+    event: OutboxEvent,
+    worker_id: str,
+    context: TenantContext,
+    handoff: HrisHandoff,
+    failure_code: str,
+) -> Literal["dead_lettered"]:
+    """Record a terminal handoff failure before dead-lettering its event."""
+    failed_handoff = await mark_hris_handoff_failed(
+        session,
+        context=context,
+        handoff_id=handoff.id,
+        expected_version=handoff.version,
+        failure_code=failure_code,
+    )
+    await dead_letter_outbox_event(
+        session,
+        event_id=event.id,
+        worker_id=worker_id,
+        failure_code=failed_handoff.last_error_code or _SAFE_FAILURE_CODE,
+    )
+    return "dead_lettered"
+
+
 async def _dispatch_event(
     session: AsyncSession,
     *,
@@ -289,26 +315,28 @@ async def _dispatch_event(
         return "dead_lettered"
 
     if loaded.connection.status is not HrisConnectionStatus.ACTIVE:
-        await dead_letter_outbox_event(
+        return await _mark_terminal_and_dead_letter(
             session,
-            event_id=event.id,
+            event=event,
             worker_id=worker_id,
+            context=context,
+            handoff=handoff,
             failure_code="hris_connection_inactive",
         )
-        return "dead_lettered"
 
     provider = providers.get(loaded.connection.provider)
     if (
         provider is None
         or provider.provider != loaded.connection.provider.value
     ):
-        await dead_letter_outbox_event(
+        return await _mark_terminal_and_dead_letter(
             session,
-            event_id=event.id,
+            event=event,
             worker_id=worker_id,
+            context=context,
+            handoff=handoff,
             failure_code="hris_provider_not_configured",
         )
-        return "dead_lettered"
 
     try:
         prepared = await prepare_hris_handoff_dispatch(
