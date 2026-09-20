@@ -938,7 +938,7 @@ async def invalid_hris_request(
 
 async def invalid_hris_schema(
     request: Request,
-    _: RequestValidationError,
+    _: Exception,
 ) -> JSONResponse:
     """Prevent validation output from reflecting HRIS credential inputs."""
     response = _error_response(
