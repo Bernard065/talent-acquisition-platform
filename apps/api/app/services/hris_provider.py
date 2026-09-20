@@ -7,6 +7,8 @@ from datetime import date
 from typing import Protocol
 from uuid import UUID
 
+from app.services.hris_credentials import HrisCredentials
+
 
 class HrisProviderError(RuntimeError):
     """Classified failure returned by an external HRIS provider."""
@@ -70,5 +72,6 @@ class HrisProviderAdapter(Protocol):
         self,
         *,
         command: HrisEmployeeHandoffCommand,
+        credentials: HrisCredentials,
     ) -> HrisEmployeeHandoffResult:
         """Create or recover the employee record idempotently."""
