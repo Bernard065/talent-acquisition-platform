@@ -223,6 +223,41 @@ class Settings(BaseSettings):
         le=900,
     )
 
+    hris_handoff_provider: Literal["none", "bamboohr"] = "none"
+    hris_handoff_worker_poll_interval_seconds: int = Field(
+        default=10,
+        ge=1,
+        le=300,
+    )
+    hris_handoff_worker_batch_size: int = Field(
+        default=25,
+        ge=1,
+        le=100,
+    )
+    hris_handoff_worker_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=255,
+    )
+    hris_handoff_worker_heartbeat_path: Path = Path(
+        "/tmp/tap-hris-handoff-worker.heartbeat"  # noqa: S108
+    )
+    hris_handoff_worker_heartbeat_max_age_seconds: int = Field(
+        default=90,
+        ge=10,
+        le=900,
+    )
+    hris_handoff_http_connect_timeout_seconds: float = Field(
+        default=3.0,
+        gt=0,
+        le=30,
+    )
+    hris_handoff_http_read_timeout_seconds: float = Field(
+        default=15.0,
+        gt=0,
+        le=60,
+    )
+
     public_application_abuse_control_provider: Literal[
         "local_allow_all",
         "captcha",
@@ -302,6 +337,13 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "google_calendar_oauth_client_secret_secret_name is "
                     "required when calendar_oauth_provider is 'google'."
+                )
+
+        if self.hris_handoff_provider != "none":
+            if self.credential_vault_provider != "infisical":
+                raise ValueError(
+                    "credential_vault_provider must be 'infisical' when "
+                    "hris_handoff_provider is enabled."
                 )
 
         return self
