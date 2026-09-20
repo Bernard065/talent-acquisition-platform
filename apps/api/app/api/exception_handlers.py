@@ -2,6 +2,7 @@
 
 import structlog
 from fastapi import FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm.exc import StaleDataError
@@ -935,6 +936,20 @@ async def invalid_hris_request(
     return response
 
 
+async def invalid_hris_schema(
+    request: Request,
+    _: RequestValidationError,
+) -> JSONResponse:
+    """Prevent validation output from reflecting HRIS credential inputs."""
+    response = _error_response(
+        request,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail="Invalid HRIS connection request.",
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
 async def hris_conflict(
     request: Request,
     _: Exception,
@@ -1362,3 +1377,7 @@ def register_exception_handlers(application: FastAPI) -> None:
     )
 
     application.add_exception_handler(OperationalError, database_unavailable)
+    application.add_exception_handler(
+        RequestValidationError,
+        invalid_hris_schema,
+    )
