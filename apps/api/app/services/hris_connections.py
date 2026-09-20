@@ -109,6 +109,7 @@ async def create_hris_connection(
                 select(HrisConnection.id).where(
                     HrisConnection.tenant_id == context.tenant_id,
                     HrisConnection.status == HrisConnectionStatus.ACTIVE,
+                    HrisConnection.deleted_at.is_(None),
                 )
             )
             if active_connection is not None:
@@ -121,6 +122,7 @@ async def create_hris_connection(
                     HrisConnection.tenant_id == context.tenant_id,
                     HrisConnection.provider == command.provider,
                     HrisConnection.name == command.name,
+                    HrisConnection.deleted_at.is_(None),
                 )
             )
             if existing_connection is not None:

@@ -35,15 +35,21 @@ class HrisConnection(Base):
 
     __tablename__ = "hris_connections"
     __table_args__ = (
-        UniqueConstraint(
-            "tenant_id",
-            "provider",
-            "name",
-            name="uq_hris_connections_tenant_provider_name",
+        CheckConstraint(
+            "(deleted_at IS NULL) OR (status = 'disabled')",
+            name="ck_hris_connections_deleted_requires_disabled",
         ),
         UniqueConstraint(
             "credential_reference",
             name="uq_hris_connections_credential_reference",
+        ),
+        Index(
+            "uq_hris_connections_tenant_provider_name_active",
+            "tenant_id",
+            "provider",
+            "name",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
         ),
         Index(
             "ix_hris_connections_tenant_status",
@@ -102,6 +108,22 @@ class HrisConnection(Base):
         nullable=False,
         server_default=text("CURRENT_TIMESTAMP"),
         onupdate=text("CURRENT_TIMESTAMP"),
+    )
+    disabled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    disabled_by_subject: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    deleted_by_subject: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
     )
     version: Mapped[int] = mapped_column(
         Integer,
