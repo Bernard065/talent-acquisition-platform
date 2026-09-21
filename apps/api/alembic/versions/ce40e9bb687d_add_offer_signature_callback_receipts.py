@@ -20,14 +20,6 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Create immutable receipts for verified e-signature provider callbacks."""
-    callback_event_type = sa.Enum(
-        "signed",
-        "declined",
-        "voided",
-        name="offer_signature_callback_event_type",
-    )
-    callback_event_type.create(op.get_bind(), checkfirst=True)
-
     op.create_table(
         "offer_signature_callback_receipts",
         sa.Column("id", sa.UUID(), nullable=False),
@@ -42,7 +34,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "event_type",
-            callback_event_type,
+            sa.String(length=20),
             nullable=False,
         ),
         sa.Column("payload_sha256", sa.String(length=64), nullable=False),
@@ -140,9 +132,5 @@ def downgrade() -> None:
     )
     op.drop_table("offer_signature_callback_receipts")
 
-    sa.Enum(
-        "signed",
-        "declined",
-        "voided",
-        name="offer_signature_callback_event_type",
-    ).drop(op.get_bind(), checkfirst=True)
+    # The callback event values remain string-backed to keep Alembic reruns safe
+    # on CI databases that may already contain the old enum name.
