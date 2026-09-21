@@ -23,3 +23,11 @@ class OfferSignatureEventType(StrEnum):
     DECLINED = "declined"
     VOIDED = "voided"
     EXPIRED = "expired"
+
+
+class OfferSignatureCallbackEventType(StrEnum):
+    """Verified provider events that can affect signature lifecycle state."""
+
+    SIGNED = "signed"
+    DECLINED = "declined"
+    VOIDED = "voided"

@@ -33,6 +33,9 @@ from app.db.models.offer_signature import (
     OfferSignatureHistory,
     OfferSignatureRequest,
 )
+from app.db.models.offer_signature_callback import (
+    OfferSignatureCallbackReceipt,
+)
 from app.db.models.onboarding import (
     OnboardingInstance,
     OnboardingInstanceHistory,
@@ -79,6 +82,7 @@ __all__ = [
     "OfferLifecycleHistory",
     "OfferSignatureHistory",
     "OfferSignatureRequest",
+    "OfferSignatureCallbackReceipt",
     "OnboardingInstance",
     "OnboardingInstanceHistory",
     "OnboardingTask",
