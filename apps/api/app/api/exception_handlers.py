@@ -76,6 +76,11 @@ from app.services.hris_errors import (
     HrisConnectionVersionConflictError,
     HrisCredentialStorageError,
 )
+from app.services.hris_handoff_errors import (
+    HrisHandoffNotFoundError,
+    HrisHandoffValidationError,
+    InvalidHrisHandoffCursorError,
+)
 from app.services.idempotency import (
     IdempotencyKeyReuseError,
     InvalidIdempotencyKeyError,
@@ -979,6 +984,48 @@ async def hris_vault_unavailable(
     return response
 
 
+async def hris_handoff_not_found(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Avoid cross-tenant HRIS handoff enumeration."""
+    response = _error_response(
+        request,
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="HRIS handoff not found.",
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+async def invalid_hris_handoff_request(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Return a private validation failure for HRIS handoff operations."""
+    response = _error_response(
+        request,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail="Invalid HRIS handoff request.",
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+async def invalid_hris_handoff_cursor(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Return a private malformed-cursor error."""
+    response = _error_response(
+        request,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail="Invalid HRIS handoff cursor.",
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
 def register_exception_handlers(application: FastAPI) -> None:
     """Register application-wide exception handlers."""
     application.add_exception_handler(RequisitionNotFoundError, not_found)
@@ -1374,6 +1421,18 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         HrisCredentialVaultError,
         hris_vault_unavailable,
+    )
+    application.add_exception_handler(
+        HrisHandoffNotFoundError,
+        hris_handoff_not_found,
+    )
+    application.add_exception_handler(
+        HrisHandoffValidationError,
+        invalid_hris_handoff_request,
+    )
+    application.add_exception_handler(
+        InvalidHrisHandoffCursorError,
+        invalid_hris_handoff_cursor,
     )
 
     application.add_exception_handler(OperationalError, database_unavailable)
