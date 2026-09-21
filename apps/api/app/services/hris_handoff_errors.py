@@ -11,3 +11,7 @@ class HrisHandoffVersionConflictError(RuntimeError):
 
 class HrisHandoffValidationError(ValueError):
     """Raised when internal HRIS handoff input is invalid."""
+
+
+class InvalidHrisHandoffCursorError(ValueError):
+    """Raised when an HRIS handoff operations cursor is malformed or invalid."""

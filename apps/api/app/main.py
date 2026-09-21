@@ -23,6 +23,9 @@ from app.api.v1.hiring_decisions import router as hiring_decisions_router
 from app.api.v1.hris_connections import (
     router as hris_connections_router,
 )
+from app.api.v1.hris_handoffs import (
+    router as hris_handoffs_router,
+)
 from app.api.v1.identity import router as identity_router
 from app.api.v1.interview_feedback import router as interview_feedback_router
 from app.api.v1.interview_lifecycle import router as interview_lifecycle_router
@@ -335,6 +338,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application.include_router(
         hris_connections_router,
+        prefix=active_settings.api_prefix,
+    )
+
+    application.include_router(
+        hris_handoffs_router,
         prefix=active_settings.api_prefix,
     )
 
