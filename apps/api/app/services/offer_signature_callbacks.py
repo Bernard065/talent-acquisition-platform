@@ -186,31 +186,31 @@ async def process_offer_signature_callback(
     envelope_reference = callback.provider_envelope_reference.strip()
     payload_sha256 = hashlib.sha256(verification_request.raw_body).hexdigest()
 
-    existing_receipt = await _find_existing_receipt(
-        session,
-        provider=normalized_provider,
-        provider_event_id=provider_event_id,
-    )
-    if existing_receipt is not None:
-        if not _receipt_matches(
-            existing_receipt,
-            signature_request_id=existing_receipt.offer_signature_request_id,
-            callback=callback,
-            payload_sha256=payload_sha256,
-        ):
-            raise OfferSignatureCallbackReplayMismatchError(
-                "signature_callback_replay_mismatch"
-            )
-
-        return OfferSignatureCallbackResult(
-            receipt_id=existing_receipt.id,
-            signature_request_id=existing_receipt.offer_signature_request_id,
-            replayed=True,
-            applied=False,
-        )
-
     try:
         async with transactional(session):
+            existing_receipt = await _find_existing_receipt(
+                session,
+                provider=normalized_provider,
+                provider_event_id=provider_event_id,
+            )
+            if existing_receipt is not None:
+                if not _receipt_matches(
+                    existing_receipt,
+                    signature_request_id=existing_receipt.offer_signature_request_id,
+                    callback=callback,
+                    payload_sha256=payload_sha256,
+                ):
+                    raise OfferSignatureCallbackReplayMismatchError(
+                        "signature_callback_replay_mismatch"
+                    )
+
+                return OfferSignatureCallbackResult(
+                    receipt_id=existing_receipt.id,
+                    signature_request_id=existing_receipt.offer_signature_request_id,
+                    replayed=True,
+                    applied=False,
+                )
+
             signature_request = await session.scalar(
                 select(OfferSignatureRequest)
                 .where(
