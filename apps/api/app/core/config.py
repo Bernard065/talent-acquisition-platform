@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     database_url: PostgresDsn | None = None
     redis_url: str
     allowed_origins: list[str] = Field(default_factory=list)
+    security_hsts_max_age_seconds: int = Field(
+        default=31_536_000,
+        ge=0,
+        le=63_072_000,
+    )
     # OAuth callbacks are server-controlled. Never accept redirect URIs from API requests.
     calendar_google_oauth_redirect_uri: AnyHttpUrl | None = None
     calendar_microsoft_oauth_redirect_uri: AnyHttpUrl | None = None
@@ -394,6 +399,15 @@ class Settings(BaseSettings):
                     "credential_vault_provider must be 'infisical' when "
                     "hris_handoff_provider is enabled."
                 )
+
+        if (
+            self.app_env == "production"
+            and self.security_hsts_max_age_seconds == 0
+        ):
+            raise ValueError(
+                "security_hsts_max_age_seconds must be greater than zero "
+                "in production."
+            )
 
         return self
 

@@ -243,6 +243,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             response.headers["X-Content-Type-Options"] = "nosniff"
             response.headers["X-Frame-Options"] = "DENY"
             response.headers["Referrer-Policy"] = "no-referrer"
+            response.headers["Permissions-Policy"] = (
+                "camera=(), geolocation=(), microphone=(), payment=(), usb=()"
+            )
+            response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
+
+            if active_settings.app_env == "production":
+                response.headers["Strict-Transport-Security"] = (
+                    "max-age="
+                    f"{active_settings.security_hsts_max_age_seconds}; "
+                    "includeSubDomains"
+                )
+
             return response
         finally:
             structlog.contextvars.clear_contextvars()
