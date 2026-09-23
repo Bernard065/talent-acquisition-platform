@@ -22,6 +22,9 @@ from app.services.calendar_oauth import (
 )
 from app.services.hris_credentials import HrisCredentialVault
 from app.services.object_storage import ObjectStorage
+from app.services.offer_signature_callback_provider import (
+    OfferSignatureCallbackVerifier,
+)
 from app.services.webhook_secrets import WebhookSigningSecretVault
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -264,3 +267,26 @@ async def get_hris_credential_vault(
         )
 
     return cast(HrisCredentialVault, vault)
+
+
+async def get_offer_signature_callback_verifiers(
+    request: Request,
+) -> Mapping[str, OfferSignatureCallbackVerifier]:
+    """Return configured trusted offer-signature callback verifiers."""
+    verifiers = getattr(
+        request.app.state,
+        "offer_signature_callback_verifiers",
+        None,
+    )
+
+    if verifiers is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Signature callback service is unavailable.",
+            headers={
+                "Retry-After": "5",
+                "Cache-Control": "no-store",
+            },
+        )
+
+    return cast(Mapping[str, OfferSignatureCallbackVerifier], verifiers)

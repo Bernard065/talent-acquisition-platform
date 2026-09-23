@@ -199,6 +199,13 @@ class Settings(BaseSettings):
     )
     webhook_allowed_hosts: list[str] = Field(default_factory=list)
     offer_signature_provider: Literal["none", "local"] = "none"
+    offer_signature_callback_provider: Literal["none", "local"] = "none"
+    offer_signature_callback_local_signing_secret: SecretStr | None = None
+    offer_signature_callback_max_body_bytes: int = Field(
+        default=64 * 1024,
+        ge=1_024,
+        le=1_048_576,
+    )
     offer_signature_dispatch_worker_poll_interval_seconds: int = Field(
         default=5,
         ge=1,
@@ -337,6 +344,25 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "google_calendar_oauth_client_secret_secret_name is "
                     "required when calendar_oauth_provider is 'google'."
+                )
+
+        if self.offer_signature_callback_provider == "local":
+            if self.app_env not in {"local", "test"}:
+                raise ValueError(
+                    "offer_signature_callback_provider='local' is permitted "
+                    "only in local or test environments."
+                )
+
+            local_callback_secret = (
+                self.offer_signature_callback_local_signing_secret
+            )
+            if (
+                local_callback_secret is None
+                or not local_callback_secret.get_secret_value()
+            ):
+                raise ValueError(
+                    "offer_signature_callback_local_signing_secret is required "
+                    "when offer_signature_callback_provider='local'."
                 )
 
         if self.hris_handoff_provider != "none":
