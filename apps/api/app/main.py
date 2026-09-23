@@ -35,6 +35,9 @@ from app.api.v1.job_postings import router as job_postings_router
 from app.api.v1.notification_preferences import (
     router as notification_preferences_router,
 )
+from app.api.v1.offer_signature_callbacks import (
+    router as offer_signature_callbacks_router,
+)
 from app.api.v1.offers import router as offers_router
 from app.api.v1.onboarding import router as onboarding_router
 from app.api.v1.operations import router as operations_router
@@ -60,6 +63,9 @@ from app.infrastructure.hris.infisical_vault import (
     InfisicalHrisCredentialVault,
 )
 from app.infrastructure.object_storage.s3 import S3ObjectStorage
+from app.infrastructure.signatures.local_callback_verifier import (
+    LocalOfferSignatureCallbackVerifier,
+)
 from app.services.public_application_abuse_control import (
     build_public_application_abuse_guard,
 )
@@ -76,6 +82,7 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     application.state.hris_credential_vault = None
     application.state.webhook_signing_secret_vault = None
     application.state.calendar_oauth_providers = {}
+    application.state.offer_signature_callback_verifiers = {}
 
     oauth_http_client: httpx.AsyncClient | None = None
 
@@ -158,6 +165,19 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
             ),
         }
 
+    if settings.offer_signature_callback_provider == "local":
+        callback_secret = settings.offer_signature_callback_local_signing_secret
+        if callback_secret is None:
+            raise RuntimeError(
+                "Local offer-signature callback secret is not configured."
+            )
+
+        application.state.offer_signature_callback_verifiers = {
+            "local": LocalOfferSignatureCallbackVerifier(
+                signing_secret=callback_secret,
+            ),
+        }
+
     try:
         logger.info("application_started", environment=settings.app_env)
         yield
@@ -189,6 +209,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.public_application_abuse_guard = (
         build_public_application_abuse_guard(active_settings)
     )
+    application.state.offer_signature_callback_verifiers = {}
 
     register_exception_handlers(application)
 
@@ -333,6 +354,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application.include_router(
         webhooks_router,
+        prefix=active_settings.api_prefix,
+    )
+
+    application.include_router(
+        offer_signature_callbacks_router,
         prefix=active_settings.api_prefix,
     )
 
