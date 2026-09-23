@@ -24,6 +24,7 @@ from app.db.models.offer_signature_callback import (
 )
 from app.domains.signatures.enums import (
     OfferSignatureCallbackEventType,
+    OfferSignatureEventType,
     OfferSignatureStatus,
 )
 from app.services.offer_signature_callback_provider import (
@@ -429,6 +430,57 @@ async def test_rejects_verification_failure_without_persisting_callback(
     assert receipt_count == 0
     assert persisted is not None
     assert persisted.status is OfferSignatureStatus.SENT
+
+
+@pytest.mark.asyncio
+async def test_implicitly_marks_draft_requests_sent_before_final_callback_state(
+    session: AsyncSession,
+) -> None:
+    """A valid callback can advance a draft request through the required send step."""
+    tenant_id = uuid4()
+    offer = await _seed_approved_offer(session, tenant_id=tenant_id)
+    context = _context(tenant_id)
+
+    signature_request = await create_offer_signature_request(
+        session,
+        context=context,
+        offer_id=offer.id,
+        expected_offer_version=offer.version,
+        command=CreateOfferSignatureRequestCommand(
+            provider="local",
+            document_reference="private-document-reference",
+        ),
+    )
+    signature_request.provider_envelope_reference = "envelope-draft-request"
+    await session.commit()
+
+    result = await process_offer_signature_callback(
+        session,
+        provider="local",
+        verifier=_FakeVerifier(
+            event_id="draft-callback-event",
+            envelope_reference="envelope-draft-request",
+            event_type=OfferSignatureCallbackEventType.SIGNED,
+            occurred_at=datetime.now(UTC),
+        ),
+        verification_request=_verification_request(),
+        request_id="provider-request-id",
+    )
+
+    persisted = await session.get(OfferSignatureRequest, signature_request.id)
+    sent_history = await session.scalar(
+        select(OfferSignatureHistory).where(
+            OfferSignatureHistory.offer_signature_request_id == signature_request.id,
+            OfferSignatureHistory.event_type == OfferSignatureEventType.SENT,
+        )
+    )
+
+    assert result.applied is True
+    assert persisted is not None
+    assert persisted.status is OfferSignatureStatus.SIGNED
+    assert sent_history is not None
+    assert sent_history.from_status is OfferSignatureStatus.DRAFT
+    assert sent_history.to_status is OfferSignatureStatus.SENT
 
 
 @pytest.mark.asyncio

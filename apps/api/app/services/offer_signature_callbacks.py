@@ -267,6 +267,31 @@ async def process_offer_signature_callback(
             applied = True
 
             try:
+                if (
+                    previous_status is OfferSignatureStatus.DRAFT
+                    and target_status is not OfferSignatureStatus.VOIDED
+                ):
+                    implicit_send_at = datetime.now(UTC)
+                    signature_request.status = OfferSignatureStatus.SENT
+                    signature_request.sent_at = implicit_send_at
+                    callback_context = _callback_context(
+                        tenant_id=signature_request.tenant_id,
+                        provider=normalized_provider,
+                        request_id=request_id,
+                    )
+                    session.add(
+                        OfferSignatureHistory(
+                            tenant_id=signature_request.tenant_id,
+                            offer_signature_request_id=signature_request.id,
+                            event_type=OfferSignatureEventType.SENT,
+                            from_status=OfferSignatureStatus.DRAFT,
+                            to_status=OfferSignatureStatus.SENT,
+                            occurred_by_subject=callback_context.subject,
+                            occurred_at=callback.occurred_at.astimezone(UTC),
+                        )
+                    )
+                    previous_status = OfferSignatureStatus.SENT
+
                 validate_offer_signature_transition(
                     previous_status,
                     target_status,
