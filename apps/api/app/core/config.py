@@ -229,6 +229,29 @@ class Settings(BaseSettings):
         ge=10,
         le=900,
     )
+    offer_signature_expiry_worker_poll_interval_seconds: int = Field(
+        default=60,
+        ge=1,
+        le=300,
+    )
+    offer_signature_expiry_worker_batch_size: int = Field(
+        default=50,
+        ge=1,
+        le=100,
+    )
+    offer_signature_expiry_worker_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=255,
+    )
+    offer_signature_expiry_worker_heartbeat_path: Path = Path(
+        "/tmp/tap-offer-signature-expiry-worker.heartbeat"  # noqa: S108
+    )
+    offer_signature_expiry_worker_heartbeat_max_age_seconds: int = Field(
+        default=180,
+        ge=10,
+        le=900,
+    )
 
     hris_handoff_provider: Literal["none", "bamboohr"] = "none"
     hris_handoff_worker_poll_interval_seconds: int = Field(
