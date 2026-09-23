@@ -24,7 +24,6 @@ from app.db.models.offer_signature_callback import (
 )
 from app.domains.signatures.enums import (
     OfferSignatureCallbackEventType,
-    OfferSignatureEventType,
     OfferSignatureStatus,
 )
 from app.services.offer_signature_callback_provider import (
@@ -433,10 +432,10 @@ async def test_rejects_verification_failure_without_persisting_callback(
 
 
 @pytest.mark.asyncio
-async def test_implicitly_marks_draft_requests_sent_before_final_callback_state(
+async def test_applies_callback_only_after_signature_request_is_sent(
     session: AsyncSession,
 ) -> None:
-    """A valid callback can advance a draft request through the required send step."""
+    """A provider callback can finalize only a dispatched signature request."""
     tenant_id = uuid4()
     offer = await _seed_approved_offer(session, tenant_id=tenant_id)
     context = _context(tenant_id)
@@ -451,15 +450,21 @@ async def test_implicitly_marks_draft_requests_sent_before_final_callback_state(
             document_reference="private-document-reference",
         ),
     )
-    signature_request.provider_envelope_reference = "envelope-draft-request"
-    await session.commit()
+
+    sent_request = await send_offer_signature_request(
+        session,
+        context=context,
+        signature_request_id=signature_request.id,
+        expected_version=signature_request.version,
+        provider_envelope_reference="envelope-sent-request",
+    )
 
     result = await process_offer_signature_callback(
         session,
         provider="local",
         verifier=_FakeVerifier(
-            event_id="draft-callback-event",
-            envelope_reference="envelope-draft-request",
+            event_id="sent-callback-event",
+            envelope_reference="envelope-sent-request",
             event_type=OfferSignatureCallbackEventType.SIGNED,
             occurred_at=datetime.now(UTC),
         ),
@@ -467,20 +472,15 @@ async def test_implicitly_marks_draft_requests_sent_before_final_callback_state(
         request_id="provider-request-id",
     )
 
-    persisted = await session.get(OfferSignatureRequest, signature_request.id)
-    sent_history = await session.scalar(
-        select(OfferSignatureHistory).where(
-            OfferSignatureHistory.offer_signature_request_id == signature_request.id,
-            OfferSignatureHistory.event_type == OfferSignatureEventType.SENT,
-        )
+    stored_request = await session.get(
+        OfferSignatureRequest,
+        sent_request.id,
     )
 
+    assert result.replayed is False
     assert result.applied is True
-    assert persisted is not None
-    assert persisted.status is OfferSignatureStatus.SIGNED
-    assert sent_history is not None
-    assert sent_history.from_status is OfferSignatureStatus.DRAFT
-    assert sent_history.to_status is OfferSignatureStatus.SENT
+    assert stored_request is not None
+    assert stored_request.status is OfferSignatureStatus.SIGNED
 
 
 @pytest.mark.asyncio
