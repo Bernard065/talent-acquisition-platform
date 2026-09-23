@@ -178,13 +178,20 @@ async def _seed_sent_signature_request(
             ),
         )
 
-        return await send_offer_signature_request(
+        sent_signature_request = await send_offer_signature_request(
             session,
             context=context,
             signature_request_id=signature_request.id,
             expected_version=signature_request.version,
             provider_envelope_reference=f"envelope-{signature_request.id}",
         )
+
+        # The seed services join the session's outer transaction. Commit the
+        # complete fixture so the HTTP request, which uses another session,
+        # can load the sent signature request.
+        await session.commit()
+
+        return sent_signature_request
 
 
 async def _load_signature_state(
