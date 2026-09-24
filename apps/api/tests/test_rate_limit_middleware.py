@@ -6,11 +6,13 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from jwt import InvalidTokenError
+from prometheus_client import REGISTRY
 
 from app.core.authorization import Role, TenantContext
 from app.core.config import Settings
 from app.core.security import JwtVerifier
 from app.main import create_app
+from app.observability.metrics import RATE_LIMIT_REQUESTS
 from app.services.rate_limiting import (
     RateLimitPolicy,
     RateLimitResult,
@@ -276,6 +278,74 @@ async def test_sensitive_anonymous_routes_use_their_own_policies(
     assert limiter.calls[0][1] == expected_policy
     assert response.headers["Retry-After"] == "17"
     assert response.headers["Cache-Control"] == "no-store"
+
+
+def _rate_limit_metric_value(route_category: str, outcome: str) -> float:
+    """Read one bounded counter series for before/after assertions."""
+    return REGISTRY.get_sample_value(
+        "tap_rate_limit_requests_total",
+        {"route_category": route_category, "outcome": outcome},
+    ) or 0.0
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_outcomes_are_exported_without_identity_labels() -> None:
+    """Allow, reject, and outage outcomes increment bounded metric series."""
+    allowed_before = _rate_limit_metric_value("public-read", "allowed")
+    limited_before = _rate_limit_metric_value(
+        "public-application",
+        "limited",
+    )
+    unavailable_before = _rate_limit_metric_value(
+        "signature-callback",
+        "unavailable",
+    )
+
+    allowed_limiter = _FakeRateLimiter()
+    allowed_response = await _request(
+        _app(allowed_limiter),
+        "GET",
+        "/api/v1/public/jobs",
+    )
+    limited_limiter = _FakeRateLimiter(
+        result=RateLimitResult(
+            allowed=False,
+            limit=5,
+            remaining=0,
+            retry_after_seconds=12,
+        )
+    )
+    limited_response = await _request(
+        _app(limited_limiter),
+        "POST",
+        _PUBLIC_APPLICATION_PATH,
+    )
+    unavailable_limiter = _FakeRateLimiter(unavailable=True)
+    unavailable_response = await _request(
+        _app(unavailable_limiter),
+        "POST",
+        _SIGNATURE_CALLBACK_PATH,
+    )
+
+    assert allowed_response.status_code == 503  # endpoint DB is not initialized
+    assert limited_response.status_code == 429
+    assert unavailable_response.status_code == 503
+    assert _rate_limit_metric_value("public-read", "allowed") == allowed_before + 1
+    assert (
+        _rate_limit_metric_value("public-application", "limited")
+        == limited_before + 1
+    )
+    assert (
+        _rate_limit_metric_value("signature-callback", "unavailable")
+        == unavailable_before + 1
+    )
+
+    assert RATE_LIMIT_REQUESTS._labelnames == ("route_category", "outcome")
+    assert all(
+        set(sample.labels) == {"route_category", "outcome"}
+        for metric in RATE_LIMIT_REQUESTS.collect()
+        for sample in metric.samples
+    )
 
 
 @pytest.mark.asyncio
