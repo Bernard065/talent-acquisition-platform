@@ -2,12 +2,15 @@
 
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from http.server import HTTPServer
+from threading import Thread
 from uuid import uuid4
 
 import httpx
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_client import start_http_server
 from starlette.responses import Response
 
 from app.api.exception_handlers import register_exception_handlers
@@ -88,6 +91,8 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     application.state.rate_limiter = None
 
     oauth_http_client: httpx.AsyncClient | None = None
+    metrics_server: HTTPServer | None = None
+    metrics_thread: Thread | None = None
 
     configure_logging(settings.log_level)
 
@@ -185,6 +190,10 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
         application.state.rate_limiter = RedisRateLimiter.from_url(
             settings.redis_url,
         )
+        metrics_server, metrics_thread = start_http_server(
+            settings.api_metrics_port,
+            addr="0.0.0.0",
+        )
 
     try:
         logger.info("application_started", environment=settings.app_env)
@@ -192,6 +201,12 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     finally:
         if oauth_http_client is not None:
             await oauth_http_client.aclose()
+
+        if metrics_server is not None:
+            metrics_server.shutdown()
+            metrics_server.server_close()
+        if metrics_thread is not None:
+            metrics_thread.join(timeout=5)
 
         try:
             rate_limiter = getattr(application.state, "rate_limiter", None)

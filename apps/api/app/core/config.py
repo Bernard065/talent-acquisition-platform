@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     redis_url: str
     allowed_origins: list[str] = Field(default_factory=list)
     rate_limiting_enabled: bool = True
+    api_metrics_port: int = Field(default=9101, ge=1024, le=65535)
     rate_limit_authenticated_requests: int = Field(default=300, ge=1, le=100_000)
     rate_limit_authenticated_window_seconds: int = Field(
         default=60,

@@ -1,4 +1,4 @@
-"""Low-cardinality Prometheus metrics for document scanning operations."""
+"""Low-cardinality Prometheus metrics for application operations."""
 
 from prometheus_client import Counter, Gauge, Histogram
 from sqlalchemy import select
@@ -30,6 +30,36 @@ OUTBOX_EVENTS = Gauge(
     "Current transactional outbox event count by lifecycle status.",
     labelnames=("status",),
 )
+
+RATE_LIMIT_REQUESTS = Counter(
+    "tap_rate_limit_requests",
+    "HTTP requests evaluated by the rate limiter and their outcome.",
+    labelnames=("route_category", "outcome"),
+)
+
+_RATE_LIMIT_ROUTE_CATEGORIES = frozenset(
+    {
+        "public-application",
+        "signature-callback",
+        "public-read",
+        "anonymous",
+        "authenticated",
+    }
+)
+_RATE_LIMIT_OUTCOMES = frozenset({"allowed", "limited", "unavailable"})
+
+
+def record_rate_limit_request(*, route_category: str, outcome: str) -> None:
+    """Record a rate-limit outcome using only bounded, non-identifying labels."""
+    if route_category not in _RATE_LIMIT_ROUTE_CATEGORIES:
+        raise ValueError("Unknown rate-limit route category.")
+    if outcome not in _RATE_LIMIT_OUTCOMES:
+        raise ValueError("Unknown rate-limit outcome.")
+
+    RATE_LIMIT_REQUESTS.labels(
+        route_category=route_category,
+        outcome=outcome,
+    ).inc()
 
 
 def record_document_scan_worker_result(

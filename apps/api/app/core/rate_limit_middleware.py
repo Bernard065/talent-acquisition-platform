@@ -15,6 +15,7 @@ from starlette.routing import Match
 
 from app.core.config import Settings
 from app.core.security import JwtVerifier
+from app.observability.metrics import record_rate_limit_request
 from app.services.rate_limiting import (
     RateLimiter,
     RateLimitPolicy,
@@ -212,7 +213,15 @@ async def enforce_request_rate_limit(request: Request) -> Response | None:
         # directly. A test can set a fake limiter to exercise this middleware.
         if settings.app_env == "test":
             return None
+        record_rate_limit_request(
+            route_category=category,
+            outcome="unavailable",
+        )
         if not fail_closed:
+            logger.warning(
+                "rate_limit_provider_missing_fail_open",
+                route_category=category,
+            )
             return None
 
         return JSONResponse(
@@ -267,6 +276,10 @@ async def enforce_request_rate_limit(request: Request) -> Response | None:
             policy=policy,
         )
     except RateLimitUnavailableError:
+        record_rate_limit_request(
+            route_category=category,
+            outcome="unavailable",
+        )
         if not fail_closed:
             logger.warning(
                 "rate_limit_provider_unavailable_fail_open",
@@ -287,7 +300,16 @@ async def enforce_request_rate_limit(request: Request) -> Response | None:
         )
 
     if result.allowed:
+        record_rate_limit_request(
+            route_category=category,
+            outcome="allowed",
+        )
         return None
+
+    record_rate_limit_request(
+        route_category=category,
+        outcome="limited",
+    )
 
     return JSONResponse(
         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
