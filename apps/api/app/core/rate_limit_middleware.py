@@ -13,13 +13,12 @@ from fastapi.responses import JSONResponse, Response
 from jwt import InvalidTokenError
 from starlette.routing import Match
 
-from app.core.authorization import TenantContext
 from app.core.config import Settings
 from app.core.security import JwtVerifier
 from app.services.rate_limiting import (
+    RateLimiter,
     RateLimitPolicy,
     RateLimitUnavailableError,
-    RateLimiter,
 )
 
 _HEALTH_ROUTE_SUFFIXES = ("/health/live", "/health/ready")
@@ -30,10 +29,38 @@ _SIGNATURE_CALLBACK_SUFFIX = (
 logger = structlog.get_logger()
 
 
-def _matched_route(request: Request) -> str:
-    """Return a registered route template without attacker-controlled values."""
+def _matched_route(request: Request, api_prefix: str) -> str:
+    """Resolve sensitive public routes before falling back to Starlette matching."""
+    prefix = api_prefix.rstrip("/")
+    path = request.url.path.rstrip("/")
+    relative_path = path.removeprefix(prefix).strip("/")
+    segments = relative_path.split("/") if relative_path else []
+
+    if (
+        request.method == "POST"
+        and len(segments) == 4
+        and segments[:2] == ["public", "jobs"]
+        and segments[3] == "applications"
+    ):
+        return f"{prefix}/public/jobs/{{public_job_id}}/applications"
+
+    if (
+        request.method == "POST"
+        and len(segments) == 4
+        and segments[:2] == ["integrations", "offer-signatures"]
+        and segments[3] == "callbacks"
+    ):
+        return f"{prefix}/integrations/offer-signatures/{{provider}}/callbacks"
+
+    if (
+        request.method == "GET"
+        and segments[:2] == ["public", "jobs"]
+        and len(segments) in (2, 3)
+    ):
+        return f"{prefix}/public/jobs"
+
     for route in request.app.router.routes:
-        route_match, child_scope = route.matches(request.scope)
+        route_match, _ = route.matches(request.scope)
         if route_match is Match.FULL:
             route_path = getattr(route, "path", None)
             if isinstance(route_path, str):
@@ -168,7 +195,7 @@ async def enforce_request_rate_limit(request: Request) -> Response | None:
     ):
         return None
 
-    route_template = _matched_route(request)
+    route_template = _matched_route(request, settings.api_prefix)
     if route_template.endswith(_HEALTH_ROUTE_SUFFIXES):
         return None
     if route_template.endswith(("/docs", "/openapi.json")):
@@ -231,7 +258,7 @@ async def enforce_request_rate_limit(request: Request) -> Response | None:
 
     route_key = f"{request.method.upper()}:{route_template}"
     scoped_key = hashlib.sha256(
-        f"{category}\0{key_identity}\0{route_key}".encode("utf-8")
+        f"{category}\0{key_identity}\0{route_key}".encode()
     ).hexdigest()
 
     try:
