@@ -180,6 +180,66 @@ async def test_private_keys_are_scoped_to_verified_identity_and_route() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
+    ("different_tenant", "different_subject"),
+    [(False, True), (True, False)],
+    ids=["different-subject", "different-tenant"],
+)
+async def test_private_rate_limit_keys_are_isolated_by_identity(
+    different_tenant: bool,
+    different_subject: bool,
+) -> None:
+    """Authenticated callers in distinct scopes do not share a bucket."""
+    tenant_id = uuid4()
+    subject = "same-recruiter"
+    other_tenant_id = uuid4() if different_tenant else tenant_id
+    other_subject = "another-recruiter" if different_subject else subject
+
+    limiter = _FakeRateLimiter()
+    first_app = _app(
+        limiter,
+        context=TenantContext(
+            tenant_id=tenant_id,
+            subject=subject,
+            roles=frozenset({Role.RECRUITER}),
+            request_id="first-request",
+        ),
+    )
+    second_app = _app(
+        limiter,
+        context=TenantContext(
+            tenant_id=other_tenant_id,
+            subject=other_subject,
+            roles=frozenset({Role.RECRUITER}),
+            request_id="second-request",
+        ),
+    )
+    headers = {"Authorization": "Bearer valid-test-token"}
+
+    first = await _request(
+        first_app,
+        "GET",
+        "/api/v1/test/one",
+        headers=headers,
+    )
+    second = await _request(
+        second_app,
+        "GET",
+        "/api/v1/test/one",
+        headers=headers,
+    )
+
+    assert first.status_code == second.status_code == 200
+    assert len(limiter.calls) == 2
+    assert limiter.calls[0][0] != limiter.calls[1][0]
+
+    keys = " ".join(key for key, _ in limiter.calls)
+    assert str(tenant_id) not in keys
+    assert subject not in keys
+    assert other_subject not in keys
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
     ("method", "path", "expected_policy"),
     [
         (
