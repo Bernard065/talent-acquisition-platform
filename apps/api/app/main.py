@@ -10,6 +10,7 @@ import httpx
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from opentelemetry import trace as otel_trace
 from prometheus_client import start_http_server
 from starlette.responses import Response
 
@@ -71,6 +72,7 @@ from app.infrastructure.rate_limiting.redis import RedisRateLimiter
 from app.infrastructure.signatures.local_callback_verifier import (
     LocalOfferSignatureCallbackVerifier,
 )
+from app.observability.tracing import build_tracing_runtime
 from app.services.public_application_abuse_control import (
     build_public_application_abuse_guard,
 )
@@ -89,6 +91,7 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     application.state.calendar_oauth_providers = {}
     application.state.offer_signature_callback_verifiers = {}
     application.state.rate_limiter = None
+    application.state.tracing_runtime = None
 
     oauth_http_client: httpx.AsyncClient | None = None
     metrics_server: HTTPServer | None = None
@@ -195,12 +198,28 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
             addr="0.0.0.0",
         )
 
+    tracing_runtime = build_tracing_runtime(
+        application,
+        enabled=settings.tracing_enabled,
+        service_name=settings.app_name,
+        service_version=settings.app_version,
+        environment=settings.app_env,
+        sample_ratio=settings.tracing_sample_ratio,
+    )
+    application.state.tracing_runtime = tracing_runtime
+    database = application.state.database
+    if tracing_runtime is not None and database is not None:
+        tracing_runtime.instrument_engine(database.engine.sync_engine)
+
     try:
         logger.info("application_started", environment=settings.app_env)
         yield
     finally:
         if oauth_http_client is not None:
             await oauth_http_client.aclose()
+
+        if tracing_runtime is not None:
+            tracing_runtime.shutdown()
 
         if metrics_server is not None:
             metrics_server.shutdown()
@@ -265,6 +284,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         # Do not trust a caller-provided identity or tenant header.
         structlog.contextvars.bind_contextvars(request_id=request_id)
+        span_context = otel_trace.get_current_span().get_span_context()
+        if span_context.is_valid:
+            structlog.contextvars.bind_contextvars(
+                trace_id=f"{span_context.trace_id:032x}",
+                span_id=f"{span_context.span_id:016x}",
+            )
 
         try:
             rate_limit_response = await enforce_request_rate_limit(request)
@@ -416,6 +441,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         hris_handoffs_router,
         prefix=active_settings.api_prefix,
     )
+
+    application.state.tracing_runtime = None
 
     return application
 
