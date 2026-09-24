@@ -63,6 +63,14 @@ async def get_tenant_context(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    cached_context = getattr(request.state, "verified_tenant_context", None)
+    if isinstance(cached_context, TenantContext):
+        structlog.contextvars.bind_contextvars(
+            tenant_id=str(cached_context.tenant_id),
+            subject=cached_context.subject,
+        )
+        return cached_context
+
     request_id = request.headers.get("X-Request-ID", "unknown")
     verifier: JwtVerifier = request.app.state.jwt_verifier
 
