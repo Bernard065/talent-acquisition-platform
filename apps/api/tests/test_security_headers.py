@@ -15,7 +15,16 @@ def _settings(app_env: str) -> Settings:
         app_version="0.1.0",
         api_prefix="/api/v1",
         log_level="INFO",
-        redis_url="redis://localhost:6379/0",
+        database_url=(
+            "postgresql+asyncpg://tap:test-password@localhost:5432/tap"
+            if app_env == "production"
+            else None
+        ),
+        redis_url=(
+            "rediss://redis.example.test:6379/0"
+            if app_env == "production"
+            else "redis://localhost:6379/0"
+        ),
         public_application_abuse_control_provider="local_allow_all",
         offer_signature_callback_provider="none",
         jwt_issuer="https://issuer.example.test/",
