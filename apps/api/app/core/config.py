@@ -4,6 +4,7 @@ import ipaddress
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import AnyHttpUrl, Field, PostgresDsn, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -383,6 +384,26 @@ class Settings(BaseSettings):
 
         if self.app_env == "production" and not self.rate_limiting_enabled:
             raise ValueError("Rate limiting cannot be disabled in production.")
+
+        if self.app_env == "production":
+            if self.database_url is None:
+                raise ValueError("DATABASE_URL is required in production.")
+
+            try:
+                redis_scheme = urlsplit(self.redis_url).scheme.lower()
+            except ValueError as error:
+                raise ValueError(
+                    "REDIS_URL must be a valid rediss:// URL in production."
+                ) from error
+
+            if redis_scheme != "rediss":
+                raise ValueError("REDIS_URL must use rediss:// in production.")
+
+            if self.jwt_issuer.scheme != "https":
+                raise ValueError("JWT_ISSUER must use HTTPS in production.")
+
+            if self.jwt_jwks_url.scheme != "https":
+                raise ValueError("JWT_JWKS_URL must use HTTPS in production.")
 
         if self.credential_vault_provider == "infisical":
             missing = [
