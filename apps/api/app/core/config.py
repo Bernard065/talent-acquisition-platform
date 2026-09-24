@@ -1,5 +1,6 @@
 """Application configuration and environment settings."""
 
+import ipaddress
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -33,6 +34,38 @@ class Settings(BaseSettings):
     database_url: PostgresDsn | None = None
     redis_url: str
     allowed_origins: list[str] = Field(default_factory=list)
+    rate_limiting_enabled: bool = True
+    rate_limit_authenticated_requests: int = Field(default=300, ge=1, le=100_000)
+    rate_limit_authenticated_window_seconds: int = Field(
+        default=60,
+        ge=1,
+        le=86_400,
+    )
+    rate_limit_public_reads: int = Field(default=120, ge=1, le=100_000)
+    rate_limit_public_read_window_seconds: int = Field(
+        default=60,
+        ge=1,
+        le=86_400,
+    )
+    rate_limit_public_applications: int = Field(default=5, ge=1, le=100_000)
+    rate_limit_public_application_window_seconds: int = Field(
+        default=900,
+        ge=1,
+        le=86_400,
+    )
+    rate_limit_signature_callbacks: int = Field(default=120, ge=1, le=100_000)
+    rate_limit_signature_callback_window_seconds: int = Field(
+        default=60,
+        ge=1,
+        le=86_400,
+    )
+    rate_limit_anonymous_requests: int = Field(default=60, ge=1, le=100_000)
+    rate_limit_anonymous_window_seconds: int = Field(
+        default=60,
+        ge=1,
+        le=86_400,
+    )
+    trusted_proxy_cidrs: list[str] = Field(default_factory=list)
     security_hsts_max_age_seconds: int = Field(
         default=31_536_000,
         ge=0,
@@ -339,6 +372,17 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_vault_provider(self) -> "Settings":
+        for proxy_cidr in self.trusted_proxy_cidrs:
+            try:
+                ipaddress.ip_network(proxy_cidr, strict=False)
+            except ValueError as error:
+                raise ValueError(
+                    "trusted_proxy_cidrs must contain valid IPv4 or IPv6 networks."
+                ) from error
+
+        if self.app_env == "production" and not self.rate_limiting_enabled:
+            raise ValueError("Rate limiting cannot be disabled in production.")
+
         if self.credential_vault_provider == "infisical":
             missing = [
                 name

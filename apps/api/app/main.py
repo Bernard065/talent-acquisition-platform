@@ -54,6 +54,7 @@ from app.api.v1.webhooks import (
 )
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
+from app.core.rate_limit_middleware import enforce_request_rate_limit
 from app.core.security import JwtVerifier
 from app.db.session import Database
 from app.domains.calendar.enums import CalendarProvider
@@ -63,6 +64,7 @@ from app.infrastructure.hris.infisical_vault import (
     InfisicalHrisCredentialVault,
 )
 from app.infrastructure.object_storage.s3 import S3ObjectStorage
+from app.infrastructure.rate_limiting.redis import RedisRateLimiter
 from app.infrastructure.signatures.local_callback_verifier import (
     LocalOfferSignatureCallbackVerifier,
 )
@@ -83,6 +85,7 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     application.state.webhook_signing_secret_vault = None
     application.state.calendar_oauth_providers = {}
     application.state.offer_signature_callback_verifiers = {}
+    application.state.rate_limiter = None
 
     oauth_http_client: httpx.AsyncClient | None = None
 
@@ -178,6 +181,11 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
             ),
         }
 
+    if settings.rate_limiting_enabled:
+        application.state.rate_limiter = RedisRateLimiter.from_url(
+            settings.redis_url,
+        )
+
     try:
         logger.info("application_started", environment=settings.app_env)
         yield
@@ -185,9 +193,14 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
         if oauth_http_client is not None:
             await oauth_http_client.aclose()
 
-        database = getattr(application.state, "database", None)
-        if database is not None:
-            await database.dispose()
+        try:
+            rate_limiter = getattr(application.state, "rate_limiter", None)
+            if rate_limiter is not None:
+                await rate_limiter.close()
+        finally:
+            database = getattr(application.state, "database", None)
+            if database is not None:
+                await database.dispose()
 
         logger.info("application_stopped")
 
@@ -210,6 +223,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         build_public_application_abuse_guard(active_settings)
     )
     application.state.offer_signature_callback_verifiers = {}
+    application.state.rate_limiter = None
 
     register_exception_handlers(application)
 
@@ -238,7 +252,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         structlog.contextvars.bind_contextvars(request_id=request_id)
 
         try:
-            response = await call_next(request)
+            rate_limit_response = await enforce_request_rate_limit(request)
+            if rate_limit_response is not None:
+                response = rate_limit_response
+            else:
+                response = await call_next(request)
             response.headers["X-Request-ID"] = request_id
             response.headers["X-Content-Type-Options"] = "nosniff"
             response.headers["X-Frame-Options"] = "DENY"
