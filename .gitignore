@@ -46,3 +46,6 @@ Thumbs.db
 # Logs and local uploads
 *.log
 uploads/
+
+# Database backups contain sensitive candidate and employee data.
+backups/
