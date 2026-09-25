@@ -8,14 +8,19 @@ import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.api.dependencies import get_db_session, get_tenant_context
 from app.core.authorization import Role, TenantContext
 from app.core.config import Settings
+from app.db.models.audit import AuditEvent
+from app.db.models.candidate_talent_pool_consent import (
+    CandidateTalentPoolConsentEvent,
+)
 from app.db.models.identity import Tenant
 from app.db.models.requisition import Requisition
+from app.domains.candidates.enums import CandidateConsentStatus
 from app.domains.requisitions.enums import RequisitionStatus
 from app.main import create_app
 
@@ -433,3 +438,222 @@ async def test_recruiter_cannot_request_candidate_erasure(
 
     assert response.status_code == 403
     assert response.headers["Cache-Control"] == "private, no-store"
+
+
+@pytest.mark.asyncio
+async def test_talent_pool_consent_grant_replays_without_exposing_candidate_pii(
+    api_app: FastAPI,
+    database_engine: AsyncEngine,
+) -> None:
+    """Grant one consent event once and return the stored response on replay."""
+    transport = ASGITransport(app=api_app)
+    headers = _idempotency_headers()
+    payload = {"notice_version": "privacy-notice-2026-01", "capture_method": "signed_form"}
+
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        candidate = await _create_candidate(client)
+        url = f"/api/v1/candidates/{candidate['id']}/talent-pool-consent/grant"
+        first = await client.post(url, json=payload, headers=headers)
+        replay = await client.post(url, json=payload, headers=headers)
+        mismatched_reuse = await client.post(
+            url,
+            json={**payload, "notice_version": "notice-v2"},
+            headers=headers,
+        )
+        profile = await client.get(f"/api/v1/candidates/{candidate['id']}")
+
+    assert first.status_code == replay.status_code == 201
+    assert first.json() == replay.json()
+    assert first.json()["event_type"] == "granted"
+    assert first.json()["event_version"] == 1
+    assert first.json()["capture_method"] == "signed_form"
+    assert first.json()["notice_version"] == payload["notice_version"]
+    assert "email" not in first.json()
+    assert "full_name" not in first.json()
+    assert first.headers["Idempotent-Replayed"] == "false"
+    assert replay.headers["Idempotent-Replayed"] == "true"
+    assert first.headers["Cache-Control"] == "private, no-store"
+    assert mismatched_reuse.status_code == 409
+    assert mismatched_reuse.headers["Cache-Control"] == "private, no-store"
+    assert profile.status_code == 200
+    assert profile.json()["consent_status"] == CandidateConsentStatus.UNKNOWN.value
+
+    session_factory = async_sessionmaker(
+        bind=database_engine,
+        autoflush=False,
+        expire_on_commit=False,
+    )
+    async with session_factory() as session:
+        event_count = await session.scalar(
+            select(func.count())
+            .select_from(CandidateTalentPoolConsentEvent)
+            .where(
+                CandidateTalentPoolConsentEvent.candidate_id
+                == UUID(candidate["id"])
+            )
+        )
+    assert event_count == 1
+
+
+@pytest.mark.asyncio
+async def test_talent_pool_consent_renewal_and_withdrawal_append_audited_versions(
+    api_app: FastAPI,
+    database_engine: AsyncEngine,
+    tenant_id: UUID,
+) -> None:
+    """Renew and withdraw through the API while preserving append-only evidence."""
+    transport = ASGITransport(app=api_app)
+
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        candidate = await _create_candidate(client)
+        base = f"/api/v1/candidates/{candidate['id']}/talent-pool-consent"
+        grant = await client.post(
+            f"{base}/grant",
+            json={"notice_version": "notice-v1", "capture_method": "email_confirmation"},
+            headers=_idempotency_headers(),
+        )
+        renewal = await client.post(
+            f"{base}/renew",
+            json={"notice_version": "notice-v2", "capture_method": "signed_form"},
+            headers=_idempotency_headers(),
+        )
+        withdrawal = await client.post(
+            f"{base}/withdraw",
+            json={"capture_method": "recruiter_recorded"},
+            headers=_idempotency_headers(),
+        )
+
+    assert grant.status_code == renewal.status_code == 201
+    assert withdrawal.status_code == 200
+    assert [
+        grant.json()["event_version"],
+        renewal.json()["event_version"],
+        withdrawal.json()["event_version"],
+    ] == [1, 2, 3]
+    assert [
+        grant.json()["event_type"],
+        renewal.json()["event_type"],
+        withdrawal.json()["event_type"],
+    ] == ["granted", "renewed", "withdrawn"]
+    assert all(
+        response.headers["Cache-Control"] == "private, no-store"
+        for response in (grant, renewal, withdrawal)
+    )
+
+    session_factory = async_sessionmaker(
+        bind=database_engine,
+        autoflush=False,
+        expire_on_commit=False,
+    )
+    async with session_factory() as session:
+        events = list(
+            (
+                await session.scalars(
+                    select(CandidateTalentPoolConsentEvent)
+                    .where(CandidateTalentPoolConsentEvent.candidate_id == UUID(candidate["id"]))
+                    .order_by(CandidateTalentPoolConsentEvent.event_version)
+                )
+            ).all()
+        )
+        audit_count = await session.scalar(
+            select(func.count())
+            .select_from(AuditEvent)
+            .where(
+                AuditEvent.tenant_id == tenant_id,
+                AuditEvent.action.like("candidate.talent_pool_consent_%"),
+            )
+        )
+
+    assert [event.event_version for event in events] == [1, 2, 3]
+    assert audit_count == 3
+
+
+@pytest.mark.asyncio
+async def test_talent_pool_consent_hides_cross_tenant_candidate_and_denies_analyst(
+    api_app: FastAPI,
+    database_engine: AsyncEngine,
+    tenant_id: UUID,
+) -> None:
+    """Consent routes enforce tenant isolation and the consent-specific role set."""
+    transport = ASGITransport(app=api_app)
+    other_tenant_id = uuid4()
+    session_factory = async_sessionmaker(
+        bind=database_engine,
+        autoflush=False,
+        expire_on_commit=False,
+    )
+    async with session_factory.begin() as session:
+        session.add(
+            Tenant(
+                id=other_tenant_id,
+                name="Other Candidate API Tenant",
+                slug=f"other-candidate-api-{other_tenant_id.hex[:12]}",
+            )
+        )
+
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        candidate = await _create_candidate(client)
+        url = f"/api/v1/candidates/{candidate['id']}/talent-pool-consent/grant"
+        payload = {"notice_version": "notice-v1", "capture_method": "signed_form"}
+
+        _set_context(api_app, tenant_id=tenant_id, roles=frozenset({Role.ANALYST}))
+        forbidden_response = await client.post(
+            url,
+            json=payload,
+            headers=_idempotency_headers(),
+        )
+
+        _set_context(
+            api_app,
+            tenant_id=other_tenant_id,
+            roles=frozenset({Role.RECRUITER}),
+        )
+        hidden_response = await client.post(
+            url,
+            json=payload,
+            headers=_idempotency_headers(),
+        )
+
+    assert forbidden_response.status_code == 403
+    assert forbidden_response.headers["Cache-Control"] == "private, no-store"
+    assert hidden_response.status_code == 404
+    assert hidden_response.json()["detail"] == "Candidate or application not found."
+    assert hidden_response.headers["Cache-Control"] == "private, no-store"
+
+
+@pytest.mark.asyncio
+async def test_talent_pool_consent_rejects_invalid_state_and_strict_fields_privately(
+    api_app: FastAPI,
+) -> None:
+    """Map state and schema failures to safe, non-cacheable responses."""
+    transport = ASGITransport(app=api_app)
+
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        candidate = await _create_candidate(client)
+        grant_url = f"/api/v1/candidates/{candidate['id']}/talent-pool-consent/grant"
+        grant = await client.post(
+            grant_url,
+            json={"notice_version": "notice-v1", "capture_method": "signed_form"},
+            headers=_idempotency_headers(),
+        )
+        invalid_state = await client.post(
+            grant_url,
+            json={"notice_version": "notice-v1", "capture_method": "signed_form"},
+            headers=_idempotency_headers(),
+        )
+        invalid_schema = await client.post(
+            f"/api/v1/candidates/{candidate['id']}/talent-pool-consent/renew",
+            json={
+                "notice_version": "notice-v2",
+                "capture_method": "candidate_portal",
+                "unexpected": "must-not-be-echoed",
+            },
+            headers=_idempotency_headers(),
+        )
+
+    assert grant.status_code == 201
+    assert invalid_state.status_code == 409
+    assert invalid_schema.status_code == 422
+    assert invalid_state.headers["Cache-Control"] == "private, no-store"
+    assert invalid_schema.headers["Cache-Control"] == "private, no-store"
+    assert "must-not-be-echoed" not in invalid_schema.text
