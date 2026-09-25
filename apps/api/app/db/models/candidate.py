@@ -4,13 +4,26 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, String, UniqueConstraint, text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
-from app.domains.candidates.enums import CandidateConsentStatus
+from app.domains.candidates.enums import (
+    CandidateConsentStatus,
+    CandidatePrivacyStatus,
+)
 
 
 class Candidate(Base):
@@ -18,6 +31,15 @@ class Candidate(Base):
 
     __tablename__ = "candidates"
     __table_args__ = (
+        CheckConstraint(
+            "(privacy_status = 'active' AND erasure_requested_at IS NULL "
+            "AND erased_at IS NULL) OR "
+            "(privacy_status = 'erasure_pending' AND erasure_requested_at IS NOT NULL "
+            "AND erased_at IS NULL) OR "
+            "(privacy_status = 'erased' AND erasure_requested_at IS NOT NULL "
+            "AND erased_at IS NOT NULL)",
+            name="privacy_lifecycle_timestamps_consistent",
+        ),
         UniqueConstraint(
             "tenant_id",
             "normalized_email",
@@ -33,6 +55,12 @@ class Candidate(Base):
             "tenant_id",
             "created_at",
             "id",
+        ),
+        Index(
+            "ix_candidates_tenant_privacy_status_created_at",
+            "tenant_id",
+            "privacy_status",
+            "created_at",
         ),
     )
 
@@ -72,6 +100,24 @@ class Candidate(Base):
         server_default=CandidateConsentStatus.UNKNOWN.value,
     )
     consent_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    privacy_status: Mapped[CandidatePrivacyStatus] = mapped_column(
+        Enum(
+            CandidatePrivacyStatus,
+            name="candidate_privacy_status",
+            values_callable=lambda statuses: [status.value for status in statuses],
+        ),
+        nullable=False,
+        default=CandidatePrivacyStatus.ACTIVE,
+        server_default=CandidatePrivacyStatus.ACTIVE.value,
+    )
+    erasure_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    erased_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )

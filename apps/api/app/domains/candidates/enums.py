@@ -11,6 +11,14 @@ class CandidateConsentStatus(StrEnum):
     WITHDRAWN = "withdrawn"
 
 
+class CandidatePrivacyStatus(StrEnum):
+    """Lifecycle state for candidate personal data and erasure processing."""
+
+    ACTIVE = "active"
+    ERASURE_PENDING = "erasure_pending"
+    ERASED = "erased"
+
+
 class ApplicationStatus(StrEnum):
     """Applicant-tracking pipeline stages."""
 
