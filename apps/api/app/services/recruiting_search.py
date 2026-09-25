@@ -96,7 +96,7 @@ def _contains_pattern(value: str) -> str:
     return f"%{escaped}%"
 
 
-def _encode_cursor(*, timestamp: datetime, record_id: UUID) -> str:
+def encode_search_cursor(*, timestamp: datetime, record_id: UUID) -> str:
     """Encode a final page record as opaque keyset pagination state."""
     if timestamp.tzinfo is None:
         timestamp = timestamp.replace(tzinfo=UTC)
@@ -112,7 +112,7 @@ def _encode_cursor(*, timestamp: datetime, record_id: UUID) -> str:
     return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
 
 
-def _decode_cursor(cursor: str) -> tuple[datetime, UUID]:
+def decode_search_cursor(cursor: str) -> tuple[datetime, UUID]:
     """Decode and validate opaque recruiter-search pagination state."""
     try:
         padded_cursor = cursor + "=" * (-len(cursor) % 4)
@@ -184,7 +184,7 @@ async def search_candidates(
         )
 
     if cursor is not None:
-        cursor_created_at, cursor_id = _decode_cursor(cursor)
+        cursor_created_at, cursor_id = decode_search_cursor(cursor)
         statement = statement.where(
             or_(
                 Candidate.created_at < cursor_created_at,
@@ -210,7 +210,7 @@ async def search_candidates(
     return CandidateSearchPage(
         items=items,
         next_cursor=(
-            _encode_cursor(
+            encode_search_cursor(
                 timestamp=items[-1].created_at,
                 record_id=items[-1].id,
             )
@@ -286,7 +286,7 @@ async def search_applications(
         )
 
     if cursor is not None:
-        cursor_applied_at, cursor_id = _decode_cursor(cursor)
+        cursor_applied_at, cursor_id = decode_search_cursor(cursor)
         statement = statement.where(
             or_(
                 Application.applied_at < cursor_applied_at,
@@ -312,7 +312,7 @@ async def search_applications(
     return ApplicationSearchPage(
         items=items,
         next_cursor=(
-            _encode_cursor(
+            encode_search_cursor(
                 timestamp=items[-1].applied_at,
                 record_id=items[-1].id,
             )

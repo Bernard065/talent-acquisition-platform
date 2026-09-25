@@ -1,6 +1,6 @@
 """Version 1 candidate HTTP endpoints."""
 
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Response, status
@@ -19,6 +19,10 @@ from app.api.v1.schemas.candidates import (
     CandidateListResponse,
     CandidatePrivacyOperationResponse,
     CandidateResponse,
+)
+from app.api.v1.schemas.talent_pool_search import (
+    TalentPoolCandidateResponse,
+    TalentPoolSearchResponse,
 )
 from app.core.authorization import TenantContext
 from app.domains.candidates.enums import CandidateConsentStatus
@@ -42,6 +46,10 @@ from app.services.idempotency import IdempotencyResult, execute_idempotently
 from app.services.recruiting_search import (
     CandidateSearchFilters,
     search_candidates,
+)
+from app.services.talent_pool_search import (
+    TalentPoolSearchFilters,
+    search_consented_talent_pool,
 )
 
 router = APIRouter(prefix="/candidates", tags=["Candidates"])
@@ -192,6 +200,54 @@ async def search_candidates_endpoint(
         items=[
             CandidateResponse.model_validate(candidate)
             for candidate in page.items
+        ],
+        next_cursor=page.next_cursor,
+    )
+
+
+@router.get(
+    "/talent-pool",
+    response_model=TalentPoolSearchResponse,
+    summary="Search currently consented talent-pool candidates",
+)
+async def search_talent_pool_endpoint(
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    cursor: Annotated[str | None, Query(max_length=512)] = None,
+    query: Annotated[str | None, Query(max_length=200)] = None,
+    source: Annotated[str | None, Query(max_length=100)] = None,
+    location: Annotated[str | None, Query(max_length=200)] = None,
+) -> TalentPoolSearchResponse:
+    """Find only active candidate profiles with a current explicit purpose consent."""
+    page = await search_consented_talent_pool(
+        session,
+        context=context,
+        filters=TalentPoolSearchFilters(
+            query=query,
+            source=source,
+            location=location,
+        ),
+        limit=limit,
+        cursor=cursor,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return TalentPoolSearchResponse(
+        items=[
+            TalentPoolCandidateResponse(
+                candidate_id=item.candidate.id,
+                full_name=item.candidate.full_name,
+                email=item.candidate.email,
+                phone=item.candidate.phone,
+                location=item.candidate.location,
+                source=item.candidate.source,
+                consent_event_version=item.consent_event.event_version,
+                consent_capture_method=item.consent_event.capture_method,
+                consent_notice_version=cast(str, item.consent_event.notice_version),
+                consent_recorded_at=item.consent_event.recorded_at,
+            )
+            for item in page.items
         ],
         next_cursor=page.next_cursor,
     )

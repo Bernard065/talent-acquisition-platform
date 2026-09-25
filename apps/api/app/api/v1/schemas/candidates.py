@@ -1,12 +1,14 @@
 """Request and response schemas for candidate endpoints."""
 
 from datetime import datetime
+from typing import Annotated
 from uuid import UUID
 
+from email_validator import validate_email
 from pydantic import (
+    AfterValidator,
     BaseModel,
     ConfigDict,
-    EmailStr,
     Field,
     JsonValue,
     field_validator,
@@ -15,13 +17,29 @@ from pydantic import (
 from app.domains.candidates.enums import CandidateConsentStatus, CandidatePrivacyStatus
 
 
+def _validate_email_address(value: str) -> str:
+    """Allow RFC 2606 test domains used by local/test fixtures.
+
+    Malformed addresses are still rejected.
+    """
+    validated = validate_email(
+        value,
+        check_deliverability=False,
+        test_environment=True,
+    )
+    return str(validated.normalized)
+
+
 class CandidateCreateRequest(BaseModel):
     """Input for a tenant-scoped candidate profile."""
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     full_name: str = Field(min_length=1, max_length=200)
-    email: EmailStr
+    email: Annotated[str, AfterValidator(_validate_email_address)] = Field(
+        min_length=3,
+        max_length=254,
+    )
     phone: str | None = Field(default=None, max_length=50)
     location: str | None = Field(default=None, max_length=200)
     source: str = Field(min_length=1, max_length=100)
@@ -48,7 +66,7 @@ class CandidateResponse(BaseModel):
 
     id: UUID
     full_name: str
-    email: EmailStr
+    email: Annotated[str, AfterValidator(_validate_email_address)]
     phone: str | None
     location: str | None
     source: str
