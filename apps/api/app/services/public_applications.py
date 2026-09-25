@@ -18,6 +18,7 @@ from app.db.transactions import transactional
 from app.domains.candidates.enums import (
     ApplicationStatus,
     CandidateConsentStatus,
+    CandidatePrivacyStatus,
 )
 from app.domains.job_postings.enums import JobPostingStatus
 from app.domains.requisitions.enums import RequisitionStatus
@@ -182,6 +183,7 @@ async def _find_or_create_candidate(
             .where(
                 Candidate.tenant_id == context.tenant_id,
                 Candidate.normalized_email == normalized_email,
+                Candidate.privacy_status == CandidatePrivacyStatus.ACTIVE,
             )
             .with_for_update()
         )
@@ -279,6 +281,10 @@ async def submit_public_application(
             command=command,
             public_job_id=public_job_id,
         )
+        if candidate.consent_status is not CandidateConsentStatus.GRANTED:
+            # Do not restart processing after consent withdrawal. The public
+            # caller still receives the same generic acknowledgement.
+            return
         await _create_application_if_missing(
             session,
             context=context,

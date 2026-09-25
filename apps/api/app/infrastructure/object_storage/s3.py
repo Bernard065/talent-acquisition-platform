@@ -9,7 +9,7 @@ from typing import NoReturn, Protocol, cast
 
 import boto3
 from botocore.config import Config
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 from pydantic import AnyHttpUrl, SecretStr
 
 from app.core.config import Settings
@@ -123,6 +123,18 @@ class S3ObjectStorage(ObjectStorage, ObjectStorageReader):
         self._presigning_client = presigning_client or self._create_client(
             config.public_endpoint_url
         )
+
+    def close(self) -> None:
+        """Release the provider clients owned by this adapter."""
+        clients = (
+            (self._client,)
+            if self._client is self._presigning_client
+            else (self._client, self._presigning_client)
+        )
+        for client in clients:
+            close = getattr(client, "close", None)
+            if callable(close):
+                close()
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "S3ObjectStorage":
@@ -290,6 +302,10 @@ class S3ObjectStorage(ObjectStorage, ObjectStorageReader):
             )
         except ClientError as error:
             self._raise_provider_error(error, "delete document")
+        except BotoCoreError as error:
+            raise ObjectStorageProviderError(
+                "Object storage could not complete document deletion."
+            ) from error
 
     async def ensure_bucket(self) -> None:
         """Create the configured bucket when it does not already exist."""

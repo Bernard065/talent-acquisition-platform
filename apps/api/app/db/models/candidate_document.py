@@ -87,6 +87,10 @@ class CandidateDocument(Base):
     scan_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     scan_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    upload_authorization_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     created_by_subject: Mapped[str] = mapped_column(String(255), nullable=False)

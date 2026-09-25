@@ -66,6 +66,36 @@ services:
       clamav:
         condition: service_started
 
+  candidate-privacy-worker:
+    build:
+      context: ./apps/api
+    container_name: tap-candidate-privacy-worker
+    restart: unless-stopped
+    command: python -m app.workers.candidate_privacy_worker
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_PUBLIC_ENDPOINT_URL: ${S3_PUBLIC_ENDPOINT_URL}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-m",
+          "app.workers.candidate_privacy_worker_health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
   offer-expiry-worker:
     build:
       context: ./apps/api

@@ -12,6 +12,7 @@ from app.core.authorization import Role, TenantContext
 from app.db.models.candidate import Candidate
 from app.db.models.candidate_document import CandidateDocument
 from app.db.transactions import transactional
+from app.domains.candidates.enums import CandidatePrivacyStatus
 from app.domains.documents.enums import CandidateDocumentStatus
 from app.services.audit import record_audit_event
 from app.services.candidate_document_errors import (
@@ -109,6 +110,7 @@ async def get_candidate_document(
         select(CandidateDocument).where(
             CandidateDocument.id == document_id,
             CandidateDocument.tenant_id == context.tenant_id,
+            CandidateDocument.status != CandidateDocumentStatus.DELETED,
         )
     )
     if document is None:
@@ -132,6 +134,7 @@ async def create_candidate_document_upload_intent(
             .where(
                 Candidate.id == command.candidate_id,
                 Candidate.tenant_id == context.tenant_id,
+                Candidate.privacy_status == CandidatePrivacyStatus.ACTIVE,
             )
             .with_for_update()
         )
@@ -185,30 +188,59 @@ async def create_upload_authorization(
     """
     Create a fresh, short-lived upload authorization for a pending document.
 
-    This intentionally does not mutate the database and must not be placed in
-    durable idempotency replay data because presigned URLs expire.
+    The latest authorization expiry is persisted so a later erasure request
+    can wait until all already-issued upload URLs are no longer valid. The URL
+    itself is never stored in durable idempotency data.
     """
-    document = await get_candidate_document(
-        session,
-        context=context,
-        document_id=document_id,
-    )
-
-    if document.status is not CandidateDocumentStatus.PENDING_UPLOAD:
-        raise CandidateDocumentNotUploadableError(
-            "Document is not awaiting an upload."
+    async with transactional(session):
+        document = await session.scalar(
+            select(CandidateDocument)
+            .where(
+                CandidateDocument.id == document_id,
+                CandidateDocument.tenant_id == context.tenant_id,
+            )
+            .with_for_update()
         )
+        if document is None:
+            raise CandidateDocumentNotFoundError("Candidate document was not found.")
 
-    if document.checksum_sha256 is None:
-        raise CandidateDocumentVerificationError(
-            "Document checksum is missing; upload authorization cannot be created."
+        if document.status is not CandidateDocumentStatus.PENDING_UPLOAD:
+            raise CandidateDocumentNotUploadableError(
+                "Document is not awaiting an upload."
+            )
+
+        candidate = await session.scalar(
+            select(Candidate).where(
+                Candidate.id == document.candidate_id,
+                Candidate.tenant_id == context.tenant_id,
+                Candidate.privacy_status == CandidatePrivacyStatus.ACTIVE,
+            )
         )
+        if candidate is None:
+            raise CandidateDocumentNotFoundError("Candidate document was not found.")
+
+        if document.checksum_sha256 is None:
+            raise CandidateDocumentVerificationError(
+                "Document checksum is missing; upload authorization cannot be created."
+            )
+
+        authorization_expires_at = datetime.now(UTC) + expires_in
+        if (
+            document.upload_authorization_expires_at is None
+            or authorization_expires_at > document.upload_authorization_expires_at
+        ):
+            document.upload_authorization_expires_at = authorization_expires_at
+        await session.flush()
+
+        object_key = document.storage_key
+        content_type = document.declared_content_type
+        checksum = document.checksum_sha256
 
     try:
         return await storage.create_presigned_upload(
-            object_key=document.storage_key,
-            content_type=document.declared_content_type,
-            checksum_sha256=document.checksum_sha256,
+            object_key=object_key,
+            content_type=content_type,
+            checksum_sha256=checksum,
             expires_in=expires_in,
         )
     except ObjectStorageError as error:

@@ -14,6 +14,7 @@ from app.db.models.candidate import Candidate
 from app.db.models.offer import Offer
 from app.db.models.offer_signature import OfferSignatureRequest
 from app.db.models.outbox import OutboxEvent
+from app.domains.candidates.enums import CandidatePrivacyStatus
 from app.domains.signatures.enums import OfferSignatureStatus
 from app.services.offer_signature_provider import (
     CreateOfferSignatureEnvelopeCommand,
@@ -289,6 +290,7 @@ async def _load_signature_request_and_candidate(
             Offer.tenant_id == tenant_id,
             Application.tenant_id == tenant_id,
             Candidate.tenant_id == tenant_id,
+            Candidate.privacy_status == CandidatePrivacyStatus.ACTIVE,
         )
     )
 

@@ -119,6 +119,29 @@ class Settings(BaseSettings):
         ge=5,
         le=600,
     )
+    candidate_privacy_worker_poll_interval_seconds: int = Field(
+        default=5,
+        ge=1,
+        le=300,
+    )
+    candidate_privacy_worker_batch_size: int = Field(
+        default=25,
+        ge=1,
+        le=100,
+    )
+    candidate_privacy_worker_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=255,
+    )
+    candidate_privacy_worker_heartbeat_path: Path = Path(
+        "/tmp/tap-candidate-privacy-worker.heartbeat"  # noqa: S108
+    )
+    candidate_privacy_worker_heartbeat_max_age_seconds: int = Field(
+        default=120,
+        ge=10,
+        le=900,
+    )
     offer_expiry_worker_poll_interval_seconds: int = Field(
         default=30,
         ge=1,
