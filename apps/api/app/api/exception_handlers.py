@@ -63,6 +63,12 @@ from app.services.candidate_privacy_errors import (
     CandidatePrivacyNotFoundError,
 )
 from app.services.candidate_retention_errors import CandidateRetentionHoldActiveError
+from app.services.candidate_talent_pool_consent_errors import (
+    CandidateTalentPoolConsentAccessDeniedError,
+    CandidateTalentPoolConsentNotFoundError,
+    CandidateTalentPoolConsentStateError,
+    CandidateTalentPoolConsentValidationError,
+)
 from app.services.hiring_decision_errors import (
     HiringDecisionAccessDeniedError,
     HiringDecisionAlreadyExistsError,
@@ -369,11 +375,13 @@ async def invalid_idempotency_key(
     _: Exception,
 ) -> JSONResponse:
     """Handle invalid idempotency keys."""
-    return _error_response(
+    response = _error_response(
         request,
         status_code=status.HTTP_400_BAD_REQUEST,
         detail="Invalid Idempotency-Key.",
     )
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
 
 
 async def idempotency_key_reused(
@@ -381,11 +389,41 @@ async def idempotency_key_reused(
     _: Exception,
 ) -> JSONResponse:
     """Handle idempotency keys reused for a different request."""
-    return _error_response(
+    response = _error_response(
         request,
         status_code=status.HTTP_409_CONFLICT,
         detail="Idempotency-Key was already used for a different request.",
     )
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+async def candidate_talent_pool_consent_conflict(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Return a private conflict for an invalid consent lifecycle action."""
+    response = _error_response(
+        request,
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Talent-pool consent cannot be changed in its current state.",
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+async def candidate_talent_pool_consent_invalid(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Return a private validation error without reflecting request content."""
+    response = _error_response(
+        request,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail="Invalid talent-pool consent request.",
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
 
 
 async def database_unavailable(
@@ -977,6 +1015,8 @@ async def invalid_hris_schema(
     _: Exception,
 ) -> JSONResponse:
     """Prevent validation output from reflecting HRIS credential inputs."""
+    if "/talent-pool-consent/" in request.url.path:
+        return await candidate_talent_pool_consent_invalid(request, _)
     response = _error_response(
         request,
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -1207,6 +1247,22 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         CandidatePrivacyAccessDeniedError,
         candidate_privacy_forbidden,
+    )
+    application.add_exception_handler(
+        CandidateTalentPoolConsentNotFoundError,
+        candidate_or_application_not_found,
+    )
+    application.add_exception_handler(
+        CandidateTalentPoolConsentAccessDeniedError,
+        candidate_privacy_forbidden,
+    )
+    application.add_exception_handler(
+        CandidateTalentPoolConsentStateError,
+        candidate_talent_pool_consent_conflict,
+    )
+    application.add_exception_handler(
+        CandidateTalentPoolConsentValidationError,
+        candidate_talent_pool_consent_invalid,
     )
     application.add_exception_handler(
         CandidateRetentionHoldActiveError,
