@@ -3,12 +3,14 @@
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.functions import count
 
 from app.core.authorization import Role, TenantContext
 from app.db.models.candidate import Candidate
 from app.db.models.candidate_document import CandidateDocument
+from app.db.models.candidate_retention_hold import CandidateRetentionHold
 from app.db.transactions import transactional
 from app.domains.candidates.enums import CandidateConsentStatus, CandidatePrivacyStatus
 from app.domains.documents.enums import CandidateDocumentStatus
@@ -17,6 +19,7 @@ from app.services.candidate_privacy_errors import (
     CandidatePrivacyAccessDeniedError,
     CandidatePrivacyNotFoundError,
 )
+from app.services.candidate_retention_errors import CandidateRetentionHoldActiveError
 from app.services.outbox import enqueue_outbox_event
 
 _CONSENT_MANAGEMENT_ROLES = frozenset(
@@ -109,6 +112,18 @@ async def request_candidate_erasure(
 
         if candidate.privacy_status is not CandidatePrivacyStatus.ACTIVE:
             return candidate
+
+        active_hold = await session.scalar(
+            select(CandidateRetentionHold.id).where(
+                CandidateRetentionHold.tenant_id == context.tenant_id,
+                CandidateRetentionHold.candidate_id == candidate.id,
+                CandidateRetentionHold.released_at.is_(None),
+            ).limit(1)
+        )
+        if active_hold is not None:
+            raise CandidateRetentionHoldActiveError(
+                "Candidate erasure is blocked by an active retention hold."
+            )
 
         documents = list(
             await session.scalars(
@@ -225,7 +240,7 @@ async def complete_candidate_erasure_if_no_documents_remain(
             return None
 
         remaining_documents = await session.scalar(
-            select(func.count(CandidateDocument.id)).where(
+            select(count(CandidateDocument.id)).where(
                 CandidateDocument.tenant_id == tenant_id,
                 CandidateDocument.candidate_id == candidate_id,
             )
