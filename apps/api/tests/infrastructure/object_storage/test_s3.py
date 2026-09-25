@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 from typing import cast
 
 import pytest
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, EndpointConnectionError
 
 from app.infrastructure.object_storage.s3 import (
     S3ObjectStorage,
@@ -24,6 +24,7 @@ class FakeS3Client:
             "ContentLength": 512_000,
         }
         self.head_bucket_error: ClientError | None = None
+        self.delete_error: Exception | None = None
         self.generate_presigned_url_calls: list[tuple[str, dict[str, object]]] = []
         self.head_object_calls: list[dict[str, object]] = []
         self.head_bucket_calls: list[dict[str, object]] = []
@@ -44,7 +45,9 @@ class FakeS3Client:
         return self.head_object_response
 
     def delete_object(self, **_kwargs: object) -> dict[str, object]:
-        """Provide the protocol method; deletion is not tested in this file."""
+        """Return success or raise a simulated provider failure."""
+        if self.delete_error is not None:
+            raise self.delete_error
         return {}
 
     def head_bucket(self, **kwargs: object) -> dict[str, object]:
@@ -90,6 +93,16 @@ def _client_error(code: str, operation: str) -> ClientError:
         {"Error": {"Code": code, "Message": "test error"}},
         operation,
     )
+
+
+@pytest.mark.asyncio
+async def test_wraps_transport_failures_during_object_deletion() -> None:
+    """Expose network outages as retryable storage errors, not raw SDK errors."""
+    client = FakeS3Client()
+    client.delete_error = EndpointConnectionError(endpoint_url="http://minio:9000")
+
+    with pytest.raises(RuntimeError, match="could not complete document deletion"):
+        await _storage(client).delete_object(object_key="opaque/object-key")
 
 
 @pytest.mark.asyncio
