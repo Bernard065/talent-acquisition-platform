@@ -103,6 +103,7 @@ def _canonicalize_email(email: str) -> tuple[str, str]:
         validated_email = validate_email(
             email.strip(),
             check_deliverability=False,
+            test_environment=True,
         ).normalized
     except EmailNotValidError as error:
         raise ValueError("Candidate email is invalid.") from error
