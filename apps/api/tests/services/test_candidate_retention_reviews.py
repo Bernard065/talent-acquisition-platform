@@ -80,7 +80,7 @@ async def _create_candidate(session: AsyncSession, tenant_id: UUID) -> Candidate
         context=_context(tenant_id, frozenset({Role.RECRUITER})),
         command=CreateCandidateCommand(
             full_name="Retention Review Private Candidate",
-            email=f"retention-{suffix}@example.invalid",
+            email=f"retention-{suffix}@example.com",
             phone=None,
             location=None,
             source="careers_page",
@@ -165,6 +165,7 @@ async def _add_application(
 async def test_review_snapshots_active_policy_and_records_privacy_safe_audit_atomically(
     session: AsyncSession,
 ) -> None:
+    """Review creation should snapshot active policy data and keep audit details private."""
     tenant_id = uuid4()
     await _create_tenant(session, tenant_id)
     candidate = await _create_candidate(session, tenant_id)
@@ -247,6 +248,7 @@ async def test_review_snapshots_active_policy_and_records_privacy_safe_audit_ato
 async def test_manual_erasure_recommendation_is_evidence_only_and_never_queues_deletion(
     session: AsyncSession,
 ) -> None:
+    """Manual erasure recommendations should not trigger a deletion workflow."""
     tenant_id = uuid4()
     await _create_tenant(session, tenant_id)
     candidate = await _create_candidate(session, tenant_id)
@@ -276,6 +278,7 @@ async def test_manual_erasure_recommendation_is_evidence_only_and_never_queues_d
 async def test_review_requires_authorized_role_and_hides_cross_tenant_candidate_and_policy(
     session: AsyncSession,
 ) -> None:
+    """Review recording must enforce tenant scoping and authorization checks."""
     tenant_id = uuid4()
     other_tenant_id = uuid4()
     await _create_tenant(session, tenant_id)
@@ -313,6 +316,7 @@ async def test_review_requires_authorized_role_and_hides_cross_tenant_candidate_
 async def test_recommendation_is_blocked_by_legal_hold_active_application_or_incomplete_hire(
     session: AsyncSession,
 ) -> None:
+    """Manual erasure cannot be recommended while a legal hold or active hiring state exists."""
     tenant_id = uuid4()
     await _create_tenant(session, tenant_id)
     policy = await _active_policy(session, tenant_id)
@@ -361,6 +365,7 @@ async def test_recommendation_is_blocked_by_legal_hold_active_application_or_inc
 
 @pytest.mark.asyncio
 async def test_review_rows_reject_direct_updates_and_deletes(session: AsyncSession) -> None:
+    """Retention review rows should be protected from direct mutation in the database."""
     tenant_id = uuid4()
     await _create_tenant(session, tenant_id)
     candidate = await _create_candidate(session, tenant_id)
