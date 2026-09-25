@@ -13,7 +13,10 @@ from app.domains.candidates.talent_pool_consent import (
 
 
 def _validate_email_address(value: str) -> str:
-    """Allow RFC 2606 test domains in non-production fixtures while rejecting malformed addresses."""
+    """Allow RFC 2606 test domains in non-production fixtures.
+
+    Malformed addresses are still rejected.
+    """
     validated = validate_email(
         value,
         check_deliverability=False,

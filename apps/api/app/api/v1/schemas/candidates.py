@@ -18,7 +18,10 @@ from app.domains.candidates.enums import CandidateConsentStatus, CandidatePrivac
 
 
 def _validate_email_address(value: str) -> str:
-    """Allow RFC 2606 test domains used by local/test fixtures while rejecting malformed addresses."""
+    """Allow RFC 2606 test domains used by local/test fixtures.
+
+    Malformed addresses are still rejected.
+    """
     validated = validate_email(
         value,
         check_deliverability=False,
