@@ -20,6 +20,9 @@ from app.services.candidate_privacy_errors import (
     CandidatePrivacyNotFoundError,
 )
 from app.services.candidate_retention_errors import CandidateRetentionHoldActiveError
+from app.services.candidate_talent_pool_consent import (
+    withdraw_talent_pool_consent_for_erasure,
+)
 from app.services.outbox import enqueue_outbox_event
 
 _CONSENT_MANAGEMENT_ROLES = frozenset(
@@ -124,6 +127,13 @@ async def request_candidate_erasure(
             raise CandidateRetentionHoldActiveError(
                 "Candidate erasure is blocked by an active retention hold."
             )
+
+        await withdraw_talent_pool_consent_for_erasure(
+            session,
+            context=context,
+            candidate_id=candidate.id,
+            recorded_at=now,
+        )
 
         documents = list(
             await session.scalars(

@@ -19,6 +19,7 @@ from app.db.models.candidate_document import CandidateDocument
 from app.db.models.candidate_document_scan import CandidateDocumentScan
 from app.db.models.candidate_retention_hold import CandidateRetentionHold
 from app.db.models.candidate_retention_policy import CandidateRetentionPolicy
+from app.db.models.candidate_talent_pool_consent import CandidateTalentPoolConsentEvent
 from app.db.models.hris import HrisConnection, HrisHandoff
 from app.db.models.idempotency import IdempotencyRecord
 from app.db.models.identity import Tenant, User, UserRoleAssignment
@@ -67,6 +68,7 @@ __all__ = [
     "CandidateDocument",
     "CandidateDocumentScan",
     "CandidateRetentionPolicy",
+    "CandidateTalentPoolConsentEvent",
     "CandidateRetentionHold",
     "CalendarConnection",
     "HrisConnection",

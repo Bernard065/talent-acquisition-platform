@@ -12,6 +12,7 @@ from app.db.models.application import Application
 from app.db.models.candidate import Candidate
 from app.db.models.candidate_retention_hold import CandidateRetentionHold
 from app.db.models.candidate_retention_policy import CandidateRetentionPolicy
+from app.db.models.candidate_talent_pool_consent import CandidateTalentPoolConsentEvent
 from app.db.models.identity import Tenant
 from app.db.models.onboarding import OnboardingInstance
 from app.db.transactions import transactional
@@ -21,6 +22,10 @@ from app.domains.candidates.retention import (
     retention_review_after,
 )
 from app.domains.candidates.retention_enums import CandidateRetentionPolicyStatus
+from app.domains.candidates.talent_pool_consent import (
+    CandidateTalentPoolConsentEventType,
+    consent_is_active,
+)
 from app.domains.onboarding.enums import OnboardingInstanceStatus
 from app.services.audit import record_audit_event
 from app.services.candidate_retention_errors import (
@@ -64,6 +69,12 @@ class _ApplicationRetentionFact:
     updated_at: datetime
     onboarding_status: OnboardingInstanceStatus | None
     onboarding_completed_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class _TalentPoolConsentFact:
+    event_type: CandidateTalentPoolConsentEventType
+    recorded_at: datetime
 
 
 def _require_role(context: TenantContext, allowed: frozenset[Role]) -> None:
@@ -269,14 +280,49 @@ async def preview_candidate_retention(
         )
         applications_by_candidate: dict[UUID, list[_ApplicationRetentionFact]] = {}
         for row in application_rows:
-            applications_by_candidate.setdefault(row.candidate_id, []).append(
-                _ApplicationRetentionFact(
+                applications_by_candidate.setdefault(row.candidate_id, []).append(
+                    _ApplicationRetentionFact(
                     status=row.application_status,
                     updated_at=row.application_updated_at,
-                    onboarding_status=row.onboarding_status,
-                    onboarding_completed_at=row.onboarding_completed_at,
+                        onboarding_status=row.onboarding_status,
+                        onboarding_completed_at=row.onboarding_completed_at,
+                    )
                 )
+
+        ranked_consent_events = (
+            select(
+                CandidateTalentPoolConsentEvent.candidate_id.label("candidate_id"),
+                CandidateTalentPoolConsentEvent.event_type.label("event_type"),
+                CandidateTalentPoolConsentEvent.recorded_at.label("recorded_at"),
+                func.row_number()
+                .over(
+                    partition_by=CandidateTalentPoolConsentEvent.candidate_id,
+                    order_by=(
+                        CandidateTalentPoolConsentEvent.event_version.desc(),
+                    ),
+                )
+                .label("event_rank"),
             )
+            .where(
+                CandidateTalentPoolConsentEvent.tenant_id == context.tenant_id,
+                CandidateTalentPoolConsentEvent.candidate_id.in_(candidate_ids),
+            )
+            .subquery()
+        )
+        consent_rows = await session.execute(
+            select(
+                ranked_consent_events.c.candidate_id,
+                ranked_consent_events.c.event_type,
+                ranked_consent_events.c.recorded_at,
+            ).where(ranked_consent_events.c.event_rank == 1)
+        )
+        consent_by_candidate = {
+            row.candidate_id: _TalentPoolConsentFact(
+                event_type=row.event_type,
+                recorded_at=row.recorded_at,
+            )
+            for row in consent_rows
+        }
 
         for candidate in candidate_rows:
             counts["candidates_scanned"] += 1
@@ -288,9 +334,23 @@ async def preview_candidate_retention(
                 continue
 
             applications = applications_by_candidate.get(candidate.id, [])
+            talent_pool_consent = consent_by_candidate.get(candidate.id)
+            has_active_talent_pool_consent = (
+                talent_pool_consent is not None
+                and consent_is_active(talent_pool_consent.event_type)
+            )
             if not applications:
-                # Consent is not a purpose-specific talent-pool signal.
-                counts["not_evaluable"] += 1
+                if not has_active_talent_pool_consent or talent_pool_consent is None:
+                    counts["not_evaluable"] += 1
+                    continue
+                review_after = retention_review_after(
+                    talent_pool_consent.recorded_at,
+                    intervals.talent_pool_days,
+                )
+                if review_after <= evaluated_at:
+                    counts["due_for_review"] += 1
+                else:
+                    counts["not_yet_due"] += 1
                 continue
 
             if any(
@@ -330,6 +390,14 @@ async def preview_candidate_retention(
                                 intervals.hired_recruiting_copy_days,
                             )
                         )
+
+            if has_active_talent_pool_consent and talent_pool_consent is not None:
+                deadlines.append(
+                    retention_review_after(
+                        talent_pool_consent.recorded_at,
+                        intervals.talent_pool_days,
+                    )
+                )
 
             if incomplete_hired_application:
                 counts["excluded_incomplete_onboarding"] += 1

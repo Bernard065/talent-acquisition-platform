@@ -12,6 +12,7 @@ from app.db.models.application import Application
 from app.db.models.audit import AuditEvent
 from app.db.models.candidate import Candidate
 from app.db.models.candidate_retention_hold import CandidateRetentionHold
+from app.db.models.candidate_talent_pool_consent import CandidateTalentPoolConsentEvent
 from app.db.models.identity import Tenant
 from app.db.models.requisition import Requisition
 from app.domains.candidates.enums import (
@@ -22,6 +23,10 @@ from app.domains.candidates.enums import (
 from app.domains.candidates.retention import CandidateRetentionIntervals
 from app.domains.candidates.retention_enums import CandidateRetentionPolicyStatus
 from app.domains.candidates.retention_hold_enums import CandidateRetentionHoldReason
+from app.domains.candidates.talent_pool_consent import (
+    CandidateTalentPoolCaptureMethod,
+    CandidateTalentPoolConsentEventType,
+)
 from app.domains.requisitions.enums import RequisitionStatus
 from app.services.candidate_retention import (
     activate_candidate_retention_policy,
@@ -198,6 +203,8 @@ async def test_preview_counts_due_upcoming_active_and_erasure_candidates_only(
     active_candidate = await _create_candidate(session, tenant_id, "active")
     pending_candidate = await _create_candidate(session, tenant_id, "pending")
     held_candidate = await _create_candidate(session, tenant_id, "held")
+    pool_due_candidate = await _create_candidate(session, tenant_id, "pool-due")
+    pool_upcoming_candidate = await _create_candidate(session, tenant_id, "pool-upcoming")
     other_tenant_candidate = await _create_candidate(session, other_tenant_id, "other")
     now = datetime(2026, 9, 25, tzinfo=UTC)
     await _create_application(
@@ -242,6 +249,30 @@ async def test_preview_counts_due_upcoming_active_and_erasure_candidates_only(
             created_by_subject="privacy-reviewer",
         )
     )
+    session.add_all(
+        [
+            CandidateTalentPoolConsentEvent(
+                tenant_id=tenant_id,
+                candidate_id=pool_due_candidate.id,
+                event_version=1,
+                event_type=CandidateTalentPoolConsentEventType.GRANTED,
+                capture_method=CandidateTalentPoolCaptureMethod.SIGNED_FORM,
+                notice_version="notice-2026-01",
+                recorded_by_subject="privacy-reviewer",
+                recorded_at=now - timedelta(days=400),
+            ),
+            CandidateTalentPoolConsentEvent(
+                tenant_id=tenant_id,
+                candidate_id=pool_upcoming_candidate.id,
+                event_version=1,
+                event_type=CandidateTalentPoolConsentEventType.GRANTED,
+                capture_method=CandidateTalentPoolCaptureMethod.CANDIDATE_PORTAL,
+                notice_version="notice-2026-01",
+                recorded_by_subject="candidate-portal",
+                recorded_at=now - timedelta(days=30),
+            ),
+        ]
+    )
     await _create_application(
         session,
         tenant_id=tenant_id,
@@ -270,9 +301,9 @@ async def test_preview_counts_due_upcoming_active_and_erasure_candidates_only(
         as_of=now,
     )
 
-    assert result.candidates_scanned == 5
-    assert result.due_for_review == 1
-    assert result.not_yet_due == 1
+    assert result.candidates_scanned == 7
+    assert result.due_for_review == 2
+    assert result.not_yet_due == 2
     assert result.excluded_active_application == 1
     assert result.excluded_non_active_privacy_state == 1
     assert result.excluded_legal_hold == 1
