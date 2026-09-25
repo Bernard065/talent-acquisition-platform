@@ -657,3 +657,87 @@ async def test_talent_pool_consent_rejects_invalid_state_and_strict_fields_priva
     assert invalid_state.headers["Cache-Control"] == "private, no-store"
     assert invalid_schema.headers["Cache-Control"] == "private, no-store"
     assert "must-not-be-echoed" not in invalid_schema.text
+
+
+@pytest.mark.asyncio
+async def test_talent_pool_search_exposes_only_currently_consented_candidates(
+    api_app: FastAPI,
+) -> None:
+    """Return current consent evidence and exclude candidates after withdrawal."""
+    transport = ASGITransport(app=api_app)
+
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        active_candidate = await _create_candidate(
+            client,
+            email="active-talent@example.test",
+        )
+        withdrawn_candidate = await _create_candidate(
+            client,
+            email="withdrawn-talent@example.test",
+        )
+        for candidate in (active_candidate, withdrawn_candidate):
+            grant = await client.post(
+                f"/api/v1/candidates/{candidate['id']}/talent-pool-consent/grant",
+                json={
+                    "notice_version": "notice-v1",
+                    "capture_method": "signed_form",
+                },
+                headers=_idempotency_headers(),
+            )
+            assert grant.status_code == 201
+
+        withdrawal = await client.post(
+            f"/api/v1/candidates/{withdrawn_candidate['id']}"
+            "/talent-pool-consent/withdraw",
+            json={"capture_method": "email_confirmation"},
+            headers=_idempotency_headers(),
+        )
+        response = await client.get("/api/v1/candidates/talent-pool")
+
+    assert withdrawal.status_code == 200
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "private, no-store"
+    assert [item["candidate_id"] for item in response.json()["items"]] == [
+        active_candidate["id"]
+    ]
+    consented_profile = response.json()["items"][0]
+    assert consented_profile["consent_notice_version"] == "notice-v1"
+    assert consented_profile["consent_capture_method"] == "signed_form"
+    assert "source_metadata" not in consented_profile
+    assert response.json()["next_cursor"] is None
+
+
+@pytest.mark.asyncio
+async def test_talent_pool_search_authorization_cursor_and_validation_are_private(
+    api_app: FastAPI,
+) -> None:
+    """Use private no-store errors for forbidden and invalid search requests."""
+    transport = ASGITransport(app=api_app)
+
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        _set_context(
+            api_app,
+            tenant_id=uuid4(),
+            roles=frozenset({Role.INTERVIEWER}),
+        )
+        forbidden_response = await client.get("/api/v1/candidates/talent-pool")
+
+        _set_context(
+            api_app,
+            tenant_id=uuid4(),
+            roles=frozenset({Role.RECRUITER}),
+        )
+        invalid_cursor = await client.get(
+            "/api/v1/candidates/talent-pool?cursor=invalid"
+        )
+        invalid_limit = await client.get(
+            "/api/v1/candidates/talent-pool?limit=101"
+        )
+
+    assert forbidden_response.status_code == 403
+    assert invalid_cursor.status_code == 422
+    assert invalid_limit.status_code == 422
+    assert all(
+        response.headers["Cache-Control"] == "private, no-store"
+        for response in (forbidden_response, invalid_cursor, invalid_limit)
+    )

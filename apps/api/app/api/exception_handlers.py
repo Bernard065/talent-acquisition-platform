@@ -179,6 +179,10 @@ from app.services.requisition_errors import (
     RequisitionNotEditableError,
     RequisitionNotFoundError,
 )
+from app.services.talent_pool_search_errors import (
+    InvalidTalentPoolSearchCursorError,
+    TalentPoolSearchAccessDeniedError,
+)
 from app.services.webhook_management_errors import (
     WebhookAccessDeniedError,
     WebhookEndpointNotFoundError,
@@ -443,6 +447,7 @@ async def database_unavailable(
         detail="Service temporarily unavailable.",
     )
     response.headers["Retry-After"] = "5"
+    response.headers["Cache-Control"] = "private, no-store"
     return response
 
 
@@ -704,6 +709,34 @@ async def invalid_recruiting_search_cursor(
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         detail="Invalid recruiter search cursor.",
     )
+
+
+async def talent_pool_search_forbidden(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Deny talent-pool reads without making private responses cacheable."""
+    response = _error_response(
+        request,
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Insufficient permission.",
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+async def invalid_talent_pool_search_cursor(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Return a private validation response for malformed talent-pool cursors."""
+    response = _error_response(
+        request,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail="Invalid talent-pool search cursor.",
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
 
 
 async def interview_search_forbidden(
@@ -1017,6 +1050,14 @@ async def invalid_hris_schema(
     """Prevent validation output from reflecting HRIS credential inputs."""
     if "/talent-pool-consent/" in request.url.path:
         return await candidate_talent_pool_consent_invalid(request, _)
+    if request.url.path.endswith("/candidates/talent-pool"):
+        response = _error_response(
+            request,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Invalid talent-pool search request.",
+        )
+        response.headers["Cache-Control"] = "private, no-store"
+        return response
     response = _error_response(
         request,
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -1132,6 +1173,14 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         InvalidRecruitingSearchCursorError,
         invalid_recruiting_search_cursor,
+    )
+    application.add_exception_handler(
+        TalentPoolSearchAccessDeniedError,
+        talent_pool_search_forbidden,
+    )
+    application.add_exception_handler(
+        InvalidTalentPoolSearchCursorError,
+        invalid_talent_pool_search_cursor,
     )
     application.add_exception_handler(
         RecruitingMetricsAccessDeniedError,
