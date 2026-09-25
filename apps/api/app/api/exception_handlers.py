@@ -58,6 +58,10 @@ from app.services.candidate_errors import (
     CandidateNotFoundError,
     RequisitionNotAcceptingApplicationsError,
 )
+from app.services.candidate_privacy_errors import (
+    CandidatePrivacyAccessDeniedError,
+    CandidatePrivacyNotFoundError,
+)
 from app.services.hiring_decision_errors import (
     HiringDecisionAccessDeniedError,
     HiringDecisionAlreadyExistsError,
@@ -214,11 +218,23 @@ async def candidate_or_application_not_found(
     _: Exception,
 ) -> JSONResponse:
     """Handle candidates or applications that cannot be found."""
-    return _error_response(
+    response = _error_response(
         request,
         status_code=status.HTTP_404_NOT_FOUND,
         detail="Candidate or application not found.",
     )
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+async def candidate_privacy_forbidden(
+    request: Request,
+    error: Exception,
+) -> JSONResponse:
+    """Return an uncacheable authorization response for privacy operations."""
+    response = await forbidden(request, error)
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
 
 
 async def forbidden(
@@ -1168,6 +1184,14 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         CandidateNotFoundError,
         candidate_or_application_not_found,
+    )
+    application.add_exception_handler(
+        CandidatePrivacyNotFoundError,
+        candidate_or_application_not_found,
+    )
+    application.add_exception_handler(
+        CandidatePrivacyAccessDeniedError,
+        candidate_privacy_forbidden,
     )
     application.add_exception_handler(
         ApplicationNotFoundError,

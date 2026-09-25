@@ -355,3 +355,81 @@ async def test_creates_application_for_open_requisition_and_marks_private(
     assert created.headers["Cache-Control"] == "private, no-store"
     assert fetched.status_code == 200
     assert fetched.headers["Cache-Control"] == "private, no-store"
+
+
+@pytest.mark.asyncio
+async def test_withdraws_candidate_consent_idempotently_without_pii(
+    api_app: FastAPI,
+) -> None:
+    transport = ASGITransport(app=api_app)
+    headers = _idempotency_headers()
+
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        candidate = await _create_candidate(client)
+        first = await client.post(
+            f"/api/v1/candidates/{candidate['id']}/consent/withdraw",
+            headers=headers,
+        )
+        replay = await client.post(
+            f"/api/v1/candidates/{candidate['id']}/consent/withdraw",
+            headers=headers,
+        )
+
+    assert first.status_code == 200
+    assert replay.status_code == 200
+    assert first.json() == replay.json()
+    assert first.json()["consent_status"] == "withdrawn"
+    assert first.json()["privacy_status"] == "active"
+    assert "email" not in first.json()
+    assert "full_name" not in first.json()
+    assert first.headers["Idempotent-Replayed"] == "false"
+    assert replay.headers["Idempotent-Replayed"] == "true"
+    assert first.headers["Cache-Control"] == "private, no-store"
+    assert first.json()["candidate_id"] == candidate["id"]
+
+
+@pytest.mark.asyncio
+async def test_erasure_anonymizes_candidate_and_hides_profile(
+    api_app: FastAPI,
+    tenant_id: UUID,
+) -> None:
+    transport = ASGITransport(app=api_app)
+
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        candidate = await _create_candidate(client)
+        _set_context(
+            api_app,
+            tenant_id=tenant_id,
+            roles=frozenset({Role.TENANT_ADMIN}),
+        )
+        erasure = await client.post(
+            f"/api/v1/candidates/{candidate['id']}/erasure",
+            headers=_idempotency_headers(),
+        )
+        hidden = await client.get(f"/api/v1/candidates/{candidate['id']}")
+
+    assert erasure.status_code == 202
+    assert erasure.json()["privacy_status"] == "erased"
+    assert erasure.json()["consent_status"] == "withdrawn"
+    assert "email" not in erasure.json()
+    assert "full_name" not in erasure.json()
+    assert erasure.headers["Cache-Control"] == "private, no-store"
+    assert hidden.status_code == 404
+    assert hidden.headers["Cache-Control"] == "private, no-store"
+
+
+@pytest.mark.asyncio
+async def test_recruiter_cannot_request_candidate_erasure(
+    api_app: FastAPI,
+) -> None:
+    transport = ASGITransport(app=api_app)
+
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        candidate = await _create_candidate(client)
+        response = await client.post(
+            f"/api/v1/candidates/{candidate['id']}/erasure",
+            headers=_idempotency_headers(),
+        )
+
+    assert response.status_code == 403
+    assert response.headers["Cache-Control"] == "private, no-store"

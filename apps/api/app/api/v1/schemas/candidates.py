@@ -12,7 +12,7 @@ from pydantic import (
     field_validator,
 )
 
-from app.domains.candidates.enums import CandidateConsentStatus
+from app.domains.candidates.enums import CandidateConsentStatus, CandidatePrivacyStatus
 
 
 class CandidateCreateRequest(BaseModel):
@@ -67,3 +67,15 @@ class CandidateListResponse(BaseModel):
 
     items: list[CandidateResponse]
     next_cursor: str | None = None
+
+
+class CandidatePrivacyOperationResponse(BaseModel):
+    """PII-free acknowledgement for a consent or erasure operation."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    candidate_id: UUID
+    consent_status: CandidateConsentStatus
+    privacy_status: CandidatePrivacyStatus
+    erasure_requested_at: datetime | None
+    erased_at: datetime | None

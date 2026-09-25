@@ -12,10 +12,15 @@ from app.api.idempotency import IdempotencyKey, idempotency_response
 from app.api.v1.schemas.candidates import (
     CandidateCreateRequest,
     CandidateListResponse,
+    CandidatePrivacyOperationResponse,
     CandidateResponse,
 )
 from app.core.authorization import TenantContext
 from app.domains.candidates.enums import CandidateConsentStatus
+from app.services.candidate_privacy import (
+    request_candidate_erasure,
+    withdraw_candidate_consent,
+)
 from app.services.candidates import (
     CreateCandidateCommand,
     create_candidate,
@@ -147,3 +152,85 @@ async def get_candidate_endpoint(
     response.headers["Cache-Control"] = "private, no-store"
 
     return CandidateResponse.model_validate(candidate)
+
+
+@router.post(
+    "/{candidate_id}/consent/withdraw",
+    response_model=CandidatePrivacyOperationResponse,
+    summary="Withdraw candidate consent",
+)
+async def withdraw_candidate_consent_endpoint(
+    candidate_id: UUID,
+    context: CallerContext,
+    session: DatabaseSession,
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Record a tenant-authorized consent withdrawal without returning PII."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        candidate = await withdraw_candidate_consent(
+            session,
+            context=context,
+            candidate_id=candidate_id,
+        )
+        return (
+            status.HTTP_200_OK,
+            CandidatePrivacyOperationResponse(
+                candidate_id=candidate.id,
+                consent_status=candidate.consent_status,
+                privacy_status=candidate.privacy_status,
+                erasure_requested_at=candidate.erasure_requested_at,
+                erased_at=candidate.erased_at,
+            ).model_dump(mode="json"),
+        )
+
+    result = await execute_idempotently(
+        session,
+        context=context,
+        key=idempotency_key,
+        operation_name="candidate.consent.withdraw",
+        payload={"candidate_id": str(candidate_id)},
+        operation=operation,
+    )
+    return _private_idempotency_response(result)
+
+
+@router.post(
+    "/{candidate_id}/erasure",
+    response_model=CandidatePrivacyOperationResponse,
+    summary="Request candidate data erasure",
+)
+async def request_candidate_erasure_endpoint(
+    candidate_id: UUID,
+    context: CallerContext,
+    session: DatabaseSession,
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Anonymize candidate data and enqueue asynchronous document cleanup."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        candidate = await request_candidate_erasure(
+            session,
+            context=context,
+            candidate_id=candidate_id,
+        )
+        return (
+            status.HTTP_202_ACCEPTED,
+            CandidatePrivacyOperationResponse(
+                candidate_id=candidate.id,
+                consent_status=candidate.consent_status,
+                privacy_status=candidate.privacy_status,
+                erasure_requested_at=candidate.erasure_requested_at,
+                erased_at=candidate.erased_at,
+            ).model_dump(mode="json"),
+        )
+
+    result = await execute_idempotently(
+        session,
+        context=context,
+        key=idempotency_key,
+        operation_name="candidate.privacy.erase",
+        payload={"candidate_id": str(candidate_id)},
+        operation=operation,
+    )
+    return _private_idempotency_response(result)
