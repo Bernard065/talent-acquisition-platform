@@ -11,6 +11,7 @@ from app.core.authorization import Role, TenantContext
 from app.db.models.application import Application
 from app.db.models.audit import AuditEvent
 from app.db.models.candidate import Candidate
+from app.db.models.candidate_retention_hold import CandidateRetentionHold
 from app.db.models.identity import Tenant
 from app.db.models.requisition import Requisition
 from app.domains.candidates.enums import (
@@ -20,6 +21,7 @@ from app.domains.candidates.enums import (
 )
 from app.domains.candidates.retention import CandidateRetentionIntervals
 from app.domains.candidates.retention_enums import CandidateRetentionPolicyStatus
+from app.domains.candidates.retention_hold_enums import CandidateRetentionHoldReason
 from app.domains.requisitions.enums import RequisitionStatus
 from app.services.candidate_retention import (
     activate_candidate_retention_policy,
@@ -195,6 +197,7 @@ async def test_preview_counts_due_upcoming_active_and_erasure_candidates_only(
     upcoming_candidate = await _create_candidate(session, tenant_id, "upcoming")
     active_candidate = await _create_candidate(session, tenant_id, "active")
     pending_candidate = await _create_candidate(session, tenant_id, "pending")
+    held_candidate = await _create_candidate(session, tenant_id, "held")
     other_tenant_candidate = await _create_candidate(session, other_tenant_id, "other")
     now = datetime(2026, 9, 25, tzinfo=UTC)
     await _create_application(
@@ -231,6 +234,22 @@ async def test_preview_counts_due_upcoming_active_and_erasure_candidates_only(
     )
     pending_candidate.privacy_status = CandidatePrivacyStatus.ERASURE_PENDING
     pending_candidate.erasure_requested_at = now - timedelta(days=1)
+    session.add(
+        CandidateRetentionHold(
+            tenant_id=tenant_id,
+            candidate_id=held_candidate.id,
+            reason=CandidateRetentionHoldReason.LEGAL_CLAIM,
+            created_by_subject="privacy-reviewer",
+        )
+    )
+    await _create_application(
+        session,
+        tenant_id=tenant_id,
+        candidate_id=held_candidate.id,
+        requisition_id=requisition.id,
+        status=ApplicationStatus.REJECTED,
+        updated_at=now - timedelta(days=500),
+    )
     await _create_application(
         session,
         tenant_id=other_tenant_id,
@@ -251,9 +270,10 @@ async def test_preview_counts_due_upcoming_active_and_erasure_candidates_only(
         as_of=now,
     )
 
-    assert result.candidates_scanned == 4
+    assert result.candidates_scanned == 5
     assert result.due_for_review == 1
     assert result.not_yet_due == 1
     assert result.excluded_active_application == 1
     assert result.excluded_non_active_privacy_state == 1
+    assert result.excluded_legal_hold == 1
     assert result.not_evaluable == 0

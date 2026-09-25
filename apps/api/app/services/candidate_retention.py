@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.authorization import Role, TenantContext
 from app.db.models.application import Application
 from app.db.models.candidate import Candidate
+from app.db.models.candidate_retention_hold import CandidateRetentionHold
 from app.db.models.candidate_retention_policy import CandidateRetentionPolicy
 from app.db.models.identity import Tenant
 from app.db.models.onboarding import OnboardingInstance
@@ -53,6 +54,7 @@ class CandidateRetentionPreview:
     excluded_active_application: int
     excluded_incomplete_onboarding: int
     excluded_non_active_privacy_state: int
+    excluded_legal_hold: int
     not_evaluable: int
 
 
@@ -214,13 +216,25 @@ async def preview_candidate_retention(
         "excluded_active_application": 0,
         "excluded_incomplete_onboarding": 0,
         "excluded_non_active_privacy_state": 0,
+        "excluded_legal_hold": 0,
         "not_evaluable": 0,
     }
     last_candidate_id: UUID | None = None
 
     while True:
         candidate_query = (
-            select(Candidate.id, Candidate.privacy_status)
+            select(
+                Candidate.id,
+                Candidate.privacy_status,
+                select(CandidateRetentionHold.id)
+                .where(
+                    CandidateRetentionHold.tenant_id == context.tenant_id,
+                    CandidateRetentionHold.candidate_id == Candidate.id,
+                    CandidateRetentionHold.released_at.is_(None),
+                )
+                .exists()
+                .label("has_active_hold"),
+            )
             .where(Candidate.tenant_id == context.tenant_id)
             .order_by(Candidate.id)
             .limit(_CANDIDATE_BATCH_SIZE)
@@ -268,6 +282,9 @@ async def preview_candidate_retention(
             counts["candidates_scanned"] += 1
             if candidate.privacy_status is not CandidatePrivacyStatus.ACTIVE:
                 counts["excluded_non_active_privacy_state"] += 1
+                continue
+            if candidate.has_active_hold:
+                counts["excluded_legal_hold"] += 1
                 continue
 
             applications = applications_by_candidate.get(candidate.id, [])

@@ -17,6 +17,7 @@ from app.db.models.calendar import CalendarConnection, InterviewCalendarSync
 from app.db.models.candidate import Candidate
 from app.db.models.candidate_document import CandidateDocument
 from app.db.models.candidate_document_scan import CandidateDocumentScan
+from app.db.models.candidate_retention_hold import CandidateRetentionHold
 from app.db.models.candidate_retention_policy import CandidateRetentionPolicy
 from app.db.models.hris import HrisConnection, HrisHandoff
 from app.db.models.idempotency import IdempotencyRecord
@@ -66,6 +67,7 @@ __all__ = [
     "CandidateDocument",
     "CandidateDocumentScan",
     "CandidateRetentionPolicy",
+    "CandidateRetentionHold",
     "CalendarConnection",
     "HrisConnection",
     "HrisHandoff",

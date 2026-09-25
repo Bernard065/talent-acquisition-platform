@@ -11,3 +11,15 @@ class CandidateRetentionPolicyNotFoundError(LookupError):
 
 class CandidateRetentionPolicyStateError(ValueError):
     """Raised when a policy lifecycle operation is invalid."""
+
+
+class CandidateRetentionHoldActiveError(RuntimeError):
+    """Raised when an active retention hold blocks candidate erasure."""
+
+
+class CandidateRetentionHoldStateError(ValueError):
+    """Raised when a hold cannot be placed for the candidate's privacy state."""
+
+
+class CandidateRetentionHoldNotFoundError(LookupError):
+    """Raised when a hold is absent from the caller's tenant."""

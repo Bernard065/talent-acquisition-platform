@@ -62,6 +62,7 @@ from app.services.candidate_privacy_errors import (
     CandidatePrivacyAccessDeniedError,
     CandidatePrivacyNotFoundError,
 )
+from app.services.candidate_retention_errors import CandidateRetentionHoldActiveError
 from app.services.hiring_decision_errors import (
     HiringDecisionAccessDeniedError,
     HiringDecisionAlreadyExistsError,
@@ -233,6 +234,20 @@ async def candidate_privacy_forbidden(
 ) -> JSONResponse:
     """Return an uncacheable authorization response for privacy operations."""
     response = await forbidden(request, error)
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+async def candidate_retention_hold_conflict(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Return a private conflict when an active hold prevents erasure."""
+    response = _error_response(
+        request,
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Candidate erasure is blocked by an active retention hold.",
+    )
     response.headers["Cache-Control"] = "private, no-store"
     return response
 
@@ -1192,6 +1207,10 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         CandidatePrivacyAccessDeniedError,
         candidate_privacy_forbidden,
+    )
+    application.add_exception_handler(
+        CandidateRetentionHoldActiveError,
+        candidate_retention_hold_conflict,
     )
     application.add_exception_handler(
         ApplicationNotFoundError,
