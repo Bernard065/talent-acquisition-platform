@@ -3,8 +3,9 @@
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.functions import count
 
 from app.core.authorization import Role, TenantContext
 from app.db.models.candidate import Candidate
@@ -239,7 +240,7 @@ async def complete_candidate_erasure_if_no_documents_remain(
             return None
 
         remaining_documents = await session.scalar(
-            select(func.count(CandidateDocument.id)).where(
+            select(count(CandidateDocument.id)).where(
                 CandidateDocument.tenant_id == tenant_id,
                 CandidateDocument.candidate_id == candidate_id,
             )
