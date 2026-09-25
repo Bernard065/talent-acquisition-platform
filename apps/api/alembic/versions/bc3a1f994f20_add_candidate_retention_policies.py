@@ -20,7 +20,6 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     """Create tenant policy storage without changing or erasing existing records."""
     policy_status = sa.Enum("draft", "active", "retired", name="candidate_retention_policy_status")
-    policy_status.create(op.get_bind(), checkfirst=True)
     op.create_table(
         "candidate_retention_policies",
         sa.Column("id", sa.UUID(), nullable=False),

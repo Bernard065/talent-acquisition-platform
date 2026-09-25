@@ -26,7 +26,6 @@ def upgrade() -> None:
         "other_evidence",
         name="candidate_retention_hold_reason",
     )
-    reason_type.create(op.get_bind(), checkfirst=True)
     op.create_table(
         "candidate_retention_holds",
         sa.Column("id", sa.UUID(), nullable=False),
