@@ -16,6 +16,7 @@ from app.db.models.candidate import Candidate
 from app.domains.candidates.enums import (
     ApplicationStatus,
     CandidateConsentStatus,
+    CandidatePrivacyStatus,
 )
 from app.services.candidate_errors import CandidateAccessDeniedError
 from app.services.recruiting_search_errors import (
@@ -153,7 +154,8 @@ async def search_candidates(
         raise ValueError("Candidate search limit must be between 1 and 100.")
 
     statement = select(Candidate).where(
-        Candidate.tenant_id == context.tenant_id
+        Candidate.tenant_id == context.tenant_id,
+        Candidate.privacy_status == CandidatePrivacyStatus.ACTIVE,
     )
 
     if filters.query is not None and filters.query.strip():

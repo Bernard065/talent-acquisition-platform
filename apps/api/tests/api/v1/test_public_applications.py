@@ -20,6 +20,7 @@ from app.db.models.candidate import Candidate
 from app.db.models.identity import Tenant
 from app.db.models.job_posting import JobPosting
 from app.db.models.requisition import Requisition
+from app.domains.candidates.enums import CandidateConsentStatus
 from app.domains.job_postings.enums import (
     EmploymentType,
     JobPostingStatus,
@@ -457,3 +458,51 @@ async def test_rejects_oversized_public_application_body(
     assert response.status_code == 413
     assert candidate_count == 0
     assert application_count == 0
+
+
+@pytest.mark.asyncio
+async def test_withdrawn_candidate_receives_generic_ack_without_new_application(
+    public_applications_app: FastAPI,
+    database_engine: AsyncEngine,
+) -> None:
+    """Do not restart candidate processing after a recorded consent withdrawal."""
+    posting = await _seed_job(database_engine)
+    session_factory = async_sessionmaker(
+        bind=database_engine,
+        autoflush=False,
+        expire_on_commit=False,
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=public_applications_app),
+        base_url="http://testserver",
+    ) as client:
+        first = await client.post(
+            f"/api/v1/public/jobs/{posting.public_id}/applications",
+            json=_payload(),
+            headers=_headers(),
+        )
+        async with session_factory.begin() as session:
+            candidate = await session.scalar(
+                select(Candidate).where(
+                    Candidate.tenant_id == posting.tenant_id,
+                    Candidate.normalized_email == "ada.lovelace@acme.co.ke",
+                )
+            )
+            assert candidate is not None
+            candidate.consent_status = CandidateConsentStatus.WITHDRAWN
+
+        second = await client.post(
+            f"/api/v1/public/jobs/{posting.public_id}/applications",
+            json=_payload(),
+            headers=_headers(),
+        )
+
+    candidate_count, application_count = await _submission_counts(
+        database_engine,
+        tenant_id=posting.tenant_id,
+    )
+
+    assert first.status_code == second.status_code == 202
+    assert first.json() == second.json() == {"message": "Application received."}
+    assert candidate_count == application_count == 1

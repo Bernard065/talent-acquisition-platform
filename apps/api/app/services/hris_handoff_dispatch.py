@@ -17,6 +17,7 @@ from app.db.models.candidate import Candidate
 from app.db.models.hris import HrisConnection, HrisHandoff
 from app.db.models.offer import Offer
 from app.db.models.outbox import OutboxEvent
+from app.domains.candidates.enums import CandidatePrivacyStatus
 from app.domains.hris.enums import (
     HrisConnectionStatus,
     HrisHandoffStatus,
@@ -173,6 +174,7 @@ async def _load_private_handoff(
         .where(
             HrisHandoff.id == handoff_id,
             HrisHandoff.tenant_id == tenant_id,
+            Candidate.privacy_status == CandidatePrivacyStatus.ACTIVE,
         )
     )
 

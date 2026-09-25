@@ -168,6 +168,8 @@ async def test_creates_fresh_upload_authorization_for_pending_document(
             "expires_in": timedelta(minutes=15),
         }
     ]
+    assert document.upload_authorization_expires_at is not None
+    assert document.upload_authorization_expires_at > datetime.now(UTC)
 
 
 @pytest.mark.asyncio

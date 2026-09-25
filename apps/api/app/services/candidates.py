@@ -20,6 +20,7 @@ from app.db.transactions import transactional
 from app.domains.candidates.enums import (
     ApplicationStatus,
     CandidateConsentStatus,
+    CandidatePrivacyStatus,
 )
 from app.domains.requisitions.enums import RequisitionStatus
 from app.services.audit import record_audit_event
@@ -170,6 +171,7 @@ async def get_candidate(
         select(Candidate).where(
             Candidate.id == candidate_id,
             Candidate.tenant_id == context.tenant_id,
+            Candidate.privacy_status == CandidatePrivacyStatus.ACTIVE,
         )
     )
     if candidate is None:
@@ -193,6 +195,7 @@ async def create_application(
             .where(
                 Candidate.id == command.candidate_id,
                 Candidate.tenant_id == context.tenant_id,
+                Candidate.privacy_status == CandidatePrivacyStatus.ACTIVE,
             )
             .with_for_update()
         )
