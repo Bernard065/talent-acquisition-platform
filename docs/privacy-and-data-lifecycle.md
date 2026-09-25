@@ -20,8 +20,23 @@ The candidate is hidden from profile reads and candidate search as soon as erasu
 
 The API endpoints are private, no-store, require `Idempotency-Key`, and return no profile data. Outbox payloads and audit details contain identifiers and state/count metadata only—never names, emails, filenames, checksums, or object keys.
 
-## Explicitly not automated yet
+### Retention schedule
 
-No automatic age-based deletion is enabled. A tenant retention interval, active-application exception, legal-hold behavior, and post-hire record schedule have not been approved, so the platform does not guess at those rules. Define and review that policy before scheduling automatic erasure.
+The platform stores versioned, tenant-scoped policy schedules and can produce an aggregate dry-run report. The following durations are proposals for tenant review, not periods prescribed by law and not enabled as automatic deletion rules:
+
+| Data purpose | Proposed review point | Guardrails |
+| --- | --- | --- |
+| Unsuccessful applicants | 12 months after the final rejected outcome | Do not consider while any application remains active. |
+| Withdrawn applicants | 12 months after withdrawal | Do not consider while any other application remains active. |
+| Talent pool | 12 months after a distinct, recorded talent-pool opt-in or renewal | The current generic consent field is not proof of this separate purpose; not evaluated by the preview. |
+| Hired candidate recruiting copies | 90 days after onboarding completion | This applies only to redundant recruiting copies; it is not the employee-record schedule. |
+| Legal hold / evidence | Review every 90 days while the hold remains active | Restrict access and processing as appropriate; retain only the scoped evidence needed. Hold screening and automated release are not implemented in this feature. |
+| Backups | 35 days maximum proposed, subject to the chosen host | Backup expiry is infrastructure policy and is not managed by this application. |
+
+The policy defaults are deliberately marked as proposals. A tenant administrator may version and activate a schedule, but activation only selects the schedule for reporting: it does not erase, anonymize, or enqueue deletion. Preview results contain aggregate counts only and are not a finding that a record is legally eligible for deletion. A human review must assess purpose, active matters, evidence/legal holds, other lawful retention grounds, applicable employee-record duties, and downstream processors before using the existing erasure workflow.
+
+Kenya's Data Protection Act, section 39, and the Data Protection (General) Regulations, regulation 19, establish purpose-based storage limitation and require a retention schedule with review, audit, and disposal actions; they do not prescribe these proposed applicant durations. Section 10(6) of the Employment Act requires retention for five years of the written particulars described in section 10(1) after employment ends; do not generalize that rule to all candidate records. See the [Data Protection Act](https://new.kenyalaw.org/akn/ke/act/2019/24/eng%402019-11-15/source), [General Regulations, regulation 19](https://www.odpc.go.ke/wp-content/uploads/2024/03/THE-DATA-PROTECTION-GENERAL-REGULATIONS-2021-1.pdf), and [Employment Act, section 10(6)](https://new.kenyalaw.org/akn/ke/act/2007/11/eng%402021-04-15/source.pdf). This implementation is not legal advice; the controller's privacy lead or counsel should approve each tenant's policy and exceptions.
+
+Before any deletion worker is considered, implement explicit legal-hold lifecycle and exception review, purpose-specific talent-pool consent, candidate-level review evidence, processor deletion tracking, backup expiry and restore tombstones, and a separately reviewed employee-record schedule. Then run a production dry run and obtain approval before enabling destructive execution.
 
 Erasure here covers data controlled by this application, including candidate document objects in configured object storage. Any data already delivered to external signature, calendar, HRIS, or email providers needs a separate provider-specific deletion/retention process and should not be assumed erased by this workflow.
