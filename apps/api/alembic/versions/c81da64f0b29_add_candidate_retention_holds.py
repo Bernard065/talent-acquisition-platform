@@ -86,6 +86,10 @@ def upgrade() -> None:
             RETURN NEW;
         END;
         $$;
+        """
+    )
+    op.execute(
+        """
         CREATE TRIGGER trg_candidate_retention_hold_release
         BEFORE UPDATE ON candidate_retention_holds
         FOR EACH ROW EXECUTE FUNCTION enforce_candidate_retention_hold_release();
