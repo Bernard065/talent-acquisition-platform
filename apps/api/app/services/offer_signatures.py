@@ -10,12 +10,17 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authorization import Role, TenantContext
+from app.db.models.application import Application
 from app.db.models.offer import Offer
 from app.db.models.offer_signature import (
     OfferSignatureHistory,
     OfferSignatureRequest,
 )
 from app.db.transactions import transactional
+from app.domains.candidates.processor_data import (
+    CandidateProcessorDisclosureSource,
+    CandidateProcessorPurpose,
+)
 from app.domains.offers.enums import OfferStatus
 from app.domains.signatures.enums import (
     OfferSignatureEventType,
@@ -25,6 +30,9 @@ from app.domains.signatures.transitions import (
     validate_offer_signature_transition,
 )
 from app.services.audit import record_audit_event
+from app.services.candidate_processor_deletions import (
+    record_candidate_processor_disclosure,
+)
 from app.services.offer_errors import OfferNotFoundError, OfferVersionConflictError
 from app.services.offer_signature_errors import (
     OfferSignatureAccessDeniedError,
@@ -308,6 +316,31 @@ async def send_offer_signature_request(
         signature_request.status = OfferSignatureStatus.SENT
         signature_request.sent_at = datetime.now(UTC)
         signature_request.provider_envelope_reference = envelope_reference
+
+        candidate_id = await session.scalar(
+            select(Application.candidate_id)
+            .join(Offer, Offer.application_id == Application.id)
+            .where(
+                Offer.id == signature_request.offer_id,
+                Offer.tenant_id == context.tenant_id,
+                Application.tenant_id == context.tenant_id,
+            )
+        )
+        if candidate_id is None:
+            raise OfferSignatureNotFoundError(
+                "Signature request candidate could not be found."
+            )
+        await record_candidate_processor_disclosure(
+            session,
+            context=context,
+            tenant_id=context.tenant_id,
+            candidate_id=candidate_id,
+            processor_code=f"signature.{signature_request.provider}",
+            purpose=CandidateProcessorPurpose.OFFER_SIGNATURE,
+            source=CandidateProcessorDisclosureSource.OFFER_SIGNATURE,
+            source_id=signature_request.id,
+            external_record_reference=envelope_reference,
+        )
 
         _append_history(
             session,
