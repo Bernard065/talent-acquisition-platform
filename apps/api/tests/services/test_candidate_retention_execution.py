@@ -44,7 +44,10 @@ from app.services.candidate_retention_execution_errors import (
     CandidateRetentionExecutionNotFoundError,
     CandidateRetentionExecutionStateError,
 )
-from app.services.candidate_retention_holds import place_candidate_retention_hold
+from app.services.candidate_retention_holds import (
+    place_candidate_retention_hold,
+    release_candidate_retention_hold,
+)
 from app.services.candidate_retention_reviews import (
     RecordCandidateRetentionReviewCommand,
     record_candidate_retention_review,
@@ -163,6 +166,7 @@ async def _seed_review(
 
 @pytest.mark.asyncio
 async def test_execution_is_atomic_private_and_idempotent(session: AsyncSession) -> None:
+    """Execute the recommendation atomically once and redact the candidate profile."""
     tenant_id, candidate, review = await _seed_review(session, add_document=True)
     executor = _context(tenant_id, subject="independent-executor")
 
@@ -231,6 +235,7 @@ async def test_execution_is_atomic_private_and_idempotent(session: AsyncSession)
 async def test_execution_requires_a_different_authorized_executor(
     session: AsyncSession,
 ) -> None:
+    """Reject attempts by the original reviewer or an unauthorized role."""
     tenant_id, candidate, review = await _seed_review(session)
 
     with pytest.raises(CandidateRetentionExecutionAccessDeniedError):
@@ -262,6 +267,7 @@ async def test_execution_requires_a_different_authorized_executor(
 async def test_execution_rejects_a_superseded_recommendation(
     session: AsyncSession,
 ) -> None:
+    """Reject stale reviews after a newer recommendation is recorded."""
     tenant_id, candidate, review = await _seed_review(session)
     policy = await session.scalar(
         select(CandidateRetentionPolicy).where(
@@ -305,12 +311,13 @@ async def test_execution_rejects_a_superseded_recommendation(
 
 @pytest.mark.asyncio
 async def test_execution_rechecks_holds_and_active_workflows(session: AsyncSession) -> None:
+    """Fail when an active legal hold or recruiting workflow is still open."""
     tenant_id, candidate, review = await _seed_review(session)
     await place_candidate_retention_hold(
         session,
         context=_context(tenant_id, subject="hold-admin"),
         candidate_id=candidate.id,
-        reason=CandidateRetentionHoldReason.LEGAL_MATTER,
+        reason=CandidateRetentionHoldReason.LEGAL_CLAIM,
     )
 
     with pytest.raises(CandidateRetentionExecutionStateError):
@@ -331,8 +338,6 @@ async def test_execution_rechecks_holds_and_active_workflows(session: AsyncSessi
     assert active_hold is not None
 
     # Release the hold, then verify that a newly active application also blocks execution.
-    from app.services.candidate_retention_holds import release_candidate_retention_hold
-
     await release_candidate_retention_hold(
         session,
         context=_context(tenant_id, subject="hold-admin"),
@@ -371,6 +376,7 @@ async def test_execution_rechecks_holds_and_active_workflows(session: AsyncSessi
 async def test_execution_hides_cross_tenant_candidate_and_review(
     session: AsyncSession,
 ) -> None:
+    """Prevent cross-tenant execution attempts from seeing another tenant's review."""
     _, candidate, review = await _seed_review(session)
 
     with pytest.raises(CandidateRetentionExecutionNotFoundError):
@@ -384,6 +390,7 @@ async def test_execution_hides_cross_tenant_candidate_and_review(
 
 @pytest.mark.asyncio
 async def test_execution_history_is_database_immutable(session: AsyncSession) -> None:
+    """Reject direct mutation of the execution audit trail at the database layer."""
     tenant_id, candidate, review = await _seed_review(session)
     execution = await execute_candidate_retention_recommendation(
         session,
@@ -434,6 +441,7 @@ async def test_execution_history_is_database_immutable(session: AsyncSession) ->
 async def test_concurrent_execution_creates_one_record_and_one_audit(
     session: AsyncSession,
 ) -> None:
+    """Ensure concurrent executors collapse to one execution and one audit entry."""
     tenant_id, candidate, review = await _seed_review(session, add_document=True)
     await session.commit()
     session_factory = async_sessionmaker(bind=session.bind, expire_on_commit=False)
