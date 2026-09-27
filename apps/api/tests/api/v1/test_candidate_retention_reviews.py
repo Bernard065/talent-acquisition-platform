@@ -17,6 +17,7 @@ from app.core.authorization import Role, TenantContext
 from app.core.config import Settings
 from app.db.models.audit import AuditEvent
 from app.db.models.candidate import Candidate
+from app.db.models.candidate_retention_execution import CandidateRetentionExecution
 from app.db.models.candidate_retention_policy import CandidateRetentionPolicy
 from app.db.models.candidate_retention_review import CandidateRetentionReview
 from app.db.models.identity import Tenant
@@ -47,13 +48,15 @@ def _test_settings() -> Settings:
 def _context_dependency(
     tenant_id: UUID,
     roles: frozenset[Role],
+    *,
+    subject: str = "retention-review-test-subject",
 ) -> Callable[[], Awaitable[TenantContext]]:
     """Override authentication with one trusted test identity."""
 
     async def override() -> TenantContext:
         return TenantContext(
             tenant_id=tenant_id,
-            subject="retention-review-test-subject",
+            subject=subject,
             roles=roles,
             request_id="retention-review-test-request",
         )
@@ -86,11 +89,13 @@ def _set_context(
     *,
     tenant_id: UUID,
     roles: frozenset[Role],
+    subject: str = "retention-review-test-subject",
 ) -> None:
     """Change the trusted tenant and roles for the next request."""
     application.dependency_overrides[get_tenant_context] = _context_dependency(
         tenant_id,
         roles,
+        subject=subject,
     )
 
 
@@ -197,6 +202,37 @@ def _review_payload(
         },
         "next_review_at": next_review_at or (datetime.now(UTC) + timedelta(days=30)).isoformat(),
     }
+
+
+async def _create_erasure_recommendation(
+    client: AsyncClient,
+    *,
+    application: FastAPI,
+    tenant_id: UUID,
+    candidate_id: UUID,
+    policy_id: UUID,
+    reviewer_subject: str = "retention-reviewer",
+) -> dict[str, Any]:
+    """Record the recommendation required by the explicit execution endpoint."""
+    _set_context(
+        application,
+        tenant_id=tenant_id,
+        roles=frozenset({Role.PEOPLE_OPERATIONS}),
+        subject=reviewer_subject,
+    )
+    payload = _review_payload(
+        policy_id,
+        disposition="recommend_manual_erasure",
+        reason_code="review_complete",
+    )
+    payload["next_review_at"] = None
+    response = await client.post(
+        f"/api/v1/candidates/{candidate_id}/retention-reviews",
+        json=payload,
+        headers={"Idempotency-Key": str(uuid4())},
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
 
 
 @pytest.mark.asyncio
@@ -417,3 +453,155 @@ async def test_retention_review_audit_contains_only_controlled_review_values(
     }
     assert "Private Review Candidate" not in str(event.details)
     assert "private.review.candidate@example.test" not in str(event.details)
+
+
+@pytest.mark.asyncio
+async def test_retention_execution_requires_second_operator_and_replays_safely(
+    retention_api_app: FastAPI,
+    database_engine: AsyncEngine,
+    retention_tenant_id: UUID,
+) -> None:
+    """Only a second operator may execute the recommendation; replay is exact."""
+    transport = ASGITransport(app=retention_api_app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        candidate = await _create_candidate(client)
+        candidate_id = UUID(candidate["id"])
+        policy = await _create_active_policy(
+            database_engine,
+            tenant_id=retention_tenant_id,
+        )
+        review = await _create_erasure_recommendation(
+            client,
+            application=retention_api_app,
+            tenant_id=retention_tenant_id,
+            candidate_id=candidate_id,
+            policy_id=policy.id,
+        )
+        url = (
+            f"/api/v1/candidates/{candidate_id}/retention-reviews/"
+            f"{review['id']}/execute"
+        )
+        payload = {"confirm_erasure": True}
+        key = str(uuid4())
+
+        _set_context(
+            retention_api_app,
+            tenant_id=retention_tenant_id,
+            roles=frozenset({Role.TENANT_ADMIN}),
+            subject="retention-reviewer",
+        )
+        self_execution = await client.post(
+            url,
+            json=payload,
+            headers={"Idempotency-Key": str(uuid4())},
+        )
+
+        _set_context(
+            retention_api_app,
+            tenant_id=retention_tenant_id,
+            roles=frozenset({Role.TENANT_ADMIN}),
+            subject="independent-retention-executor",
+        )
+        first = await client.post(
+            url,
+            json=payload,
+            headers={"Idempotency-Key": key},
+        )
+        replay = await client.post(
+            url,
+            json=payload,
+            headers={"Idempotency-Key": key},
+        )
+        invalid_fields = await client.post(
+            url,
+            json={**payload, "candidate_email": "leak@example.test"},
+            headers={"Idempotency-Key": str(uuid4())},
+        )
+
+    assert self_execution.status_code == 403
+    assert first.status_code == replay.status_code == 202
+    assert first.headers["Idempotent-Replayed"] == "false"
+    assert replay.headers["Idempotent-Replayed"] == "true"
+    assert first.headers["Cache-Control"] == replay.headers["Cache-Control"] == "private, no-store"
+    assert first.json() == replay.json()
+    assert first.json()["executed_by_subject"] == "independent-retention-executor"
+    assert "email" not in first.json()
+    assert "full_name" not in first.json()
+    assert invalid_fields.status_code == 422
+    assert "leak@example.test" not in invalid_fields.text
+    assert all(
+        response.headers["Cache-Control"] == "private, no-store"
+        for response in (self_execution, first, replay, invalid_fields)
+    )
+
+    session_factory = async_sessionmaker(database_engine, expire_on_commit=False)
+    async with session_factory() as session:
+        stored_candidate = await session.get(Candidate, candidate_id)
+        executions = list(await session.scalars(select(CandidateRetentionExecution)))
+        audit = list(
+            await session.scalars(
+                select(AuditEvent).where(
+                    AuditEvent.action == "candidate.retention_erasure_executed"
+                )
+            )
+        )
+    assert stored_candidate is not None
+    assert stored_candidate.privacy_status is CandidatePrivacyStatus.ERASED
+    assert len(executions) == 1
+    assert len(audit) == 1
+    assert audit[0].details == {
+        "review_id": review["id"],
+        "review_number": 1,
+        "policy_version": 1,
+    }
+    assert "independent-retention-executor" not in str(audit[0].details)
+
+
+@pytest.mark.asyncio
+async def test_retention_execution_hides_cross_tenant_candidate_and_review(
+    retention_api_app: FastAPI,
+    database_engine: AsyncEngine,
+    retention_tenant_id: UUID,
+) -> None:
+    """Execution lookups do not disclose whether another tenant's record exists."""
+    other_tenant_id = uuid4()
+    session_factory = async_sessionmaker(database_engine, expire_on_commit=False)
+    async with session_factory.begin() as session:
+        session.add(
+            Tenant(
+                id=other_tenant_id,
+                name="Other Retention Execution Tenant",
+                slug=f"other-retention-execution-{other_tenant_id.hex[:12]}",
+            )
+        )
+
+    transport = ASGITransport(app=retention_api_app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        candidate = await _create_candidate(client)
+        policy = await _create_active_policy(
+            database_engine,
+            tenant_id=retention_tenant_id,
+        )
+        review = await _create_erasure_recommendation(
+            client,
+            application=retention_api_app,
+            tenant_id=retention_tenant_id,
+            candidate_id=UUID(candidate["id"]),
+            policy_id=policy.id,
+        )
+        _set_context(
+            retention_api_app,
+            tenant_id=other_tenant_id,
+            roles=frozenset({Role.TENANT_ADMIN}),
+            subject="other-tenant-admin",
+        )
+        response = await client.post(
+            f"/api/v1/candidates/{candidate['id']}/retention-reviews/{review['id']}/execute",
+            json={"confirm_erasure": True},
+            headers={"Idempotency-Key": str(uuid4())},
+        )
+
+    assert response.status_code == 404
+    assert response.headers["Cache-Control"] == "private, no-store"
+    assert candidate["id"] not in response.text
+    assert review["id"] not in response.text
