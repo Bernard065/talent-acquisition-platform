@@ -62,7 +62,17 @@ from app.services.candidate_privacy_errors import (
     CandidatePrivacyAccessDeniedError,
     CandidatePrivacyNotFoundError,
 )
-from app.services.candidate_retention_errors import CandidateRetentionHoldActiveError
+from app.services.candidate_retention_errors import (
+    CandidateRetentionHoldActiveError,
+    CandidateRetentionPolicyNotFoundError,
+)
+from app.services.candidate_retention_review_errors import (
+    CandidateRetentionReviewAccessDeniedError,
+    CandidateRetentionReviewNotFoundError,
+    CandidateRetentionReviewStateError,
+    CandidateRetentionReviewValidationError,
+    InvalidCandidateRetentionReviewCursorError,
+)
 from app.services.candidate_talent_pool_consent_errors import (
     CandidateTalentPoolConsentAccessDeniedError,
     CandidateTalentPoolConsentNotFoundError,
@@ -257,6 +267,72 @@ async def candidate_retention_hold_conflict(
         request,
         status_code=status.HTTP_409_CONFLICT,
         detail="Candidate erasure is blocked by an active retention hold.",
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+async def candidate_retention_review_forbidden(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Return a private authorization response for retention-review access."""
+    response = await forbidden(request, _)
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+async def candidate_retention_review_not_found(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Hide cross-tenant candidates and policies using one generic response."""
+    response = _error_response(
+        request,
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Candidate retention review or policy not found.",
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+async def candidate_retention_review_conflict(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Return a private conflict when candidate state blocks the requested review."""
+    response = _error_response(
+        request,
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Candidate retention review is not allowed in the current state.",
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+async def candidate_retention_review_invalid(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Avoid reflecting sensitive or unsupported retention-review request data."""
+    response = _error_response(
+        request,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail="Invalid candidate retention review request.",
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+async def candidate_retention_review_invalid_cursor(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Return a private validation response for malformed review-history cursors."""
+    response = _error_response(
+        request,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail="Invalid candidate retention review cursor.",
     )
     response.headers["Cache-Control"] = "private, no-store"
     return response
@@ -1048,6 +1124,8 @@ async def invalid_hris_schema(
     _: Exception,
 ) -> JSONResponse:
     """Prevent validation output from reflecting HRIS credential inputs."""
+    if "/retention-reviews" in request.url.path:
+        return await candidate_retention_review_invalid(request, _)
     if "/talent-pool-consent/" in request.url.path:
         return await candidate_talent_pool_consent_invalid(request, _)
     if request.url.path.endswith("/candidates/talent-pool"):
@@ -1316,6 +1394,30 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         CandidateRetentionHoldActiveError,
         candidate_retention_hold_conflict,
+    )
+    application.add_exception_handler(
+        CandidateRetentionPolicyNotFoundError,
+        candidate_retention_review_not_found,
+    )
+    application.add_exception_handler(
+        CandidateRetentionReviewNotFoundError,
+        candidate_retention_review_not_found,
+    )
+    application.add_exception_handler(
+        CandidateRetentionReviewAccessDeniedError,
+        candidate_retention_review_forbidden,
+    )
+    application.add_exception_handler(
+        CandidateRetentionReviewStateError,
+        candidate_retention_review_conflict,
+    )
+    application.add_exception_handler(
+        CandidateRetentionReviewValidationError,
+        candidate_retention_review_invalid,
+    )
+    application.add_exception_handler(
+        InvalidCandidateRetentionReviewCursorError,
+        candidate_retention_review_invalid_cursor,
     )
     application.add_exception_handler(
         ApplicationNotFoundError,
