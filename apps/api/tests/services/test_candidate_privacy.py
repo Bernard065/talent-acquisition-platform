@@ -199,6 +199,7 @@ async def test_erasure_anonymizes_candidate_and_queues_document_deletion(
     assert erasure_audit is not None
     assert erasure_audit.details == {
         "document_count": 2,
+        "processor_deletion_request_count": 0,
         "privacy_status": CandidatePrivacyStatus.ERASURE_PENDING.value,
     }
     assert "ada.lovelace@example.test" not in str(erasure_audit.details)

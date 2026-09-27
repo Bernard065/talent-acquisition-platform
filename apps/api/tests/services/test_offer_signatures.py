@@ -15,6 +15,7 @@ from app.core.authorization import Role, TenantContext
 from app.db.models.application import Application
 from app.db.models.audit import AuditEvent
 from app.db.models.candidate import Candidate
+from app.db.models.candidate_processor import CandidateProcessorDisclosure
 from app.db.models.identity import Tenant
 from app.db.models.offer import Offer
 from app.db.models.offer_signature import OfferSignatureHistory
@@ -256,6 +257,12 @@ async def test_requires_signed_request_before_offer_acceptance(
         expected_version=signature_request.version,
         provider_envelope_reference="provider-envelope-opaque-reference",
     )
+    disclosure = await session.scalar(
+        select(CandidateProcessorDisclosure).where(
+            CandidateProcessorDisclosure.source_type == "offer_signature",
+            CandidateProcessorDisclosure.source_id == sent_signature.id,
+        )
+    )
 
     signed_signature = await mark_offer_signature_signed(
         session,
@@ -273,6 +280,12 @@ async def test_requires_signed_request_before_offer_acceptance(
 
     assert signed_signature.status is OfferSignatureStatus.SIGNED
     assert signed_signature.signed_at is not None
+    assert disclosure is not None
+    assert disclosure.processor_code == "signature.example-sign"
+    assert disclosure.purpose_code == "offer_signature"
+    assert disclosure.external_record_reference == (
+        "provider-envelope-opaque-reference"
+    )
     assert accepted_offer.status is OfferStatus.ACCEPTED
 
 

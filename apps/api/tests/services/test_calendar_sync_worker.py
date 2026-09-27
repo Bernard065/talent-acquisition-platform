@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.application import Application
 from app.db.models.calendar import CalendarConnection, InterviewCalendarSync
 from app.db.models.candidate import Candidate
+from app.db.models.candidate_processor import CandidateProcessorDisclosure
 from app.db.models.identity import Tenant, User
 from app.db.models.interview import InterviewParticipant, InterviewSession
 from app.db.models.outbox import OutboxEvent
@@ -301,6 +302,14 @@ async def test_upserts_current_interview_and_persists_privacy_safe_sync_state(
         )
     )
     event = await session.get(OutboxEvent, seeded.outbox_event_id)
+    disclosure = None
+    if sync is not None:
+        disclosure = await session.scalar(
+            select(CandidateProcessorDisclosure).where(
+                CandidateProcessorDisclosure.source_type == "calendar_sync",
+                CandidateProcessorDisclosure.source_id == sync.id,
+            )
+        )
 
     assert result.claimed == 1
     assert result.processed == 1
@@ -317,6 +326,10 @@ async def test_upserts_current_interview_and_persists_privacy_safe_sync_state(
         f"provider-event-{seeded.interview_session_id}"
     )
     assert sync.synced_interview_version == 1
+    assert disclosure is not None
+    assert disclosure.processor_code == "calendar.google"
+    assert disclosure.purpose_code == "interview_scheduling"
+    assert disclosure.external_record_reference == sync.external_event_id
     assert "test-access-token" not in repr(sync)
     assert not hasattr(sync, "credentials")
     assert not hasattr(sync, "access_token")
@@ -367,6 +380,7 @@ async def test_cancellation_deletes_existing_provider_event(
     assert sync.status is InterviewCalendarSyncStatus.SYNCED
     assert sync.external_event_id is None
     assert sync.synced_interview_version == 1
+    assert not list(await session.scalars(select(CandidateProcessorDisclosure)))
 
 
 @pytest.mark.asyncio
