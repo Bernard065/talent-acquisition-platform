@@ -7,21 +7,16 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authorization import Role, TenantContext
-from app.db.models.application import Application
 from app.db.models.candidate import Candidate
 from app.db.models.candidate_retention_hold import CandidateRetentionHold
 from app.db.models.candidate_retention_policy import CandidateRetentionPolicy
 from app.db.models.candidate_retention_review import CandidateRetentionReview
-from app.db.models.onboarding import OnboardingInstance
 from app.db.transactions import transactional
-from app.domains.candidates.enums import (
-    ApplicationStatus,
-    CandidatePrivacyStatus,
-)
+from app.domains.candidates.enums import CandidatePrivacyStatus
 from app.domains.candidates.retention_enums import CandidateRetentionPolicyStatus
 from app.domains.candidates.retention_review import (
     CandidateRetentionReviewChecklist,
@@ -34,8 +29,8 @@ from app.domains.candidates.retention_review_enums import (
     CandidateRetentionReviewPurpose,
     CandidateRetentionReviewReason,
 )
-from app.domains.onboarding.enums import OnboardingInstanceStatus
 from app.services.audit import record_audit_event
+from app.services.candidate_retention_eligibility import candidate_has_active_workflow
 from app.services.candidate_retention_errors import (
     CandidateRetentionPolicyNotFoundError,
 )
@@ -48,13 +43,6 @@ from app.services.candidate_retention_review_errors import (
 )
 
 _REVIEW_ROLES = frozenset({Role.TENANT_ADMIN, Role.PEOPLE_OPERATIONS})
-_TERMINAL_APPLICATION_STATUSES = frozenset(
-    {
-        ApplicationStatus.REJECTED,
-        ApplicationStatus.WITHDRAWN,
-        ApplicationStatus.HIRED,
-    }
-)
 _MAX_PAGE_SIZE = 100
 
 
@@ -183,40 +171,15 @@ async def record_candidate_retention_review(
         )
         has_active_legal_hold = active_hold_id is not None
 
-        active_application_id = await session.scalar(
-            select(Application.id)
-            .where(
-                Application.tenant_id == context.tenant_id,
-                Application.candidate_id == candidate.id,
-                Application.status.not_in(_TERMINAL_APPLICATION_STATUSES),
-            )
-            .limit(1)
+        has_active_workflow = await candidate_has_active_workflow(
+            session,
+            tenant_id=context.tenant_id,
+            candidate_id=candidate.id,
+            include_incomplete_hired_onboarding=(
+                command.disposition
+                is CandidateRetentionReviewDisposition.RECOMMEND_MANUAL_ERASURE
+            ),
         )
-        has_active_workflow = active_application_id is not None
-
-        if command.disposition is CandidateRetentionReviewDisposition.RECOMMEND_MANUAL_ERASURE:
-            incomplete_hired_onboarding = await session.scalar(
-                select(Application.id)
-                .outerjoin(
-                    OnboardingInstance,
-                    and_(
-                        OnboardingInstance.application_id == Application.id,
-                        OnboardingInstance.tenant_id == Application.tenant_id,
-                    ),
-                )
-                .where(
-                    Application.tenant_id == context.tenant_id,
-                    Application.candidate_id == candidate.id,
-                    Application.status == ApplicationStatus.HIRED,
-                    or_(
-                        OnboardingInstance.id.is_(None),
-                        OnboardingInstance.status != OnboardingInstanceStatus.COMPLETED,
-                        OnboardingInstance.completed_at.is_(None),
-                    ),
-                )
-                .limit(1)
-            )
-            has_active_workflow = has_active_workflow or incomplete_hired_onboarding is not None
 
         try:
             normalized_reviewed_at, next_review_at = validate_candidate_retention_review(
