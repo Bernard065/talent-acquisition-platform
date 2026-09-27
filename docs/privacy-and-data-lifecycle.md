@@ -14,11 +14,12 @@ Only tenant administrators and people-operations users may initiate erasure in t
 2. Replaces the profile name and email with generic/opaque values and clears phone, location, and source metadata.
 3. Marks associated candidate documents unavailable and clears filenames, checksums, and content metadata from their rows.
 4. Enqueues one identifier-only outbox event per document, in the same database transaction.
-5. Preserves applications, workflow history, and audit records against the anonymized candidate ID.
+5. Creates one pending, tenant-scoped deletion work item for each recorded external processor disclosure, in the same database transaction.
+6. Preserves applications, workflow history, and audit records against the anonymized candidate ID.
 
 The candidate is hidden from profile reads and candidate search as soon as erasure begins. Documents remain in the database only until their object has been deleted successfully. A cleanup worker waits until the latest recorded presigned upload authorization has expired plus a grace interval, deletes the object through the storage adapter, then removes document metadata. Failures are retried using the shared outbox lease/backoff/dead-letter policy. A candidate with no documents is marked erased immediately; otherwise erasure completes after the final document cleanup.
 
-The API endpoints are private, no-store, require `Idempotency-Key`, and return no profile data. Outbox payloads and audit details contain identifiers and state/count metadata only—never names, emails, filenames, checksums, or object keys.
+The API endpoints are private, no-store, require `Idempotency-Key`, and return no profile data. Outbox payloads and audit details contain identifiers and state/count metadata only—never names, emails, filenames, checksums, or object keys. External processor work is recorded as pending until a separately implemented provider-specific process confirms deletion or records a reviewed exception; this workflow does not call those providers.
 
 ### Retention schedule
 
