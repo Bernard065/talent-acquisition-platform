@@ -11,7 +11,10 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.authorization import Role, TenantContext
+from app.db.models.application import Application
 from app.db.models.calendar import CalendarConnection, InterviewCalendarSync
+from app.db.models.candidate import Candidate
 from app.db.models.interview import InterviewParticipant, InterviewSession
 from app.db.models.outbox import OutboxEvent
 from app.db.transactions import transactional
@@ -19,6 +22,11 @@ from app.domains.calendar.enums import (
     CalendarConnectionStatus,
     CalendarProvider,
     InterviewCalendarSyncStatus,
+)
+from app.domains.candidates.enums import CandidatePrivacyStatus
+from app.domains.candidates.processor_data import (
+    CandidateProcessorDisclosureSource,
+    CandidateProcessorPurpose,
 )
 from app.domains.interviews.enums import InterviewSessionStatus
 from app.services.calendar_credentials import (
@@ -30,6 +38,9 @@ from app.services.calendar_provider import (
     CalendarEventProvider,
     CalendarEventUpsert,
     CalendarProviderError,
+)
+from app.services.candidate_processor_deletions import (
+    record_candidate_processor_disclosure,
 )
 from app.services.outbox_worker import (
     DEFAULT_OUTBOX_WORKER_POLICY,
@@ -78,6 +89,7 @@ class PreparedCalendarSync:
     external_event_id: str | None
     external_idempotency_key: str
     interview_session_id: UUID
+    candidate_id: UUID
     interview_version: int
     starts_at: datetime
     ends_at: datetime
@@ -234,6 +246,23 @@ async def _prepare_calendar_syncs(
             )
         )
 
+        application_candidate = await session.execute(
+            select(Application.candidate_id, Candidate.privacy_status)
+            .join(
+                Candidate,
+                (Candidate.id == Application.candidate_id)
+                & (Candidate.tenant_id == Application.tenant_id),
+            )
+            .where(
+                Application.id == interview_session.application_id,
+                Application.tenant_id == event.tenant_id,
+            )
+        )
+        application_candidate_row = application_candidate.one_or_none()
+        if application_candidate_row is None:
+            raise LookupError("Interview application candidate no longer exists.")
+        candidate_id, candidate_privacy_status = application_candidate_row
+
         operation = _operation_for_current_session(
             requested_operation=request.operation,
             status=interview_session.status,
@@ -249,6 +278,10 @@ async def _prepare_calendar_syncs(
                 interview_version=interview_session.version,
             )
 
+            sync_operation = operation
+            if candidate_privacy_status is not CandidatePrivacyStatus.ACTIVE:
+                sync_operation = "cancel" if sync.external_event_id else "noop"
+
             prepared.append(
                 PreparedCalendarSync(
                     sync_id=sync.id,
@@ -260,10 +293,11 @@ async def _prepare_calendar_syncs(
                     external_event_id=sync.external_event_id,
                     external_idempotency_key=sync.external_idempotency_key,
                     interview_session_id=interview_session.id,
+                    candidate_id=candidate_id,
                     interview_version=interview_session.version,
                     starts_at=interview_session.scheduled_start_at,
                     ends_at=interview_session.scheduled_end_at,
-                    operation=operation,
+                    operation=sync_operation,
                 )
             )
 
@@ -277,6 +311,7 @@ async def _mark_sync_succeeded(
     *,
     prepared: PreparedCalendarSync,
     external_event_id: str | None,
+    context: TenantContext,
 ) -> None:
     """Persist a completed provider operation without retaining provider output."""
     async with transactional(session):
@@ -302,6 +337,22 @@ async def _mark_sync_succeeded(
 
         if prepared.operation == "cancel":
             sync.external_event_id = None
+
+        if (
+            prepared.operation == "upsert"
+            and external_event_id is not None
+        ):
+            await record_candidate_processor_disclosure(
+                session,
+                context=context,
+                tenant_id=prepared.tenant_id,
+                candidate_id=prepared.candidate_id,
+                processor_code=f"calendar.{prepared.provider.value}",
+                purpose=CandidateProcessorPurpose.INTERVIEW_SCHEDULING,
+                source=CandidateProcessorDisclosureSource.CALENDAR_SYNC,
+                source_id=sync.id,
+                external_record_reference=external_event_id,
+            )
 
         await session.flush()
 
@@ -446,6 +497,12 @@ async def process_interview_calendar_sync_events(
                     session,
                     prepared=prepared,
                     external_event_id=external_event_id,
+                    context=TenantContext(
+                        tenant_id=prepared.tenant_id,
+                        subject=f"system:calendar-sync:{worker_id}",
+                        roles=frozenset({Role.PEOPLE_OPERATIONS}),
+                        request_id=f"outbox:{event.id}",
+                    ),
                 )
         except (
             CalendarCredentialResolutionError,

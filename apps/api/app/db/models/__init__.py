@@ -17,6 +17,10 @@ from app.db.models.calendar import CalendarConnection, InterviewCalendarSync
 from app.db.models.candidate import Candidate
 from app.db.models.candidate_document import CandidateDocument
 from app.db.models.candidate_document_scan import CandidateDocumentScan
+from app.db.models.candidate_processor import (
+    CandidateProcessorDeletionRequest,
+    CandidateProcessorDisclosure,
+)
 from app.db.models.candidate_retention_execution import CandidateRetentionExecution
 from app.db.models.candidate_retention_hold import CandidateRetentionHold
 from app.db.models.candidate_retention_policy import CandidateRetentionPolicy
@@ -69,6 +73,8 @@ __all__ = [
     "Candidate",
     "CandidateDocument",
     "CandidateDocumentScan",
+    "CandidateProcessorDisclosure",
+    "CandidateProcessorDeletionRequest",
     "CandidateRetentionPolicy",
     "CandidateRetentionExecution",
     "CandidateRetentionReview",

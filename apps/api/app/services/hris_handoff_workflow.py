@@ -9,11 +9,19 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authorization import TenantContext
-from app.db.models.hris import HrisHandoff
+from app.db.models.application import Application
+from app.db.models.hris import HrisConnection, HrisHandoff
 from app.db.transactions import transactional
+from app.domains.candidates.processor_data import (
+    CandidateProcessorDisclosureSource,
+    CandidateProcessorPurpose,
+)
 from app.domains.hris.enums import HrisHandoffStatus
 from app.domains.hris.transitions import validate_hris_handoff_transition
 from app.services.audit import record_audit_event
+from app.services.candidate_processor_deletions import (
+    record_candidate_processor_disclosure,
+)
 from app.services.hris_handoff_errors import (
     HrisHandoffNotFoundError,
     HrisHandoffValidationError,
@@ -187,10 +195,37 @@ async def mark_hris_handoff_succeeded(
         )
 
         previous_status = handoff.status
+        candidate_id = await session.scalar(
+            select(Application.candidate_id).where(
+                Application.id == handoff.application_id,
+                Application.tenant_id == context.tenant_id,
+            )
+        )
+        provider = await session.scalar(
+            select(HrisConnection.provider).where(
+                HrisConnection.id == handoff.hris_connection_id,
+                HrisConnection.tenant_id == context.tenant_id,
+            )
+        )
+        if candidate_id is None or provider is None:
+            raise HrisHandoffNotFoundError("HRIS handoff is incomplete.")
+
         handoff.status = HrisHandoffStatus.SUCCEEDED
         handoff.external_employee_reference = reference
         handoff.succeeded_at = datetime.now(UTC)
         handoff.last_error_code = None
+
+        await record_candidate_processor_disclosure(
+            session,
+            context=context,
+            tenant_id=context.tenant_id,
+            candidate_id=candidate_id,
+            processor_code=f"hris.{provider.value}",
+            purpose=CandidateProcessorPurpose.ONBOARDING_HANDOFF,
+            source=CandidateProcessorDisclosureSource.HRIS_HANDOFF,
+            source_id=handoff.id,
+            external_record_reference=reference,
+        )
 
         await session.flush()
 

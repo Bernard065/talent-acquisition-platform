@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authorization import Role
 from app.db.models.audit import AuditEvent
+from app.db.models.candidate_processor import CandidateProcessorDisclosure
 from app.db.models.hris import HrisHandoff
 from app.db.models.offer import Offer
 from app.db.models.outbox import OutboxEvent
@@ -259,6 +260,12 @@ async def test_dispatches_handoff_and_persists_only_safe_artifacts(
     )
 
     persisted_handoff = await _get_handoff(session, handoff.id)
+    disclosure = await session.scalar(
+        select(CandidateProcessorDisclosure).where(
+            CandidateProcessorDisclosure.source_type == "hris_handoff",
+            CandidateProcessorDisclosure.source_id == handoff.id,
+        )
+    )
     await session.refresh(event)
 
     audits = list(
@@ -286,6 +293,12 @@ async def test_dispatches_handoff_and_persists_only_safe_artifacts(
     assert persisted_handoff.succeeded_at is not None
     assert persisted_handoff.external_employee_reference == (
         f"employee:{handoff.id}"
+    )
+    assert disclosure is not None
+    assert disclosure.processor_code == "hris.hibob"
+    assert disclosure.purpose_code == "onboarding_handoff"
+    assert disclosure.external_record_reference == (
+        persisted_handoff.external_employee_reference
     )
 
     assert event.status is OutboxEventStatus.PROCESSED

@@ -19,6 +19,9 @@ from app.services.candidate_privacy_errors import (
     CandidatePrivacyAccessDeniedError,
     CandidatePrivacyNotFoundError,
 )
+from app.services.candidate_processor_deletions import (
+    queue_candidate_processor_deletions,
+)
 from app.services.candidate_retention_errors import CandidateRetentionHoldActiveError
 from app.services.candidate_talent_pool_consent import (
     withdraw_talent_pool_consent_for_erasure,
@@ -147,6 +150,11 @@ async def request_candidate_erasure(
                 .with_for_update()
             )
         )
+        processor_deletion_request_count = await queue_candidate_processor_deletions(
+            session,
+            context=context,
+            candidate_id=candidate.id,
+        )
 
         previous_consent = candidate.consent_status
         candidate.consent_status = CandidateConsentStatus.WITHDRAWN
@@ -221,6 +229,7 @@ async def request_candidate_erasure(
             entity_id=str(candidate.id),
             details={
                 "document_count": len(documents),
+                "processor_deletion_request_count": processor_deletion_request_count,
                 "privacy_status": candidate.privacy_status.value,
             },
         )
