@@ -15,3 +15,7 @@ class CandidateRetentionReviewStateError(ValueError):
 
 class CandidateRetentionReviewValidationError(ValueError):
     """Raised when review timestamps, checklist, or reason codes are invalid."""
+
+
+class InvalidCandidateRetentionReviewCursorError(ValueError):
+    """Raised when a candidate retention-review cursor is malformed or misplaced."""

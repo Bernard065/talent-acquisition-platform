@@ -1,5 +1,8 @@
-"""Transactional, tenant-scoped recording of non-destructive retention reviews."""
+"""Tenant-scoped recording and inspection of non-destructive retention reviews."""
 
+import base64
+import binascii
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
@@ -41,6 +44,7 @@ from app.services.candidate_retention_review_errors import (
     CandidateRetentionReviewNotFoundError,
     CandidateRetentionReviewStateError,
     CandidateRetentionReviewValidationError,
+    InvalidCandidateRetentionReviewCursorError,
 )
 
 _REVIEW_ROLES = frozenset({Role.TENANT_ADMIN, Role.PEOPLE_OPERATIONS})
@@ -51,6 +55,57 @@ _TERMINAL_APPLICATION_STATUSES = frozenset(
         ApplicationStatus.HIRED,
     }
 )
+_MAX_PAGE_SIZE = 100
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateRetentionReviewPage:
+    """Keyset-paginated review history for one candidate."""
+
+    items: tuple[CandidateRetentionReview, ...]
+    next_cursor: str | None
+
+
+def _encode_cursor(candidate_id: UUID, review_number: int) -> str:
+    """Encode a candidate-bound, deterministic review-history position."""
+    payload = {"candidate_id": str(candidate_id), "review_number": review_number}
+    encoded = base64.urlsafe_b64encode(
+        json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    ).decode("ascii")
+    return encoded.rstrip("=")
+
+
+def _decode_cursor(cursor: str, *, candidate_id: UUID) -> int:
+    """Decode a cursor and reject positions minted for a different candidate."""
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        payload = json.loads(
+            base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8")
+        )
+        cursor_candidate_id = UUID(payload["candidate_id"])
+        review_number = payload["review_number"]
+    except (
+        KeyError,
+        TypeError,
+        ValueError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        binascii.Error,
+    ) as error:
+        raise InvalidCandidateRetentionReviewCursorError(
+            "Invalid candidate retention review cursor."
+        ) from error
+
+    if (
+        cursor_candidate_id != candidate_id
+        or isinstance(review_number, bool)
+        or not isinstance(review_number, int)
+        or review_number < 1
+    ):
+        raise InvalidCandidateRetentionReviewCursorError(
+            "Invalid candidate retention review cursor."
+        )
+    return int(review_number)
 
 
 @dataclass(frozen=True, slots=True)
@@ -227,3 +282,50 @@ async def record_candidate_retention_review(
         )
 
     return review
+
+
+async def list_candidate_retention_reviews(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    candidate_id: UUID,
+    limit: int = 50,
+    cursor: str | None = None,
+) -> CandidateRetentionReviewPage:
+    """List a candidate's immutable review evidence without profile PII."""
+    _require_review_role(context)
+    if not 1 <= limit <= _MAX_PAGE_SIZE:
+        raise ValueError(f"Review page size must be between 1 and {_MAX_PAGE_SIZE}.")
+
+    candidate = await session.scalar(
+        select(Candidate.id).where(
+            Candidate.id == candidate_id,
+            Candidate.tenant_id == context.tenant_id,
+        )
+    )
+    if candidate is None:
+        raise CandidateRetentionReviewNotFoundError("Candidate was not found.")
+
+    statement = select(CandidateRetentionReview).where(
+        CandidateRetentionReview.tenant_id == context.tenant_id,
+        CandidateRetentionReview.candidate_id == candidate_id,
+    )
+    if cursor is not None:
+        position = _decode_cursor(cursor, candidate_id=candidate_id)
+        statement = statement.where(CandidateRetentionReview.review_number < position)
+
+    rows = list(
+        await session.scalars(
+            statement.order_by(CandidateRetentionReview.review_number.desc()).limit(
+                limit + 1
+            )
+        )
+    )
+    has_next_page = len(rows) > limit
+    items = tuple(rows[:limit])
+    next_cursor = (
+        _encode_cursor(candidate_id, items[-1].review_number)
+        if has_next_page and items
+        else None
+    )
+    return CandidateRetentionReviewPage(items=items, next_cursor=next_cursor)
