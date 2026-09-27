@@ -73,12 +73,13 @@ async def _database_engine_fixture() -> AsyncIterator[AsyncEngine]:
 @pytest_asyncio.fixture(autouse=True)
 async def _clean_database_before_test(
     request: pytest.FixtureRequest,
-    database_engine: AsyncEngine,
 ) -> AsyncIterator[None]:
     """Keep database-backed tests isolated from module-level teardown order."""
     if "database_engine" not in request.fixturenames:
         yield
         return
+
+    database_engine = request.getfixturevalue("database_engine")
 
     table_names = ", ".join(
         f'"{table.name}"' for table in Base.metadata.sorted_tables

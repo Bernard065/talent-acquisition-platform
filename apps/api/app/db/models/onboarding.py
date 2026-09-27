@@ -17,6 +17,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy.dialects.postgresql import ENUM as PostgreSQLEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -120,10 +121,11 @@ class OnboardingTemplateTask(Base):
         nullable=True,
     )
     default_assignee_role: Mapped[Role | None] = mapped_column(
-        Enum(
+        PostgreSQLEnum(
             Role,
             name="user_role",
             values_callable=lambda roles: [role.value for role in roles],
+            create_type=False,
         ),
         nullable=True,
     )
@@ -348,18 +350,20 @@ class OnboardingInstanceHistory(Base):
         nullable=False,
     )
     from_status: Mapped[OnboardingInstanceStatus | None] = mapped_column(
-        Enum(
+        PostgreSQLEnum(
             OnboardingInstanceStatus,
             name="onboarding_instance_status",
             values_callable=lambda values: [value.value for value in values],
+            create_type=False,
         ),
         nullable=True,
     )
     to_status: Mapped[OnboardingInstanceStatus] = mapped_column(
-        Enum(
+        PostgreSQLEnum(
             OnboardingInstanceStatus,
             name="onboarding_instance_status",
             values_callable=lambda values: [value.value for value in values],
+            create_type=False,
         ),
         nullable=False,
     )
@@ -411,18 +415,20 @@ class OnboardingTaskHistory(Base):
         nullable=False,
     )
     from_status: Mapped[OnboardingTaskStatus | None] = mapped_column(
-        Enum(
+        PostgreSQLEnum(
             OnboardingTaskStatus,
             name="onboarding_task_status",
             values_callable=lambda values: [value.value for value in values],
+            create_type=False,
         ),
         nullable=True,
     )
     to_status: Mapped[OnboardingTaskStatus] = mapped_column(
-        Enum(
+        PostgreSQLEnum(
             OnboardingTaskStatus,
             name="onboarding_task_status",
             values_callable=lambda values: [value.value for value in values],
+            create_type=False,
         ),
         nullable=False,
     )

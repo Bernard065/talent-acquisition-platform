@@ -17,6 +17,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy.dialects.postgresql import ENUM as PostgreSQLEnum
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -137,10 +138,11 @@ class OfferSignatureRequest(Base):
         nullable=False,
     )
     pay_period: Mapped[OfferPayPeriod] = mapped_column(
-        Enum(
+        PostgreSQLEnum(
             OfferPayPeriod,
             name="offer_pay_period",
             values_callable=lambda values: [value.value for value in values],
+            create_type=False,
         ),
         nullable=False,
     )
@@ -233,7 +235,7 @@ class OfferSignatureHistory(Base):
         nullable=False,
     )
     from_status: Mapped[OfferSignatureStatus | None] = mapped_column(
-        Enum(
+        PostgreSQLEnum(
             OfferSignatureStatus,
             name="offer_signature_status",
             values_callable=lambda values: [value.value for value in values],
@@ -242,7 +244,7 @@ class OfferSignatureHistory(Base):
         nullable=True,
     )
     to_status: Mapped[OfferSignatureStatus] = mapped_column(
-        Enum(
+        PostgreSQLEnum(
             OfferSignatureStatus,
             name="offer_signature_status",
             values_callable=lambda values: [value.value for value in values],

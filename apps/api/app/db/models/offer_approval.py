@@ -7,7 +7,6 @@ from uuid import UUID, uuid4
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
-    Enum,
     ForeignKey,
     Index,
     Integer,
@@ -15,6 +14,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy.dialects.postgresql import ENUM as PostgreSQLEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -85,10 +85,11 @@ class OfferApproval(Base):
         default=1,
     )
     status: Mapped[ApprovalStatus] = mapped_column(
-        Enum(
+        PostgreSQLEnum(
             ApprovalStatus,
             name="approval_status",
             values_callable=lambda statuses: [status.value for status in statuses],
+            create_type=False,
         ),
         nullable=False,
         default=ApprovalStatus.PENDING,
@@ -150,10 +151,11 @@ class OfferApprovalDecision(Base):
         index=True,
     )
     status: Mapped[ApprovalDecisionStatus] = mapped_column(
-        Enum(
+        PostgreSQLEnum(
             ApprovalDecisionStatus,
             name="approval_decision_status",
             values_callable=lambda statuses: [status.value for status in statuses],
+            create_type=False,
         ),
         nullable=False,
         default=ApprovalDecisionStatus.PENDING,
