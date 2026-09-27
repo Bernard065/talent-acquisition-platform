@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import get_db_session, get_tenant_context
 from app.api.idempotency import IdempotencyKey, idempotency_response
 from app.api.v1.schemas.candidate_retention_reviews import (
+    CandidateRetentionExecutionRequest,
+    CandidateRetentionExecutionResponse,
     CandidateRetentionReviewChecklistResponse,
     CandidateRetentionReviewCreateRequest,
     CandidateRetentionReviewListResponse,
@@ -18,6 +20,9 @@ from app.api.v1.schemas.candidate_retention_reviews import (
 from app.core.authorization import TenantContext
 from app.db.models.candidate_retention_review import CandidateRetentionReview
 from app.domains.candidates.retention_review import CandidateRetentionReviewChecklist
+from app.services.candidate_retention_execution import (
+    execute_candidate_retention_recommendation,
+)
 from app.services.candidate_retention_reviews import (
     RecordCandidateRetentionReviewCommand,
     list_candidate_retention_reviews,
@@ -146,3 +151,52 @@ async def list_candidate_retention_reviews_endpoint(
         items=[_to_response(review) for review in page.items],
         next_cursor=page.next_cursor,
     )
+
+
+@router.post(
+    "/{review_id}/execute",
+    response_model=CandidateRetentionExecutionResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Execute an approved manual-erasure recommendation",
+)
+async def execute_candidate_retention_review_endpoint(
+    candidate_id: UUID,
+    review_id: UUID,
+    payload: CandidateRetentionExecutionRequest,
+    context: CallerContext,
+    session: DatabaseSession,
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Execute an eligible recommendation and queue private document cleanup."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        execution = await execute_candidate_retention_recommendation(
+            session,
+            context=context,
+            candidate_id=candidate_id,
+            review_id=review_id,
+        )
+        response = CandidateRetentionExecutionResponse(
+            id=execution.id,
+            candidate_id=execution.candidate_id,
+            review_id=execution.review_id,
+            review_number=execution.review_number,
+            policy_version=execution.policy_version,
+            executed_by_subject=execution.executed_by_subject,
+            executed_at=execution.executed_at,
+        )
+        return status.HTTP_202_ACCEPTED, response.model_dump(mode="json")
+
+    result = await execute_idempotently(
+        session,
+        context=context,
+        key=idempotency_key,
+        operation_name="candidate.retention_review.execute",
+        payload={
+            "candidate_id": str(candidate_id),
+            "review_id": str(review_id),
+            **payload.model_dump(mode="json"),
+        },
+        operation=operation,
+    )
+    return _private_idempotency_response(result)

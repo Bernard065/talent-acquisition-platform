@@ -1,6 +1,7 @@
 """Strict, PII-minimized contracts for candidate retention-review evidence."""
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
@@ -84,3 +85,25 @@ class CandidateRetentionReviewListResponse(BaseModel):
 
     items: list[CandidateRetentionReviewResponse]
     next_cursor: str | None = None
+
+
+class CandidateRetentionExecutionRequest(BaseModel):
+    """Require an explicit confirmation before executing an erasure review."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    confirm_erasure: Literal[True]
+
+
+class CandidateRetentionExecutionResponse(BaseModel):
+    """PII-minimized evidence that a manual-retention recommendation was executed."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    id: UUID
+    candidate_id: UUID
+    review_id: UUID
+    review_number: int = Field(ge=1)
+    policy_version: int = Field(ge=1)
+    executed_by_subject: str = Field(min_length=1, max_length=255)
+    executed_at: datetime

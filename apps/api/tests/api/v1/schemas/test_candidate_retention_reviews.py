@@ -7,6 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.api.v1.schemas.candidate_retention_reviews import (
+    CandidateRetentionExecutionRequest,
     CandidateRetentionReviewCreateRequest,
 )
 
@@ -57,3 +58,27 @@ def test_create_request_rejects_unknown_fields() -> None:
 
     with pytest.raises(ValidationError):
         CandidateRetentionReviewCreateRequest.model_validate(payload)
+
+
+def test_execution_request_requires_explicit_true_confirmation() -> None:
+    """Execution must require an affirmative, typed confirmation field."""
+    request = CandidateRetentionExecutionRequest.model_validate(
+        {"confirm_erasure": True}
+    )
+
+    assert request.confirm_erasure is True
+    with pytest.raises(ValidationError):
+        CandidateRetentionExecutionRequest.model_validate({"confirm_erasure": False})
+    with pytest.raises(ValidationError):
+        CandidateRetentionExecutionRequest.model_validate({})
+
+
+def test_execution_request_rejects_unknown_fields() -> None:
+    """Execution requests cannot smuggle candidate data into stored idempotency."""
+    with pytest.raises(ValidationError):
+        CandidateRetentionExecutionRequest.model_validate(
+            {
+                "confirm_erasure": True,
+                "candidate_email": "candidate@example.test",
+            }
+        )

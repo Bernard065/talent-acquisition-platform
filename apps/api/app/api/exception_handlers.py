@@ -66,6 +66,11 @@ from app.services.candidate_retention_errors import (
     CandidateRetentionHoldActiveError,
     CandidateRetentionPolicyNotFoundError,
 )
+from app.services.candidate_retention_execution_errors import (
+    CandidateRetentionExecutionAccessDeniedError,
+    CandidateRetentionExecutionNotFoundError,
+    CandidateRetentionExecutionStateError,
+)
 from app.services.candidate_retention_review_errors import (
     CandidateRetentionReviewAccessDeniedError,
     CandidateRetentionReviewNotFoundError,
@@ -1406,6 +1411,18 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         CandidateRetentionReviewAccessDeniedError,
         candidate_retention_review_forbidden,
+    )
+    application.add_exception_handler(
+        CandidateRetentionExecutionAccessDeniedError,
+        candidate_retention_review_forbidden,
+    )
+    application.add_exception_handler(
+        CandidateRetentionExecutionNotFoundError,
+        candidate_retention_review_not_found,
+    )
+    application.add_exception_handler(
+        CandidateRetentionExecutionStateError,
+        candidate_retention_review_conflict,
     )
     application.add_exception_handler(
         CandidateRetentionReviewStateError,
