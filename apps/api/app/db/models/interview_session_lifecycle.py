@@ -12,6 +12,7 @@ from sqlalchemy import (
     String,
     text,
 )
+from sqlalchemy.dialects.postgresql import ENUM as PostgreSQLEnum
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -65,18 +66,20 @@ class InterviewSessionLifecycleHistory(Base):
         nullable=False,
     )
     from_status: Mapped[InterviewSessionStatus] = mapped_column(
-        Enum(
+        PostgreSQLEnum(
             InterviewSessionStatus,
             name="interview_session_status",
             values_callable=lambda values: [value.value for value in values],
+            create_type=False,
         ),
         nullable=False,
     )
     to_status: Mapped[InterviewSessionStatus] = mapped_column(
-        Enum(
+        PostgreSQLEnum(
             InterviewSessionStatus,
             name="interview_session_status",
             values_callable=lambda values: [value.value for value in values],
+            create_type=False,
         ),
         nullable=False,
     )
@@ -98,10 +101,11 @@ class InterviewSessionLifecycleHistory(Base):
         nullable=True,
     )
     cancellation_reason: Mapped[InterviewCancellationReason | None] = mapped_column(
-        Enum(
+        PostgreSQLEnum(
             InterviewCancellationReason,
             name="interview_cancellation_reason",
             values_callable=lambda values: [value.value for value in values],
+            create_type=False,
         ),
         nullable=True,
     )

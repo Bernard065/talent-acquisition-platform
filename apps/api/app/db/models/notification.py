@@ -15,6 +15,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy.dialects.postgresql import ENUM as PostgreSQLEnum
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -161,10 +162,11 @@ class Notification(Base):
         index=True,
     )
     channel: Mapped[NotificationChannel] = mapped_column(
-        Enum(
+        PostgreSQLEnum(
             NotificationChannel,
             name="notification_channel",
             values_callable=lambda values: [value.value for value in values],
+            create_type=False,
         ),
         nullable=False,
     )

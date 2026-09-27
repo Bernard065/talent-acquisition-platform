@@ -3,7 +3,8 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, String, text
+from sqlalchemy import DateTime, ForeignKey, Index, String, text
+from sqlalchemy.dialects.postgresql import ENUM as PostgreSQLEnum
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -61,26 +62,29 @@ class ApplicationStageHistory(Base):
     )
 
     from_status: Mapped[ApplicationStatus | None] = mapped_column(
-        Enum(
+        PostgreSQLEnum(
             ApplicationStatus,
             name="application_status",
             values_callable=lambda statuses: [status.value for status in statuses],
+            create_type=False,
         ),
         nullable=True,
     )
     to_status: Mapped[ApplicationStatus] = mapped_column(
-        Enum(
+        PostgreSQLEnum(
             ApplicationStatus,
             name="application_status",
             values_callable=lambda statuses: [status.value for status in statuses],
+            create_type=False,
         ),
         nullable=False,
     )
     rejection_reason: Mapped[ApplicationRejectionReason | None] = mapped_column(
-        Enum(
+        PostgreSQLEnum(
             ApplicationRejectionReason,
             name="application_rejection_reason",
             values_callable=lambda reasons: [reason.value for reason in reasons],
+            create_type=False,
         ),
         nullable=True,
     )

@@ -15,6 +15,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy.dialects.postgresql import ENUM as PostgreSQLEnum
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -141,18 +142,20 @@ class ApplicationDecisionHistory(Base):
     )
 
     decision: Mapped[HiringDecision] = mapped_column(
-        Enum(
+        PostgreSQLEnum(
             HiringDecision,
             name="hiring_decision",
             values_callable=lambda values: [value.value for value in values],
+            create_type=False,
         ),
         nullable=False,
     )
     rejection_reason: Mapped[ApplicationRejectionReason | None] = mapped_column(
-        Enum(
+        PostgreSQLEnum(
             ApplicationRejectionReason,
             name="application_rejection_reason",
             values_callable=lambda values: [value.value for value in values],
+            create_type=False,
         ),
         nullable=True,
     )

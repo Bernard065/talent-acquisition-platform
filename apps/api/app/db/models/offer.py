@@ -17,6 +17,7 @@ from sqlalchemy import (
     Text,
     text,
 )
+from sqlalchemy.dialects.postgresql import ENUM as PostgreSQLEnum
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -227,18 +228,20 @@ class OfferLifecycleHistory(Base):
         nullable=False,
     )
     from_status: Mapped[OfferStatus | None] = mapped_column(
-        Enum(
+        PostgreSQLEnum(
             OfferStatus,
             name="offer_status",
             values_callable=lambda statuses: [status.value for status in statuses],
+            create_type=False,
         ),
         nullable=True,
     )
     to_status: Mapped[OfferStatus] = mapped_column(
-        Enum(
+        PostgreSQLEnum(
             OfferStatus,
             name="offer_status",
             values_callable=lambda statuses: [status.value for status in statuses],
+            create_type=False,
         ),
         nullable=False,
     )
