@@ -68,9 +68,7 @@ async def record_candidate_processor_disclosure(
         )
     reference = external_record_reference.strip()
     if not reference or len(reference) > 500:
-        raise CandidateProcessorDeletionValidationError(
-            "External record reference is invalid."
-        )
+        raise CandidateProcessorDeletionValidationError("External record reference is invalid.")
 
     async with transactional(session):
         candidate = await session.scalar(
@@ -98,9 +96,7 @@ async def record_candidate_processor_disclosure(
                 source_id=source_id,
                 external_record_reference=reference,
             )
-            .on_conflict_do_nothing(
-                constraint="uq_candidate_processor_disclosures_source"
-            )
+            .on_conflict_do_nothing(constraint="uq_candidate_processor_disclosures_source")
             .returning(CandidateProcessorDisclosure.id)
         )
         disclosure = await session.scalar(
@@ -166,9 +162,7 @@ async def _create_deletion_request(
             status=CandidateProcessorDeletionStatus.PENDING.value,
             version=1,
         )
-        .on_conflict_do_nothing(
-            constraint="uq_candidate_processor_deletion_disclosure"
-        )
+        .on_conflict_do_nothing(constraint="uq_candidate_processor_deletion_disclosure")
         .returning(CandidateProcessorDeletionRequest.id)
     )
     if request_id is not None:
@@ -283,6 +277,7 @@ async def record_candidate_processor_deletion_outcome(
                 CandidateProcessorDeletionStatus.EXCEPTION,
                 CandidateProcessorDeletionStatus.WAIVED,
             },
+            CandidateProcessorDeletionStatus.PROCESSING: set(),
             CandidateProcessorDeletionStatus.EXCEPTION: {
                 CandidateProcessorDeletionStatus.COMPLETED,
                 CandidateProcessorDeletionStatus.WAIVED,
