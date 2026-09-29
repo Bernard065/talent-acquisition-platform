@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     database_url: PostgresDsn | None = None
     redis_url: str
     allowed_origins: list[str] = Field(default_factory=list)
+    # Canonical origin that serves public job-detail pages and the sitemap.
+    public_site_base_url: AnyHttpUrl = AnyHttpUrl("http://localhost:8000")
+    public_job_country_code: str = Field(default="KE", pattern=r"^[A-Z]{2}$")
     rate_limiting_enabled: bool = True
     api_metrics_port: int = Field(default=9101, ge=1024, le=65535)
     tracing_enabled: bool = False
@@ -516,6 +519,17 @@ class Settings(BaseSettings):
                 "JOB_BOARD_PROVIDER=local is permitted only in local and test environments."
             )
 
+        if (
+            self.public_site_base_url.path not in {"", "/"}
+            or self.public_site_base_url.query is not None
+            or self.public_site_base_url.fragment is not None
+        ):
+            raise ValueError(
+                "PUBLIC_SITE_BASE_URL must be an origin without a path, query, or fragment."
+            )
+
+        if self.app_env == "production" and self.public_site_base_url.scheme != "https":
+            raise ValueError("PUBLIC_SITE_BASE_URL must use HTTPS in production.")
         if (
             self.candidate_processor_deletion_worker_retry_base_seconds
             > self.candidate_processor_deletion_worker_retry_max_seconds
