@@ -44,12 +44,34 @@ async def claim_notifications(
     *,
     worker_id: str,
     policy: NotificationDeliveryPolicy = DEFAULT_NOTIFICATION_DELIVERY_POLICY,
+    idempotency_retry_window: timedelta | None = None,
 ) -> list[Notification]:
     """Recover stale leases and claim a bounded, non-overlapping batch."""
     now = _now()
     stale_before = now - policy.visibility_timeout
 
     async with transactional(session):
+        if idempotency_retry_window is not None:
+            retry_window_expired_before = now - idempotency_retry_window
+            await session.execute(
+                update(Notification)
+                .where(
+                    Notification.status.in_(
+                        [NotificationStatus.PENDING, NotificationStatus.SENDING]
+                    ),
+                    Notification.first_delivery_attempt_at.is_not(None),
+                    Notification.first_delivery_attempt_at <= retry_window_expired_before,
+                )
+                .values(
+                    status=NotificationStatus.FAILED,
+                    failed_at=now,
+                    locked_at=None,
+                    locked_by=None,
+                    last_error_code="provider_idempotency_window_expired",
+                    updated_at=now,
+                )
+            )
+
         await session.execute(
             update(Notification)
             .where(
@@ -105,6 +127,8 @@ async def claim_notifications(
             notification.locked_at = now
             notification.locked_by = worker_id
             notification.attempts += 1
+            if notification.first_delivery_attempt_at is None:
+                notification.first_delivery_attempt_at = now
 
         await session.flush()
 
@@ -218,6 +242,7 @@ async def process_pending_notifications(
         session,
         worker_id=worker_id,
         policy=policy,
+        idempotency_retry_window=sender.idempotency_retry_window,
     )
 
     delivered = 0
