@@ -67,9 +67,7 @@ async def test_creates_employee_after_empty_idempotency_lookup() -> None:
             credentials=_credentials(),
         )
 
-    post_request = next(
-        request for request in requests if request.method == "POST"
-    )
+    post_request = next(request for request in requests if request.method == "POST")
     payload = json.loads(post_request.content)
 
     assert result.external_employee_reference == "employee-123"
@@ -180,9 +178,7 @@ async def test_rejects_invalid_company_domain_before_network_request() -> None:
     )
 
     async with httpx.AsyncClient(
-        transport=httpx.MockTransport(
-            lambda _: pytest.fail("Network request must not occur")
-        ),
+        transport=httpx.MockTransport(lambda _: pytest.fail("Network request must not occur")),
         follow_redirects=False,
     ) as client:
         adapter = BambooHrProviderAdapter(http_client=client)
@@ -221,3 +217,66 @@ async def test_requires_first_last_name_and_start_date() -> None:
 
     assert error.value.code == "bamboohr_start_date_missing"
     assert error.value.retryable is False
+
+
+@pytest.mark.asyncio
+async def test_deletes_employee_using_internal_id_and_treats_not_found_as_success() -> None:
+    """Use the provider's internal ID and make repeated deletion idempotent."""
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(404)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        follow_redirects=False,
+    ) as client:
+        adapter = BambooHrProviderAdapter(http_client=client)
+        await adapter.delete_employee(
+            employee_id="12345",
+            credentials=_credentials(),
+        )
+
+    assert len(requests) == 1
+    assert requests[0].method == "DELETE"
+    assert requests[0].url == ("https://example-company.bamboohr.com/api/v1/employees/12345")
+
+
+@pytest.mark.asyncio
+async def test_rejects_non_numeric_internal_employee_id_without_network() -> None:
+    """Never interpolate an unvalidated provider reference into a URL."""
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda _: pytest.fail("No provider request expected")),
+        follow_redirects=False,
+    ) as client:
+        adapter = BambooHrProviderAdapter(http_client=client)
+        with pytest.raises(HrisProviderError) as error:
+            await adapter.delete_employee(
+                employee_id="123/../../employees/other",
+                credentials=_credentials(),
+            )
+
+    assert error.value.code == "bamboohr_employee_id_invalid"
+    assert error.value.retryable is False
+
+
+@pytest.mark.asyncio
+async def test_classifies_bamboohr_delete_outage_as_retryable() -> None:
+    """Do not persist provider response text when deletion must be retried."""
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(503, text="private provider response")
+        ),
+        follow_redirects=False,
+    ) as client:
+        adapter = BambooHrProviderAdapter(http_client=client)
+        with pytest.raises(HrisProviderError) as error:
+            await adapter.delete_employee(
+                employee_id="12345",
+                credentials=_credentials(),
+            )
+
+    assert error.value.code == "bamboohr_delete_failed"
+    assert error.value.retryable is True
+    assert "private provider response" not in str(error.value)
