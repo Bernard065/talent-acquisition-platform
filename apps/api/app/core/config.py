@@ -142,6 +142,50 @@ class Settings(BaseSettings):
         ge=10,
         le=900,
     )
+    candidate_processor_deletion_worker_poll_interval_seconds: int = Field(
+        default=10,
+        ge=1,
+        le=300,
+    )
+    candidate_processor_deletion_worker_enabled: bool = False
+    candidate_processor_deletion_worker_batch_size: int = Field(
+        default=25,
+        ge=1,
+        le=100,
+    )
+    candidate_processor_deletion_worker_max_attempts: int = Field(
+        default=8,
+        ge=1,
+        le=100,
+    )
+    candidate_processor_deletion_worker_lease_seconds: int = Field(
+        default=300,
+        ge=10,
+        le=3600,
+    )
+    candidate_processor_deletion_worker_retry_base_seconds: int = Field(
+        default=30,
+        ge=1,
+        le=3600,
+    )
+    candidate_processor_deletion_worker_retry_max_seconds: int = Field(
+        default=3600,
+        ge=1,
+        le=86_400,
+    )
+    candidate_processor_deletion_worker_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=255,
+    )
+    candidate_processor_deletion_worker_heartbeat_path: Path = Path(
+        "/tmp/tap-candidate-processor-deletion-worker.heartbeat"  # noqa: S108
+    )
+    candidate_processor_deletion_worker_heartbeat_max_age_seconds: int = Field(
+        default=120,
+        ge=10,
+        le=900,
+    )
     offer_expiry_worker_poll_interval_seconds: int = Field(
         default=30,
         ge=1,
@@ -399,6 +443,15 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_vault_provider(self) -> "Settings":
+        if (
+            self.candidate_processor_deletion_worker_retry_base_seconds
+            > self.candidate_processor_deletion_worker_retry_max_seconds
+        ):
+            raise ValueError(
+                "candidate_processor_deletion_worker_retry_max_seconds must be "
+                "at least the base retry delay."
+            )
+
         for proxy_cidr in self.trusted_proxy_cidrs:
             try:
                 ipaddress.ip_network(proxy_cidr, strict=False)
@@ -472,13 +525,8 @@ class Settings(BaseSettings):
                     "only in local or test environments."
                 )
 
-            local_callback_secret = (
-                self.offer_signature_callback_local_signing_secret
-            )
-            if (
-                local_callback_secret is None
-                or not local_callback_secret.get_secret_value()
-            ):
+            local_callback_secret = self.offer_signature_callback_local_signing_secret
+            if local_callback_secret is None or not local_callback_secret.get_secret_value():
                 raise ValueError(
                     "offer_signature_callback_local_signing_secret is required "
                     "when offer_signature_callback_provider='local'."
@@ -491,13 +539,9 @@ class Settings(BaseSettings):
                     "hris_handoff_provider is enabled."
                 )
 
-        if (
-            self.app_env == "production"
-            and self.security_hsts_max_age_seconds == 0
-        ):
+        if self.app_env == "production" and self.security_hsts_max_age_seconds == 0:
             raise ValueError(
-                "security_hsts_max_age_seconds must be greater than zero "
-                "in production."
+                "security_hsts_max_age_seconds must be greater than zero in production."
             )
 
         return self

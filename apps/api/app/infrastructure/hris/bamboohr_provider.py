@@ -17,9 +17,7 @@ from app.services.hris_provider import (
     HrisProviderError,
 )
 
-_COMPANY_DOMAIN_PATTERN = re_compile(
-    r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
-)
+_COMPANY_DOMAIN_PATTERN = re_compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _MAX_EMPLOYEE_NUMBER_LENGTH = 50
 
 
@@ -214,9 +212,7 @@ class BambooHrProviderAdapter:
         credentials: HrisCredentials,
     ) -> HrisEmployeeHandoffResult:
         """Create or recover an employee through BambooHR safely."""
-        bamboo_credentials = _BambooHrCredentials.from_hris_credentials(
-            credentials
-        )
+        bamboo_credentials = _BambooHrCredentials.from_hris_credentials(credentials)
 
         if command.proposed_start_date is None:
             raise HrisProviderError(
@@ -245,9 +241,7 @@ class BambooHrProviderAdapter:
             employee_number=employee_number,
         )
         if existing_employee_id is not None:
-            return HrisEmployeeHandoffResult(
-                external_employee_reference=existing_employee_id
-            )
+            return HrisEmployeeHandoffResult(external_employee_reference=existing_employee_id)
 
         payload = {
             "firstName": first_name,
@@ -295,6 +289,53 @@ class BambooHrProviderAdapter:
                 retryable=True,
             )
 
-        return HrisEmployeeHandoffResult(
-            external_employee_reference=employee_id
+        return HrisEmployeeHandoffResult(external_employee_reference=employee_id)
+
+    async def delete_employee(
+        self,
+        *,
+        employee_id: str,
+        credentials: HrisCredentials,
+    ) -> None:
+        """Permanently delete one BambooHR employee by its internal ID.
+
+        BambooHR's endpoint requires the immutable internal employee ID, not
+        the editable employee number. A repeated delete treats ``404`` as
+        success so a timeout after provider-side deletion is safely retryable.
+        """
+        bamboo_credentials = _BambooHrCredentials.from_hris_credentials(credentials)
+        normalized_employee_id = employee_id.strip()
+        if not normalized_employee_id.isdecimal():
+            raise HrisProviderError(
+                "bamboohr_employee_id_invalid",
+                retryable=False,
+            )
+
+        base_url = self._base_url(bamboo_credentials.company_domain)
+        auth = httpx.BasicAuth(
+            bamboo_credentials.api_key.get_secret_value(),
+            "x",
+        )
+        try:
+            response = await self._http_client.delete(
+                f"{base_url}/employees/{normalized_employee_id}",
+                auth=auth,
+                headers={"Accept": "application/json"},
+            )
+        except httpx.TimeoutException as error:
+            raise HrisProviderError(
+                "bamboohr_delete_timeout",
+                retryable=True,
+            ) from error
+        except httpx.HTTPError as error:
+            raise HrisProviderError(
+                "bamboohr_delete_failed",
+                retryable=True,
+            ) from error
+
+        if response.status_code in {200, 204, 404}:
+            return
+        raise HrisProviderError(
+            "bamboohr_delete_failed",
+            retryable=self._is_retryable_status(response.status_code),
         )

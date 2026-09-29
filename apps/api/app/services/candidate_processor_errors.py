@@ -17,5 +17,9 @@ class CandidateProcessorDeletionVersionConflictError(RuntimeError):
     """The processor deletion request changed since it was read."""
 
 
+class CandidateProcessorDeletionLeaseLostError(RuntimeError):
+    """A worker no longer owns the processor deletion request lease."""
+
+
 class CandidateProcessorDisclosureConflictError(RuntimeError):
     """A source operation was associated with conflicting disclosures."""

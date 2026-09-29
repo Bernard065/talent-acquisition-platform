@@ -96,6 +96,35 @@ services:
       minio:
         condition: service_healthy
 
+  candidate-processor-deletion-worker:
+    profiles:
+      - privacy
+    build:
+      context: ./apps/api
+    container_name: tap-candidate-processor-deletion-worker
+    restart: unless-stopped
+    command: python -m app.workers.candidate_processor_deletion_worker
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      CANDIDATE_PROCESSOR_DELETION_WORKER_ENABLED: ${CANDIDATE_PROCESSOR_DELETION_WORKER_ENABLED:-false}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-m",
+          "app.workers.candidate_processor_deletion_worker_health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   offer-expiry-worker:
     build:
       context: ./apps/api
