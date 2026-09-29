@@ -10,11 +10,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.authorization import TenantContext
 from app.db.models.job_posting import JobPosting
 from app.db.transactions import transactional
+from app.domains.job_boards.enums import (
+    JobBoardPublicationOperation,
+    JobBoardUnpublishReason,
+)
 from app.domains.job_postings.enums import JobPostingStatus
 from app.domains.job_postings.transitions import (
     validate_job_posting_transition,
 )
 from app.services.audit import record_audit_event
+from app.services.job_board_publications import (
+    synchronize_job_board_publications_for_posting,
+)
 
 SYSTEM_SUBJECT = "system:job-posting-expiry-worker"
 
@@ -101,6 +108,13 @@ async def expire_due_job_postings(
                 subject=SYSTEM_SUBJECT,
                 roles=frozenset(),
                 request_id=request_id,
+            )
+            await synchronize_job_board_publications_for_posting(
+                session,
+                context=context,
+                job_posting_id=posting.id,
+                operation=JobBoardPublicationOperation.UNPUBLISH,
+                reason=JobBoardUnpublishReason.JOB_POSTING_EXPIRED,
             )
             record_audit_event(
                 session,
