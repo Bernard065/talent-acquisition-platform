@@ -23,6 +23,7 @@ class PublicApplicationAbuseCheck:
     """
 
     public_job_id: UUID
+    idempotency_key: str
     client_ip: str | None
     user_agent: str | None
     challenge_token: str | None

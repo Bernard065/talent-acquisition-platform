@@ -12,6 +12,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from opentelemetry import trace as otel_trace
 from prometheus_client import start_http_server
+from pydantic import SecretStr
 from starlette.responses import Response
 
 from app.api.exception_handlers import register_exception_handlers
@@ -97,6 +98,8 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     application.state.tracing_runtime = None
 
     oauth_http_client: httpx.AsyncClient | None = None
+    captcha_http_client: httpx.AsyncClient | None = None
+    captcha_secret_key: SecretStr | None = None
     metrics_server: HTTPServer | None = None
     metrics_thread: Thread | None = None
 
@@ -146,6 +149,16 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
             )
         )
         application.state.webhook_signing_secret_vault = vault
+
+    if settings.public_application_abuse_control_provider == "captcha":
+        vault = application.state.calendar_credential_vault
+        secret_name = settings.public_application_captcha_secret_name
+        if vault is None or secret_name is None:
+            raise RuntimeError("CAPTCHA requires an initialized Infisical vault.")
+
+        captcha_secret_key = await vault.read_runtime_secret(
+            secret_name=secret_name,
+        )
 
     if settings.calendar_oauth_provider == "google":
         vault = application.state.calendar_credential_vault
@@ -214,10 +227,34 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     if tracing_runtime is not None and database is not None:
         tracing_runtime.instrument_engine(database.engine.sync_engine)
 
+    if settings.public_application_abuse_control_provider == "captcha":
+        if captcha_secret_key is None:
+            raise RuntimeError("CAPTCHA secret is unavailable.")
+
+        captcha_http_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(settings.public_application_captcha_timeout_seconds),
+            follow_redirects=False,
+        )
+        try:
+            application.state.public_application_abuse_guard = (
+                build_public_application_abuse_guard(
+                    settings,
+                    captcha_secret_key=captcha_secret_key,
+                    http_client=captcha_http_client,
+                )
+            )
+        except Exception:
+            await captcha_http_client.aclose()
+            captcha_http_client = None
+            raise
+
     try:
         logger.info("application_started", environment=settings.app_env)
         yield
     finally:
+        if captcha_http_client is not None:
+            await captcha_http_client.aclose()
+
         if oauth_http_client is not None:
             await oauth_http_client.aclose()
 
@@ -258,6 +295,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.settings = active_settings
     application.state.public_application_abuse_guard = (
         build_public_application_abuse_guard(active_settings)
+        if active_settings.public_application_abuse_control_provider
+        == "local_allow_all"
+        else None
     )
     application.state.offer_signature_callback_verifiers = {}
     application.state.rate_limiter = None

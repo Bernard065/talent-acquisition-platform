@@ -69,6 +69,7 @@ async def submit_public_application_endpoint(
         await abuse_guard.verify(
             PublicApplicationAbuseCheck(
                 public_job_id=public_job_id,
+                idempotency_key=idempotency_key,
                 client_ip=request.client.host if request.client else None,
                 user_agent=request.headers.get("User-Agent"),
                 challenge_token=payload.challenge_token,

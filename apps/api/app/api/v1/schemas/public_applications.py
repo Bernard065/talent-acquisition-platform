@@ -16,7 +16,7 @@ class SubmitPublicApplicationRequest(BaseModel):
     location: str | None = Field(default=None, max_length=200)
     source_reference: str | None = Field(default=None, max_length=100)
     privacy_consent: Literal[True]
-    challenge_token: str | None = Field(default=None, max_length=4_000)
+    challenge_token: str | None = Field(default=None, max_length=2_048)
 
 
 class PublicApplicationAcceptedResponse(BaseModel):
