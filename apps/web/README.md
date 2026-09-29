@@ -1,8 +1,9 @@
 # Web application
 
-The frontend is a Next.js App Router application written in TypeScript. This
-foundation PR establishes the runtime, quality checks, and a minimal route. It
-does not yet authenticate users or make API requests.
+The frontend is a Next.js App Router application written in TypeScript and
+styled with Tailwind CSS v4. Theme tokens live in `src/app/globals.css`; layout
+and component styling use Tailwind utility classes. The app does not yet
+authenticate users or make API requests.
 
 ## Requirements
 
