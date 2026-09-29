@@ -38,4 +38,5 @@ deployment configuration are described in
 
 ## Repository status
 
-This repository is in foundation setup. See `docs/architecture.md` and `CONTRIBUTING.md`.
+The frontend foundation lives in [`apps/web`](apps/web/README.md). This repository
+is still in foundation setup; see `docs/architecture.md` and `CONTRIBUTING.md`.
