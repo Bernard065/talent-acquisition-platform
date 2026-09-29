@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { Button } from "@/components/ui/button";
+
 type NavigationItem = {
   label: string;
   marker: string;
@@ -32,7 +34,7 @@ function NavigationGroup({
     <div
       className={`grid content-start max-[760px]:flex-none ${label === "Manage" ? "max-[760px]:ml-1.5 max-[760px]:border-l max-[760px]:border-line max-[760px]:pl-1.5" : ""}`}
     >
-      <p className="m-0 px-2.75 pb-2.25 text-2.5 font-bold tracking-[1.3px] text-muted uppercase max-[760px]:sr-only">
+      <p className="m-0 px-2.75 pb-2.25 text-2.5 font-bold tracking-[1.3px] text-muted-foreground uppercase max-[760px]:sr-only">
         {label}
       </p>
       <ul className="m-0 grid list-none gap-0.75 p-0 max-[760px]:flex max-[760px]:w-max max-[760px]:gap-1.25">
@@ -46,7 +48,7 @@ function NavigationGroup({
               >
                 <span
                   aria-hidden="true"
-                  className="w-4.75 shrink-0 font-display text-2.25 font-bold text-accent max-[760px]:hidden"
+                  className="w-4.75 shrink-0 font-display text-2.25 font-bold text-brand max-[760px]:hidden"
                 >
                   {item.marker}
                 </span>
@@ -108,7 +110,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <strong className="font-display text-4 tracking-[-0.6px]">
               talent
             </strong>
-            <span className="text-2.5 tracking-[0.08px] text-muted">
+            <span className="text-2.5 tracking-[0.08px] text-muted-foreground">
               acquisition platform
             </span>
           </span>
@@ -122,7 +124,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <NavigationGroup label="Manage" items={managementItems} />
         </nav>
 
-        <div className="mt-auto flex items-center gap-2.25 border-t border-line px-2.75 pt-4 pb-1 text-2.5 text-muted max-[760px]:hidden">
+        <div className="mt-auto flex items-center gap-2.25 border-t border-line px-2.75 pt-4 pb-1 text-2.5 text-muted-foreground max-[760px]:hidden">
           <span
             aria-hidden="true"
             className="size-1.75 shrink-0 rounded-full bg-status-warning"
@@ -135,7 +137,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <header className="flex min-h-17 items-center justify-between gap-5 border-b border-line bg-white/80 px-[clamp(22px,4.5vw,68px)] max-[760px]:min-h-13.75 max-[760px]:px-5">
           <nav
             aria-label="Breadcrumb"
-            className="flex items-center gap-2.25 text-2.75 text-muted"
+            className="flex items-center gap-2.25 text-2.75 text-muted-foreground"
           >
             <span>Workspace</span>
             <span aria-hidden="true" className="text-breadcrumb-muted">
@@ -151,11 +153,12 @@ export function AppShell({ children }: { children: ReactNode }) {
               />
               API not connected
             </span>
-            <button
-              className="inline-flex items-center gap-2.25 border-0 bg-transparent p-0 text-2.5 text-control-muted"
+            <Button
+              className="h-auto gap-2.25 border-0 bg-transparent p-0 text-2.5 text-control-muted hover:bg-transparent"
               disabled
               title="Authentication will be connected in a later frontend step."
-              type="button"
+              size="sm"
+              variant="ghost"
             >
               <span
                 aria-hidden="true"
@@ -166,7 +169,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <span className="max-[760px]:sr-only">
                 Sign-in not configured
               </span>
-            </button>
+            </Button>
           </div>
         </header>
 
