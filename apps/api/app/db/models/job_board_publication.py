@@ -39,6 +39,10 @@ class JobBoardPublication(Base):
             "last_error_code ~ '^[a-z0-9][a-z0-9_.-]{0,99}$'",
             name="safe_error_code",
         ),
+        CheckConstraint(
+            "(dispatch_locked_by IS NULL) = (dispatch_locked_until IS NULL)",
+            name="dispatch_lease_consistent",
+        ),
         UniqueConstraint(
             "tenant_id",
             "job_posting_id",
@@ -89,9 +93,30 @@ class JobBoardPublication(Base):
         default=JobBoardPublicationStatus.PUBLISH_REQUESTED,
         server_default=JobBoardPublicationStatus.PUBLISH_REQUESTED.value,
     )
+    # Desired-state generation changes only when a new publish/unpublish intent
+    # is committed. Worker result persistence can safely increment `version`
+    # without invalidating an already queued newer intent.
+    desired_generation: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default=text("1"),
+    )
+    # Highest generation confirmed at the provider. Older retried events can
+    # be acknowledged once a newer desired state has already been synchronized.
+    last_synced_generation: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
     external_posting_id: Mapped[str | None] = mapped_column(String(255))
     last_error_code: Mapped[str | None] = mapped_column(String(100))
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    dispatch_locked_by: Mapped[str | None] = mapped_column(String(255))
+    dispatch_locked_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
     created_by_subject: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
