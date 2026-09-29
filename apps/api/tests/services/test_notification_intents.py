@@ -94,9 +94,7 @@ async def test_creates_one_intent_when_the_same_event_is_replayed(
     count = len(
         (
             await session.scalars(
-                select(Notification.id).where(
-                    Notification.tenant_id == event.tenant_id
-                )
+                select(Notification.id).where(Notification.tenant_id == event.tenant_id)
             )
         ).all()
     )
@@ -161,9 +159,7 @@ async def test_dead_letters_malformed_notification_request(
     count = len(
         (
             await session.scalars(
-                select(Notification.id).where(
-                    Notification.tenant_id == event.tenant_id
-                )
+                select(Notification.id).where(Notification.tenant_id == event.tenant_id)
             )
         ).all()
     )
@@ -174,3 +170,33 @@ async def test_dead_letters_malformed_notification_request(
     assert event.status is OutboxEventStatus.DEAD_LETTERED
     assert event.last_error == "invalid_notification_event_payload"
     assert count == 0
+
+
+@pytest.mark.asyncio
+async def test_dead_letters_mismatched_notification_template(
+    session: AsyncSession,
+) -> None:
+    """A template for a different event cannot be persisted for delivery."""
+    _, event = await _seed_notification_event(session)
+    event.payload = {**event.payload, "template_key": "onboarding_started"}
+    await session.commit()
+
+    result = await process_notification_request_events(
+        session,
+        worker_id="notification-intent-worker",
+    )
+    await session.refresh(event)
+
+    notification_count = len(
+        (
+            await session.scalars(
+                select(Notification.id).where(Notification.tenant_id == event.tenant_id)
+            )
+        ).all()
+    )
+
+    assert result.dead_lettered == 1
+    assert result.processed == 0
+    assert event.status is OutboxEventStatus.DEAD_LETTERED
+    assert event.last_error == "invalid_notification_event_payload"
+    assert notification_count == 0
