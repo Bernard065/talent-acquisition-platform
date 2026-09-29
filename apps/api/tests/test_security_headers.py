@@ -35,6 +35,9 @@ def _settings(app_env: str) -> Settings:
             if app_env == "production"
             else "redis://localhost:6379/0"
         ),
+        public_site_base_url=(
+            "https://jobs.example.test" if app_env == "production" else "http://localhost:8000"
+        ),
         public_application_abuse_control_provider="local_allow_all",
         offer_signature_callback_provider="none",
         notification_email_provider=("resend" if app_env == "production" else "logging"),
