@@ -52,6 +52,7 @@ from app.api.v1.operations import router as operations_router
 from app.api.v1.public_applications import (
     router as public_applications_router,
 )
+from app.api.v1.public_job_pages import router as public_job_pages_router
 from app.api.v1.public_jobs import router as public_jobs_router
 from app.api.v1.recruiting_metrics import (
     router as recruiting_metrics_router,
@@ -364,6 +365,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         health_router,
         prefix=active_settings.api_prefix,
     )
+
+    # Candidate-facing SEO pages intentionally live outside the versioned API.
+    application.include_router(public_job_pages_router)
 
     application.include_router(
         public_jobs_router,

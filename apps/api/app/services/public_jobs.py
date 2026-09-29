@@ -7,10 +7,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
+from app.db.models.identity import Tenant
 from app.db.models.job_posting import JobPosting
 from app.db.models.requisition import Requisition
 from app.domains.job_postings.enums import EmploymentType, JobPostingStatus
@@ -27,6 +28,23 @@ class PublicJobPage:
 
     items: list[JobPosting]
     next_cursor: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class PublicJobPageDetail:
+    """Public posting and employer display name needed by job-detail pages."""
+
+    posting: JobPosting
+    employer_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class PublicJobSitemapEntry:
+    """Public URL metadata for one currently visible posting."""
+
+    public_id: UUID
+    slug: str
+    updated_at: datetime
 
 
 def _now() -> datetime:
@@ -187,3 +205,64 @@ async def get_public_job(
         raise PublicJobNotFoundError("Public job was not found.")
 
     return posting
+
+
+async def get_public_job_page_detail(
+    session: AsyncSession,
+    *,
+    public_id: UUID,
+) -> PublicJobPageDetail:
+    """Load a currently visible posting with its tenant's public employer name."""
+    result = await session.execute(
+        select(JobPosting, Tenant.name)
+        .join(Requisition, Requisition.id == JobPosting.requisition_id)
+        .join(Tenant, Tenant.id == JobPosting.tenant_id)
+        .where(
+            JobPosting.public_id == public_id,
+            _public_visibility_conditions(_now()),
+        )
+    )
+    row = result.one_or_none()
+    if row is None:
+        raise PublicJobNotFoundError("Public job was not found.")
+
+    posting, employer_name = row
+    return PublicJobPageDetail(posting=posting, employer_name=employer_name)
+
+
+async def list_public_job_sitemap_entries(
+    session: AsyncSession,
+    *,
+    offset: int = 0,
+    limit: int = 40_000,
+) -> list[PublicJobSitemapEntry]:
+    """List a bounded, stable slice of currently visible sitemap entries."""
+    if offset < 0 or not 1 <= limit <= 50_000:
+        raise ValueError("Invalid sitemap offset or limit.")
+
+    rows = await session.execute(
+        select(JobPosting.public_id, JobPosting.slug, JobPosting.updated_at)
+        .join(Requisition, Requisition.id == JobPosting.requisition_id)
+        .where(_public_visibility_conditions(_now()))
+        .order_by(JobPosting.public_id.asc())
+        .offset(offset)
+        .limit(limit)
+    )
+    return [
+        PublicJobSitemapEntry(
+            public_id=public_id,
+            slug=slug,
+            updated_at=updated_at,
+        )
+        for public_id, slug, updated_at in rows
+    ]
+
+
+async def count_public_job_sitemap_entries(session: AsyncSession) -> int:
+    """Count jobs currently eligible for sitemap inclusion."""
+    count = await session.scalar(
+        select(func.count(JobPosting.id))
+        .join(Requisition, Requisition.id == JobPosting.requisition_id)
+        .where(_public_visibility_conditions(_now()))
+    )
+    return count or 0

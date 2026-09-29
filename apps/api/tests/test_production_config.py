@@ -16,6 +16,7 @@ def _settings(**overrides: object) -> Settings:
         "log_level": "INFO",
         "database_url": "postgresql+asyncpg://tap:secret@postgres:5432/tap",
         "redis_url": "rediss://redis.internal:6379/0",
+        "public_site_base_url": "https://jobs.example.com",
         "jwt_issuer": "https://identity.example.com/",
         "jwt_audience": "talent-acquisition-api",
         "jwt_jwks_url": "https://identity.example.com/.well-known/jwks.json",
@@ -60,6 +61,10 @@ def test_accepts_secure_production_configuration() -> None:
             {"jwt_jwks_url": "http://identity.example.com/jwks.json"},
             "JWT_JWKS_URL must use HTTPS in production.",
         ),
+        (
+            {"public_site_base_url": "http://jobs.example.com"},
+            "PUBLIC_SITE_BASE_URL must use HTTPS in production.",
+        ),
     ],
 )
 def test_rejects_insecure_or_missing_production_settings(
@@ -88,6 +93,31 @@ def test_local_environment_can_use_local_redis_and_http_identity_urls() -> None:
     )
 
     assert settings.redis_url.startswith("redis://")
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "https://jobs.example.com/subpath",
+        "https://jobs.example.com?host=attacker.example",
+    ],
+)
+def test_public_site_base_url_must_be_an_origin(base_url: str) -> None:
+    with pytest.raises(ValidationError, match="must be an origin"):
+        Settings(
+            app_env="test",
+            app_name="tap-api",
+            app_version="0.1.0",
+            api_prefix="/api/v1",
+            log_level="INFO",
+            redis_url="redis://localhost:6379/0",
+            public_site_base_url=base_url,
+            jwt_issuer="https://identity.example.test/",
+            jwt_audience="talent-acquisition-api",
+            jwt_jwks_url="https://identity.example.test/.well-known/jwks.json",
+            jwt_algorithm="RS256",
+            jwt_leeway_seconds=30,
+        )
 
 
 def test_production_rejects_local_logging_email_adapter() -> None:

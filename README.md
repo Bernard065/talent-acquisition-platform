@@ -30,6 +30,12 @@ The platform will support the complete hiring lifecycle:
 - Asynchronous, idempotent integrations
 - Accessible candidate and hiring-team experiences
 
+## Public job discovery
+
+Public job detail pages, Google `JobPosting` structured data, sitemap, and
+deployment configuration are described in
+[`docs/integrations/google-jobs-discovery.md`](docs/integrations/google-jobs-discovery.md).
+
 ## Repository status
 
 This repository is in foundation setup. See `docs/architecture.md` and `CONTRIBUTING.md`.
