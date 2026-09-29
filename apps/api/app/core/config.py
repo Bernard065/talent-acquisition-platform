@@ -401,6 +401,25 @@ class Settings(BaseSettings):
         "local_allow_all",
         "captcha",
     ] = "local_allow_all"
+    public_application_captcha_secret_name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=255,
+    )
+    public_application_captcha_expected_hostnames: list[str] = Field(
+        default_factory=list,
+    )
+    public_application_captcha_expected_action: str = Field(
+        default="public_application",
+        min_length=1,
+        max_length=32,
+        pattern=r"^[A-Za-z0-9_-]+$",
+    )
+    public_application_captcha_timeout_seconds: float = Field(
+        default=3.0,
+        gt=0,
+        le=15,
+    )
 
     jwt_issuer: AnyHttpUrl
     jwt_audience: str = Field(min_length=1)
@@ -462,6 +481,37 @@ class Settings(BaseSettings):
 
         if self.app_env == "production" and not self.rate_limiting_enabled:
             raise ValueError("Rate limiting cannot be disabled in production.")
+
+        if self.public_application_abuse_control_provider == "captcha":
+            if self.credential_vault_provider != "infisical":
+                raise ValueError(
+                    "credential_vault_provider must be 'infisical' when CAPTCHA is enabled."
+                )
+            if not self.public_application_captcha_secret_name:
+                raise ValueError(
+                    "public_application_captcha_secret_name is required when CAPTCHA is enabled."
+                )
+            if not self.public_application_captcha_expected_hostnames:
+                raise ValueError(
+                    "public_application_captcha_expected_hostnames must not be empty."
+                )
+
+            hostnames = [
+                hostname.strip().rstrip(".").casefold()
+                for hostname in self.public_application_captcha_expected_hostnames
+            ]
+            if any(
+                not hostname
+                or "/" in hostname
+                or ":" in hostname
+                or "*" in hostname
+                or " " in hostname
+                for hostname in hostnames
+            ):
+                raise ValueError(
+                    "CAPTCHA hostnames must be bare hostnames without paths, ports, or wildcards."
+                )
+            self.public_application_captcha_expected_hostnames = sorted(set(hostnames))
 
         if self.app_env == "production":
             if self.database_url is None:
