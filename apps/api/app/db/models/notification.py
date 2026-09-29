@@ -140,6 +140,11 @@ class Notification(Base):
             "next_attempt_at",
         ),
         Index(
+            "ix_notifications_status_first_delivery_attempt_at",
+            "status",
+            "first_delivery_attempt_at",
+        ),
+        Index(
             "ix_notifications_recipient_status",
             "recipient_user_id",
             "status",
@@ -211,6 +216,10 @@ class Notification(Base):
     )
     locked_by: Mapped[str | None] = mapped_column(
         String(255),
+        nullable=True,
+    )
+    first_delivery_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
         nullable=True,
     )
     sent_at: Mapped[datetime | None] = mapped_column(

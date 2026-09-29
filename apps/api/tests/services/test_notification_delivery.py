@@ -31,6 +31,8 @@ from app.services.notification_delivery import (
 class FakeEmailSender:
     """Controllable sender that records messages without external delivery."""
 
+    idempotency_retry_window: timedelta | None = None
+
     def __init__(self, error: EmailDeliveryError | None = None) -> None:
         self.error = error
         self.messages: list[EmailMessage] = []
@@ -74,6 +76,7 @@ async def _seed_notification(
     attempts: int = 0,
     locked_at: datetime | None = None,
     locked_by: str | None = None,
+    first_delivery_attempt_at: datetime | None = None,
 ) -> tuple[UUID, UUID]:
     """Create a delivery-ready internal email notification."""
     tenant_id = uuid4()
@@ -113,6 +116,7 @@ async def _seed_notification(
                 attempts=attempts,
                 locked_at=locked_at,
                 locked_by=locked_by,
+                first_delivery_attempt_at=first_delivery_attempt_at,
                 next_attempt_at=datetime.now(UTC) - timedelta(seconds=1),
                 sent_at=datetime.now(UTC)
                 if status is NotificationStatus.SENT
@@ -190,6 +194,37 @@ async def test_recovers_stale_lease_and_reclaims_notification(
     assert notification.locked_by == "recovery-worker"
     assert notification.attempts == 2
     assert notification.last_error_code == "lease_expired"
+
+
+@pytest.mark.asyncio
+async def test_does_not_retry_after_provider_idempotency_window_expires(
+    notification_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Ambiguous sends are not repeated after the provider forgets the key."""
+    _, notification_id = await _seed_notification(
+        notification_session_factory,
+        attempts=1,
+        first_delivery_attempt_at=datetime.now(UTC) - timedelta(hours=24),
+    )
+
+    async with notification_session_factory() as session:
+        claimed = await claim_notifications(
+            session,
+            worker_id="worker-recovery",
+            idempotency_retry_window=timedelta(hours=23),
+        )
+
+    notification = await _get_notification(
+        notification_session_factory,
+        notification_id,
+    )
+
+    assert claimed == []
+    assert notification.status is NotificationStatus.FAILED
+    assert notification.failed_at is not None
+    assert notification.locked_at is None
+    assert notification.locked_by is None
+    assert notification.last_error_code == "provider_idempotency_window_expired"
 
 
 @pytest.mark.asyncio
