@@ -16,6 +16,9 @@ from app.domains.notifications.enums import (
     NotificationEventType,
     NotificationStatus,
 )
+from app.services.notification_email_templates import (
+    resolve_notification_email_template,
+)
 from app.services.outbox_worker import (
     DEFAULT_OUTBOX_WORKER_POLICY,
     OutboxWorkerPolicy,
@@ -67,6 +70,11 @@ def _request_from_event(event: OutboxEvent) -> NotificationRequest:
 
     if not entity_type or not template_key:
         raise ValueError("Notification entity type and template key are required.")
+
+    resolve_notification_email_template(
+        event_type=event_type,
+        template_key=template_key,
+    )
 
     if len(deduplication_key) != 64:
         raise ValueError("Notification deduplication key must be a SHA-256 digest.")

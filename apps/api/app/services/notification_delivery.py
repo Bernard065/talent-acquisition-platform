@@ -12,6 +12,10 @@ from app.db.models.notification import Notification
 from app.db.transactions import transactional
 from app.domains.notifications.enums import NotificationStatus
 from app.services.email_sender import EmailDeliveryError, EmailMessage, EmailSender
+from app.services.notification_email_templates import (
+    UnsupportedNotificationTemplateError,
+    render_notification_email,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,17 +146,12 @@ async def _get_leased_notification(
     worker_id: str,
 ) -> Notification:
     notification = await session.scalar(
-        select(Notification)
-        .where(Notification.id == notification_id)
-        .with_for_update()
+        select(Notification).where(Notification.id == notification_id).with_for_update()
     )
     if notification is None:
         raise LookupError("Notification was not found.")
 
-    if (
-        notification.status != NotificationStatus.SENDING
-        or notification.locked_by != worker_id
-    ):
+    if notification.status != NotificationStatus.SENDING or notification.locked_by != worker_id:
         raise RuntimeError("Notification lease was lost.")
 
     return notification
@@ -216,17 +215,13 @@ async def retry_or_fail_notification(
 
 
 def _render_message(notification: Notification, recipient_email: str) -> EmailMessage:
-    """Render a deliberately minimal internal email without workflow-sensitive text."""
-    return EmailMessage(
+    """Render approved static copy without including workflow-sensitive values."""
+    return render_notification_email(
         notification_id=notification.id,
         idempotency_key=notification.deduplication_key,
         recipient_email=recipient_email,
-        subject="Talent Acquisition Platform notification",
-        text_body=(
-            "A workflow update is available in the Talent Acquisition Platform. "
-            f"Event: {notification.event_type}. "
-            f"Reference: {notification.entity_type}/{notification.entity_id}."
-        ),
+        event_type=notification.event_type,
+        template_key=notification.template_key,
     )
 
 
@@ -269,9 +264,20 @@ async def process_pending_notifications(
             continue
 
         try:
-            provider_message_id = await sender.send(
-                _render_message(notification, recipient_email)
+            message = _render_message(notification, recipient_email)
+        except UnsupportedNotificationTemplateError:
+            await retry_or_fail_notification(
+                session,
+                notification_id=notification.id,
+                worker_id=worker_id,
+                failure_code="unsupported_notification_template",
+                policy=policy,
+                retryable=False,
             )
+            continue
+
+        try:
+            provider_message_id = await sender.send(message)
         except EmailDeliveryError as error:
             await retry_or_fail_notification(
                 session,
