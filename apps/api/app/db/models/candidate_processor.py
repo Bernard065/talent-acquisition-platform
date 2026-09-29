@@ -51,8 +51,7 @@ class CandidateProcessorDisclosure(Base):
             name="ck_candidate_processor_disclosures_purpose_code_length",
         ),
         CheckConstraint(
-            "purpose_code IN ('interview_scheduling', 'offer_signature', "
-            "'onboarding_handoff')",
+            "purpose_code IN ('interview_scheduling', 'offer_signature', 'onboarding_handoff')",
             name="ck_candidate_processor_disclosures_purpose_code",
         ),
         CheckConstraint(
@@ -122,26 +121,42 @@ class CandidateProcessorDeletionRequest(Base):
             name="uq_candidate_processor_deletion_disclosure",
         ),
         CheckConstraint(
-            "status IN ('pending', 'completed', 'exception', 'waived')",
-            name="ck_candidate_processor_deletion_requests_status",
+            "status IN ('pending', 'processing', 'completed', 'exception', 'waived')",
+            name="status",
+        ),
+        CheckConstraint(
+            "attempt_count >= 0",
+            name="attempt_count_nonneg",
+        ),
+        CheckConstraint(
+            "(status = 'processing' AND locked_at IS NOT NULL AND locked_by IS NOT NULL) "
+            "OR (status != 'processing' AND locked_at IS NULL AND locked_by IS NULL)",
+            name="lease_state",
         ),
         CheckConstraint(
             "version >= 1",
-            name="ck_candidate_processor_deletion_requests_version_positive",
+            name="version_positive",
         ),
         CheckConstraint(
-            "(status = 'pending' AND status_changed_at IS NULL "
+            "(status IN ('pending', 'processing') AND status_changed_at IS NULL "
             "AND status_changed_by_subject IS NULL AND resolution_code IS NULL) "
             "OR (status = 'completed' AND status_changed_at IS NOT NULL "
             "AND status_changed_by_subject IS NOT NULL AND resolution_code IS NULL) "
             "OR (status IN ('exception', 'waived') AND status_changed_at IS NOT NULL "
             "AND status_changed_by_subject IS NOT NULL AND resolution_code IS NOT NULL)",
-            name="ck_candidate_processor_deletion_requests_status_metadata",
+            name="status_metadata",
         ),
         Index(
             "ix_candidate_processor_deletion_requests_tenant_status_created",
             "tenant_id",
             "status",
+            "created_at",
+        ),
+        Index(
+            "ix_candidate_processor_deletion_requests_dispatch",
+            "status",
+            "next_attempt_at",
+            "locked_at",
             "created_at",
         ),
     )
@@ -164,6 +179,29 @@ class CandidateProcessorDeletionRequest(Base):
         nullable=False,
         default=CandidateProcessorDeletionStatus.PENDING,
         server_default=CandidateProcessorDeletionStatus.PENDING.value,
+    )
+    attempt_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    locked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    locked_by: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+    last_failure_code: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
     )
     resolution_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     status_changed_at: Mapped[datetime | None] = mapped_column(

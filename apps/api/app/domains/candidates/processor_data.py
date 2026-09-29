@@ -23,6 +23,7 @@ class CandidateProcessorDeletionStatus(StrEnum):
     """Operational status of one downstream deletion request."""
 
     PENDING = "pending"
+    PROCESSING = "processing"
     COMPLETED = "completed"
     EXCEPTION = "exception"
     WAIVED = "waived"
