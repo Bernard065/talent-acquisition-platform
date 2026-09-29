@@ -16,6 +16,10 @@ from app.core.authorization import Role, TenantContext
 from app.db.models.job_posting import JobPosting
 from app.db.models.requisition import Requisition
 from app.db.transactions import transactional
+from app.domains.job_boards.enums import (
+    JobBoardPublicationOperation,
+    JobBoardUnpublishReason,
+)
 from app.domains.job_postings.enums import (
     EmploymentType,
     JobPostingStatus,
@@ -25,6 +29,9 @@ from app.domains.job_postings.transitions import (
 )
 from app.domains.requisitions.enums import RequisitionStatus
 from app.services.audit import record_audit_event
+from app.services.job_board_publications import (
+    synchronize_job_board_publications_for_posting,
+)
 from app.services.job_posting_errors import (
     InvalidJobPostingCursorError,
     JobPostingAccessDeniedError,
@@ -395,6 +402,12 @@ async def publish_job_posting(
         posting.unpublished_at = None
 
         await session.flush()
+        await synchronize_job_board_publications_for_posting(
+            session,
+            context=context,
+            job_posting_id=posting.id,
+            operation=JobBoardPublicationOperation.PUBLISH,
+        )
 
         record_audit_event(
             session,
@@ -442,6 +455,13 @@ async def unpublish_job_posting(
         posting.unpublished_at = _now()
 
         await session.flush()
+        await synchronize_job_board_publications_for_posting(
+            session,
+            context=context,
+            job_posting_id=posting.id,
+            operation=JobBoardPublicationOperation.UNPUBLISH,
+            reason=JobBoardUnpublishReason.MANUAL,
+        )
 
         record_audit_event(
             session,
@@ -489,6 +509,13 @@ async def expire_job_posting(
         posting.unpublished_at = _now()
 
         await session.flush()
+        await synchronize_job_board_publications_for_posting(
+            session,
+            context=context,
+            job_posting_id=posting.id,
+            operation=JobBoardPublicationOperation.UNPUBLISH,
+            reason=JobBoardUnpublishReason.JOB_POSTING_EXPIRED,
+        )
 
         record_audit_event(
             session,
@@ -545,6 +572,20 @@ async def unpublish_job_postings_for_requisition(
             posting.unpublished_at = _now()
 
         await session.flush()
+
+        unpublish_reason = (
+            JobBoardUnpublishReason.REQUISITION_CLOSED
+            if reason == "requisition_closed"
+            else JobBoardUnpublishReason.REQUISITION_CANCELLED
+        )
+        for posting in postings:
+            await synchronize_job_board_publications_for_posting(
+                session,
+                context=context,
+                job_posting_id=posting.id,
+                operation=JobBoardPublicationOperation.UNPUBLISH,
+                reason=unpublish_reason,
+            )
 
         for posting in postings:
             record_audit_event(
