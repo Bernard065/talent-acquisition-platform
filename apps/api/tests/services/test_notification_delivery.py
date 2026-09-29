@@ -77,6 +77,8 @@ async def _seed_notification(
     locked_at: datetime | None = None,
     locked_by: str | None = None,
     first_delivery_attempt_at: datetime | None = None,
+    event_type: str = "offer.sent",
+    template_key: str = "offer_sent",
 ) -> tuple[UUID, UUID]:
     """Create a delivery-ready internal email notification."""
     tenant_id = uuid4()
@@ -108,22 +110,18 @@ async def _seed_notification(
                 recipient_user_id=recipient.id,
                 channel=NotificationChannel.EMAIL,
                 status=status,
-                event_type="offer.sent",
+                event_type=event_type,
                 entity_type="offer",
                 entity_id=uuid4(),
-                template_key="offer_sent",
+                template_key=template_key,
                 deduplication_key=uuid4().hex + uuid4().hex,
                 attempts=attempts,
                 locked_at=locked_at,
                 locked_by=locked_by,
                 first_delivery_attempt_at=first_delivery_attempt_at,
                 next_attempt_at=datetime.now(UTC) - timedelta(seconds=1),
-                sent_at=datetime.now(UTC)
-                if status is NotificationStatus.SENT
-                else None,
-                failed_at=datetime.now(UTC)
-                if status is NotificationStatus.FAILED
-                else None,
+                sent_at=datetime.now(UTC) if status is NotificationStatus.SENT else None,
+                failed_at=datetime.now(UTC) if status is NotificationStatus.FAILED else None,
             )
         )
 
@@ -326,3 +324,33 @@ async def test_delivers_pending_notification_once(
     assert notification.sent_at is not None
     assert notification.provider_message_id is not None
     assert len(sender.messages) == 1
+
+
+@pytest.mark.asyncio
+async def test_unknown_persisted_template_fails_without_provider_delivery(
+    notification_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """A stale or corrupted template key is terminal and never sent generically."""
+    _, notification_id = await _seed_notification(
+        notification_session_factory,
+        template_key="unknown_template",
+    )
+    sender = FakeEmailSender()
+
+    async with notification_session_factory() as session:
+        delivered = await process_pending_notifications(
+            session,
+            worker_id="worker-one",
+            sender=sender,
+        )
+
+    notification = await _get_notification(
+        notification_session_factory,
+        notification_id,
+    )
+
+    assert delivered == 0
+    assert sender.messages == []
+    assert notification.status is NotificationStatus.FAILED
+    assert notification.failed_at is not None
+    assert notification.last_error_code == "unsupported_notification_template"
