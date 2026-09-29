@@ -43,6 +43,11 @@ class JobPosting(Base):
             "slug",
             name="uq_job_postings_tenant_slug",
         ),
+        UniqueConstraint(
+            "tenant_id",
+            "id",
+            name="uq_job_postings_tenant_id_id",
+        ),
         Index(
             "ix_job_postings_tenant_status_published_at",
             "tenant_id",
