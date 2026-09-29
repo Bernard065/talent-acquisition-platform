@@ -29,6 +29,7 @@ node_modules/
 out/
 .turbo/
 coverage/
+*.tsbuildinfo
 
 # Terraform
 **/.terraform/

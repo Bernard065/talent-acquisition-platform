@@ -1,9 +1,15 @@
 export default function HomePage() {
   return (
-    <main>
-      <p className="eyebrow">Talent Acquisition Platform</p>
-      <h1>Frontend foundation</h1>
-      <p>The workspace interface is being built.</p>
-    </main>
+    <section aria-labelledby="page-title" className="foundation-content">
+      <p className="eyebrow">
+        <span aria-hidden="true" className="eyebrow-line" />
+        Workspace setup
+      </p>
+      <h1 id="page-title">Frontend foundation</h1>
+      <p>
+        The application shell is ready to grow. Authentication, live recruiting
+        data, and workflow screens will arrive in separate steps.
+      </p>
+    </section>
   );
 }
