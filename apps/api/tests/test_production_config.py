@@ -22,6 +22,13 @@ def _settings(**overrides: object) -> Settings:
         "jwt_algorithm": "RS256",
         "jwt_leeway_seconds": 30,
         "offer_signature_callback_provider": "none",
+        "notification_email_provider": "resend",
+        "notification_email_api_key_secret_name": "tap_resend_sending_api_key",
+        "notification_email_from_address": "notifications@example.com",
+        "credential_vault_provider": "infisical",
+        "infisical_client_id": "tap-worker-client",
+        "infisical_client_secret": "test-infisical-secret",
+        "infisical_project_id": "tap-project",
     }
     values.update(overrides)
     return Settings(**values, _env_file=None)  # type: ignore[arg-type]
@@ -34,6 +41,7 @@ def test_accepts_secure_production_configuration() -> None:
     assert settings.rate_limiting_enabled is True
     assert settings.database_url is not None
     assert settings.redis_url.startswith("rediss://")
+    assert settings.notification_email_provider == "resend"
 
 
 @pytest.mark.parametrize(
@@ -80,3 +88,12 @@ def test_local_environment_can_use_local_redis_and_http_identity_urls() -> None:
     )
 
     assert settings.redis_url.startswith("redis://")
+
+
+def test_production_rejects_local_logging_email_adapter() -> None:
+    """The local logging adapter must never silently discard production mail."""
+    with pytest.raises(
+        ValidationError,
+        match="NOTIFICATION_EMAIL_PROVIDER=resend is required in production",
+    ):
+        _settings(notification_email_provider="logging")

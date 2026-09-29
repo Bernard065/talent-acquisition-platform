@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import AnyHttpUrl, Field, PostgresDsn, SecretStr, model_validator
+from pydantic import AnyHttpUrl, EmailStr, Field, PostgresDsn, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 API_ROOT = Path(__file__).resolve().parents[2]
@@ -254,6 +254,23 @@ class Settings(BaseSettings):
         default=90,
         ge=10,
         le=900,
+    )
+    notification_email_provider: Literal["logging", "resend"] = "logging"
+    notification_email_api_key_secret_name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=255,
+    )
+    notification_email_from_address: EmailStr | None = None
+    notification_email_connect_timeout_seconds: float = Field(
+        default=3.0,
+        gt=0,
+        le=30,
+    )
+    notification_email_read_timeout_seconds: float = Field(
+        default=15.0,
+        gt=0,
+        le=60,
     )
     calendar_sync_worker_poll_interval_seconds: int = Field(
         default=5,
@@ -547,6 +564,26 @@ class Settings(BaseSettings):
                 raise ValueError(
                     f"{', '.join(f.upper() for f in missing)} required when "
                     "CREDENTIAL_VAULT_PROVIDER=infisical."
+                )
+
+        if self.app_env == "production" and self.notification_email_provider != "resend":
+            raise ValueError("NOTIFICATION_EMAIL_PROVIDER=resend is required in production.")
+
+        if self.notification_email_provider == "resend":
+            if self.credential_vault_provider != "infisical":
+                raise ValueError(
+                    "CREDENTIAL_VAULT_PROVIDER=infisical is required when "
+                    "NOTIFICATION_EMAIL_PROVIDER=resend."
+                )
+            if not self.notification_email_api_key_secret_name:
+                raise ValueError(
+                    "NOTIFICATION_EMAIL_API_KEY_SECRET_NAME is required when "
+                    "NOTIFICATION_EMAIL_PROVIDER=resend."
+                )
+            if self.notification_email_from_address is None:
+                raise ValueError(
+                    "NOTIFICATION_EMAIL_FROM_ADDRESS is required when "
+                    "NOTIFICATION_EMAIL_PROVIDER=resend."
                 )
 
         if self.calendar_oauth_provider == "google":
