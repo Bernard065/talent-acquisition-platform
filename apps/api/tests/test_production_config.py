@@ -97,3 +97,12 @@ def test_production_rejects_local_logging_email_adapter() -> None:
         match="NOTIFICATION_EMAIL_PROVIDER=resend is required in production",
     ):
         _settings(notification_email_provider="logging")
+
+
+def test_production_rejects_local_job_board_provider() -> None:
+    """The no-network fake adapter cannot be selected in production."""
+    with pytest.raises(
+        ValidationError,
+        match="JOB_BOARD_PROVIDER=local is permitted only in local and test",
+    ):
+        _settings(job_board_provider="local")
