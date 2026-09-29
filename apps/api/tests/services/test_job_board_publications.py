@@ -148,7 +148,7 @@ async def test_publication_request_is_idempotent_and_privacy_safe(
     assert events[0].event_type == "job_board.publish_requested"
     assert events[0].payload == {
         "publication_id": str(publication.id),
-        "version": publication.version,
+        "generation": publication.desired_generation,
         "provider_key": "board_a",
         "operation": "publish",
     }

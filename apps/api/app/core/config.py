@@ -232,6 +232,35 @@ class Settings(BaseSettings):
         ge=10,
         le=900,
     )
+    job_board_provider: Literal["none", "local"] = "none"
+    job_board_dispatch_worker_poll_interval_seconds: int = Field(
+        default=5,
+        ge=1,
+        le=300,
+    )
+    job_board_dispatch_worker_batch_size: int = Field(
+        default=25,
+        ge=1,
+        le=100,
+    )
+    job_board_dispatch_worker_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=255,
+    )
+    job_board_dispatch_worker_heartbeat_path: Path = Path(
+        "/tmp/tap-job-board-dispatch-worker.heartbeat"  # noqa: S108
+    )
+    job_board_dispatch_worker_heartbeat_max_age_seconds: int = Field(
+        default=90,
+        ge=10,
+        le=900,
+    )
+    job_board_dispatch_visibility_timeout_seconds: int = Field(
+        default=300,
+        ge=30,
+        le=3600,
+    )
     notification_worker_poll_interval_seconds: int = Field(
         default=5,
         ge=1,
@@ -479,6 +508,14 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_vault_provider(self) -> "Settings":
+        if self.job_board_provider == "local" and self.app_env not in {
+            "local",
+            "test",
+        }:
+            raise ValueError(
+                "JOB_BOARD_PROVIDER=local is permitted only in local and test environments."
+            )
+
         if (
             self.candidate_processor_deletion_worker_retry_base_seconds
             > self.candidate_processor_deletion_worker_retry_max_seconds

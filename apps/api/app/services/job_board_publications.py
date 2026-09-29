@@ -101,10 +101,12 @@ def _enqueue_operation(
         event_type=event_type,
         aggregate_type="job_board_publication",
         aggregate_id=str(publication.id),
-        deduplication_key=f"{publication.id}:v{publication.version}",
+        deduplication_key=(
+            f"{publication.id}:g{publication.desired_generation}"
+        ),
         payload={
             "publication_id": str(publication.id),
-            "version": publication.version,
+            "generation": publication.desired_generation,
             "provider_key": publication.provider_key,
             "operation": operation.value,
         },
@@ -124,7 +126,7 @@ def _record_request_audit(
         "job_posting_id": str(publication.job_posting_id),
         "provider_key": publication.provider_key,
         "operation": operation.value,
-        "version": publication.version,
+        "generation": publication.desired_generation,
     }
     if reason is not None:
         details["reason"] = reason.value
@@ -199,6 +201,7 @@ async def request_job_board_publication(
                 JobBoardPublicationStatus.PUBLISH_REQUESTED,
             )
             publication.status = JobBoardPublicationStatus.PUBLISH_REQUESTED
+            publication.desired_generation += 1
             publication.last_error_code = None
             await session.flush()
             operation = JobBoardPublicationOperation.PUBLISH
@@ -274,6 +277,7 @@ async def _request_unpublication(
         JobBoardPublicationStatus.UNPUBLISH_REQUESTED,
     )
     publication.status = JobBoardPublicationStatus.UNPUBLISH_REQUESTED
+    publication.desired_generation += 1
     publication.last_error_code = None
     await session.flush()
     _enqueue_operation(
@@ -340,6 +344,7 @@ async def synchronize_job_board_publications_for_posting(
                     JobBoardPublicationStatus.PUBLISH_REQUESTED,
                 )
                 publication.status = JobBoardPublicationStatus.PUBLISH_REQUESTED
+                publication.desired_generation += 1
                 publication.last_error_code = None
                 await session.flush()
                 _enqueue_operation(
