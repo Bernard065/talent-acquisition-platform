@@ -5,6 +5,11 @@ styled with Tailwind CSS v4. Theme tokens live in `src/app/globals.css`; layout
 and component styling use Tailwind utility classes. The app does not yet
 authenticate users or make API requests.
 
+Reusable shadcn/ui components are source-owned under `src/components/ui` and
+configured by `components.json`. Their semantic color tokens map to the
+existing product palette in `globals.css`; keep component variants accessible
+and avoid introducing a second styling system.
+
 ## Requirements
 
 - Node.js 24.x LTS (see `.nvmrc`)

@@ -1,13 +1,16 @@
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+
 export default function HomePage() {
   return (
-    <section
+    <Card
       aria-labelledby="page-title"
-      className="max-w-190 rounded-xl border border-line-soft bg-surface p-[clamp(25px,5vw,54px)] shadow-[0_12px_34px_rgb(33_64_50/4%)]"
+      className="max-w-190 gap-0 border-line-soft p-[clamp(25px,5vw,54px)] shadow-[0_12px_34px_rgb(33_64_50/4%)]"
+      role="region"
     >
-      <p className="mb-4.75 flex items-center gap-2.25 text-2.5 font-bold tracking-[1.1px] text-accent uppercase">
-        <span aria-hidden="true" className="h-px w-5 bg-accent" />
+      <Badge className="mb-4.75 w-fit" variant="secondary">
         Workspace setup
-      </p>
+      </Badge>
       <h1
         className="m-0 font-display text-[clamp(36px,5.3vw,58px)] leading-[1.08] font-semibold tracking-[-3px] max-[1050px]:text-[clamp(36px,5vw,52px)] max-[760px]:text-[clamp(36px,9vw,52px)] max-[760px]:tracking-[-2.7px]"
         id="page-title"
@@ -18,6 +21,6 @@ export default function HomePage() {
         The application shell is ready to grow. Authentication, live recruiting
         data, and workflow screens will arrive in separate steps.
       </p>
-    </section>
+    </Card>
   );
 }
