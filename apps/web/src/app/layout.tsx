@@ -17,6 +17,7 @@ export const metadata: Metadata = {
 
 import { Header } from "@/components/layout/header";
 import { TopNotificationBar } from "@/components/layout/top-notification-bar";
+import { GlobalFooter } from "@/components/layout/global-footer";
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
@@ -27,6 +28,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
         <main className="flex-1 flex flex-col">
           {children}
         </main>
+        <GlobalFooter />
       </body>
     </html>
   );
