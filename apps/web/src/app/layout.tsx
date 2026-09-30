@@ -15,7 +15,8 @@ export const metadata: Metadata = {
   },
 };
 
-import { Header, TopNotificationBar } from "@/components/layout/header";
+import { Header } from "@/components/layout/header";
+import { TopNotificationBar } from "@/components/layout/top-notification-bar";
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
