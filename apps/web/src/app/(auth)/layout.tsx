@@ -7,9 +7,9 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
       {/* Left Pane - Branding/Visual */}
       <div className="hidden lg:flex flex-1 relative bg-[#0A1C2B]">
         <div className="absolute inset-0 bg-linear-to-t from-[#0A1C2B] via-transparent to-transparent z-10" />
-        
+
         {/* Subtle background pattern/gradient */}
-        <div className="absolute inset-0 opacity-20 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-sr-mint via-sr-green to-transparent" />
+        <div className="absolute inset-0 opacity-20 bg-[radial-gradient(ellipse_at_top_right,var(--tw-gradient-stops))] from-sr-mint via-sr-green to-transparent" />
 
         <div className="absolute inset-0 flex flex-col justify-end p-16 z-20 text-white">
           <Link href="/" className="flex items-center gap-2 mb-12 hover:opacity-80 transition-opacity">
