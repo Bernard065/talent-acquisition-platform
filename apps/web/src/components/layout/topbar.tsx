@@ -24,8 +24,8 @@ export const Topbar = ({ onMenuClick }: { onMenuClick?: () => void }) => {
         </svg>
         <Input 
           type="search" 
-          placeholder="Search..." 
-          className="pl-10 h-10 w-full bg-gray-50 border-transparent focus:bg-white focus:border-sr-mint focus:ring-1 focus:ring-sr-mint transition-all md:placeholder:text-transparent sm:placeholder:text-gray-400 placeholder:text-gray-400"
+          placeholder="Search candidates, jobs, or skills..." 
+          className="pl-10 h-10 w-full bg-gray-50 border-transparent focus:bg-white focus:border-sr-mint focus:ring-1 focus:ring-sr-mint transition-all placeholder:text-gray-400"
         />
       </div>
 
