@@ -44,7 +44,13 @@ export function Header() {
         {/* Left: Logo */}
         <div className="flex-shrink-0 z-50">
           <Link href="/" className="font-display font-bold text-xl lg:text-2xl tracking-tighter text-sr-text-blue flex items-center gap-2">
-            <span className="w-7 h-7 lg:w-8 lg:h-8 rounded bg-sr-green text-white flex items-center justify-center text-base lg:text-lg">M</span>
+            <span className="w-7 h-7 lg:w-8 lg:h-8 rounded bg-sr-green text-white flex items-center justify-center p-1.5">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full">
+                <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/>
+                <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/>
+                <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/>
+              </svg>
+            </span>
             MindHire
           </Link>
         </div>
