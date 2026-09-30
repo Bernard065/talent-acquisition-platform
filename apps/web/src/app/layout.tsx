@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -15,20 +14,11 @@ export const metadata: Metadata = {
   },
 };
 
-import { Header } from "@/components/layout/header";
-import { TopNotificationBar } from "@/components/layout/top-notification-bar";
-import { GlobalFooter } from "@/components/layout/global-footer";
-
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <html lang="en">
       <body className="flex flex-col min-h-screen">
-        <TopNotificationBar />
-        <Header />
-        <main className="flex-1 flex flex-col">
-          {children}
-        </main>
-        <GlobalFooter />
+        {children}
       </body>
     </html>
   );
