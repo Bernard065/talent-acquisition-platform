@@ -15,11 +15,17 @@ export const metadata: Metadata = {
   },
 };
 
+import { Header, TopNotificationBar } from "@/components/layout/header";
+
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <html lang="en">
-      <body>
-        {children}
+      <body className="flex flex-col min-h-screen">
+        <TopNotificationBar />
+        <Header />
+        <main className="flex-1 flex flex-col">
+          {children}
+        </main>
       </body>
     </html>
   );

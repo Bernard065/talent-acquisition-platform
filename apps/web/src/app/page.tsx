@@ -6,7 +6,7 @@ const HomePage = () => {
     <div className="min-h-screen p-12 bg-white flex flex-col items-center justify-center gap-8">
       <div className="text-center space-y-4 max-w-2xl">
         <h1 className="text-5xl font-display font-bold text-sr-text-blue tracking-tight">
-          SmartRecruiters UI Foundation
+          Talent Acquisition Platform
         </h1>
         <p className="text-xl text-sr-gray">
           The global theme colors, typography, and button components have been configured.
