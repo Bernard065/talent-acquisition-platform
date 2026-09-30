@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { ProductBenefits } from "@/components/home/product-benefits";
 import { PlatformEcosystem } from "@/components/home/platform-ecosystem";
 import { AIAssistant } from "@/components/home/ai-assistant";
+import { HelpfulResources } from "@/components/home/helpful-resources";
+import { CaseStudyHighlights } from "@/components/home/case-study-highlights";
 
 const HomePage = () => {
   return (
@@ -113,6 +115,12 @@ const HomePage = () => {
 
       {/* AI Assistant Section */}
       <AIAssistant />
+
+      {/* Helpful Resources Section */}
+      <HelpfulResources />
+
+      {/* Case Study Highlights Section */}
+      <CaseStudyHighlights />
     </div>
   );
 };

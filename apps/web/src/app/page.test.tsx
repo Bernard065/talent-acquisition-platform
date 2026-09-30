@@ -38,5 +38,16 @@ describe("home page scaffold", () => {
     expect(markup).toContain("without");
     expect(markup).toContain("the headaches");
     expect(markup).toContain("Meet Neural AI");
+
+    // Resources
+    expect(markup).toContain("We have helpful resources");
+    expect(markup).toContain("High-Volume Recruiting");
+    expect(markup).toContain("Enterprise Recruiting");
+    expect(markup).toContain("Explore All Recruiting Resources");
+
+    // Case Studies
+    expect(markup).toContain("Time to hire reduced from");
+    expect(markup).toContain("23 days to 9 days");
+    expect(markup).toContain("Read the full Vanguard story");
   });
 });
