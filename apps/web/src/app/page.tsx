@@ -2,6 +2,8 @@ import React from "react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { ProductBenefits } from "@/components/home/product-benefits";
+import { PlatformEcosystem } from "@/components/home/platform-ecosystem";
+import { AIAssistant } from "@/components/home/ai-assistant";
 
 const HomePage = () => {
   return (
@@ -105,6 +107,12 @@ const HomePage = () => {
 
       {/* Product Benefits Section */}
       <ProductBenefits />
+
+      {/* Platform Ecosystem Section */}
+      <PlatformEcosystem />
+
+      {/* AI Assistant Section */}
+      <AIAssistant />
     </div>
   );
 };
