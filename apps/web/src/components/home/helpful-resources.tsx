@@ -26,6 +26,7 @@ export const HelpfulResources = () => {
               src="/images/resource-high-volume.jpg"
               alt="High-Volume Recruiting"
               fill
+              sizes="(max-width: 768px) 100vw, 50vw"
               className="object-cover group-hover:scale-105 transition-transform duration-700"
             />
             {/* Gradient Overlay */}
@@ -54,6 +55,7 @@ export const HelpfulResources = () => {
               src="/images/resource-enterprise.jpg"
               alt="Enterprise Recruiting"
               fill
+              sizes="(max-width: 768px) 100vw, 50vw"
               className="object-cover group-hover:scale-105 transition-transform duration-700"
             />
             {/* Gradient Overlay */}

@@ -18,6 +18,7 @@ export const AIAssistant = () => {
                 alt="Neural AI Assistant"
                 width={800}
                 height={800}
+                priority
                 className="w-full h-auto object-cover"
               />
             </div>
