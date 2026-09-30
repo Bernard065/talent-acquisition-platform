@@ -44,12 +44,12 @@ export const JobFilters = ({
   return (
     <div className="flex flex-col gap-4">
       {/* Status Tabs */}
-      <div className="flex items-center gap-1 overflow-x-auto pb-1">
+      <div className="flex items-center gap-1 overflow-x-auto pb-1 -mx-1 px-1" style={{ scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}>
         {statuses.map((s) => (
           <button
             key={s.value}
             onClick={() => onStatusChange(s.value)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+            className={`px-4 py-2.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors shrink-0 ${
               activeStatus === s.value
                 ? "bg-sr-text-blue text-white"
                 : "text-gray-600 hover:bg-gray-100 hover:text-sr-text-blue"
@@ -80,7 +80,7 @@ export const JobFilters = ({
         <select
           value={activeDepartment}
           onChange={(e) => onDepartmentChange(e.target.value)}
-          className="h-10 px-4 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:border-sr-mint focus:ring-1 focus:ring-sr-mint transition-all cursor-pointer"
+          className="h-10 px-4 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:border-sr-mint focus:ring-1 focus:ring-sr-mint transition-all cursor-pointer w-full sm:w-auto"
         >
           {departments.map((dept) => (
             <option key={dept} value={dept}>

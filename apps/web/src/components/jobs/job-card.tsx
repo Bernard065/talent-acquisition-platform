@@ -17,8 +17,8 @@ export const JobCard = ({ job }: { job: Job }) => {
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
         {/* Left side */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3 mb-2">
-            <h3 className="text-base font-semibold text-sr-text-blue group-hover:text-sr-green transition-colors truncate">
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <h3 className="text-base font-semibold text-sr-text-blue group-hover:text-sr-green transition-colors break-words">
               {job.title}
             </h3>
             <JobStatusBadge status={job.status} />
@@ -61,7 +61,7 @@ export const JobCard = ({ job }: { job: Job }) => {
         </div>
 
         {/* Right side - Applicant counts */}
-        <div className="flex items-center gap-4 sm:gap-6 shrink-0">
+        <div className="flex items-center gap-4 sm:gap-6 shrink-0 pt-3 sm:pt-0 border-t sm:border-t-0 border-gray-100">
           <div className="text-center">
             <div className="text-xl font-bold text-sr-text-blue">{job.applicants}</div>
             <div className="text-xs text-gray-500">Applicants</div>
@@ -72,7 +72,7 @@ export const JobCard = ({ job }: { job: Job }) => {
               <div className="text-xs text-gray-500">New</div>
             </div>
           )}
-          <div className="hidden sm:flex items-center text-gray-300 group-hover:text-sr-green transition-colors">
+          <div className="hidden sm:flex items-center text-gray-300 group-hover:text-sr-green transition-colors ml-auto sm:ml-0">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
