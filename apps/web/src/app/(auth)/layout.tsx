@@ -3,7 +3,7 @@ import Link from "next/link";
 
 export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
-    <main className="flex-1 flex w-full h-screen overflow-hidden bg-white">
+    <main className="flex-1 flex w-full min-h-screen lg:h-screen lg:overflow-hidden bg-white">
       {/* Left Pane - Branding/Visual */}
       <div className="hidden lg:flex flex-1 relative bg-[#0A1C2B]">
         <div className="absolute inset-0 bg-linear-to-t from-[#0A1C2B] via-transparent to-transparent z-10" />
@@ -31,8 +31,8 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
       </div>
 
       {/* Right Pane - Form Content */}
-      <div className="flex-1 flex flex-col justify-center px-4 sm:px-6 lg:px-20 xl:px-24 h-full overflow-y-auto">
-        <div className="mx-auto w-full max-w-sm lg:w-96 py-12">
+      <div className="flex-1 flex flex-col justify-center px-4 sm:px-6 lg:px-20 xl:px-24 h-full lg:overflow-y-auto">
+        <div className="mx-auto w-full max-w-sm lg:w-96 py-12 lg:py-16">
           {children}
         </div>
       </div>
