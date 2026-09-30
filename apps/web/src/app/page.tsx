@@ -1,6 +1,7 @@
 import React from "react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
+import { ProductBenefits } from "@/components/home/product-benefits";
 
 const HomePage = () => {
   return (
@@ -101,6 +102,9 @@ const HomePage = () => {
           </div>
         </div>
       </section>
+
+      {/* Product Benefits Section */}
+      <ProductBenefits />
     </div>
   );
 };
