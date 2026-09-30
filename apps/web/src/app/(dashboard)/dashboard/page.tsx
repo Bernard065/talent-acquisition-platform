@@ -11,11 +11,11 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-sr-text-blue tracking-tight">Good morning, Sarah</h1>
+          <h1 className="text-2xl font-bold text-sr-text-blue tracking-tight">Good morning, Bernard</h1>
           <p className="text-sm text-gray-500 mt-1">Here is what&apos;s happening with your pipeline today.</p>
         </div>
         <div className="flex items-center gap-3">
-          <Button variant="outline" className="h-9 border-gray-200 text-gray-700 hover:bg-gray-50">
+          <Button variant="outline" className="h-9 border-gray-200 text-gray-700 hover:bg-gray-50 hover:text-gray-900">
             Customize
           </Button>
           <Button variant="secondary" className="h-9 bg-sr-mint hover:bg-sr-green text-sr-text-blue hover:text-white transition-colors">

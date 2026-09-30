@@ -104,11 +104,11 @@ export const Sidebar = () => {
       <div className="p-4 border-t border-gray-200">
         <div className="flex items-center gap-3 px-2 py-2">
           <div className="w-9 h-9 rounded-full bg-sr-mint text-sr-text-blue flex items-center justify-center font-bold text-sm">
-            SJ
+            BB
           </div>
           <div className="flex flex-col">
-            <span className="text-sm font-semibold text-sr-text-blue">Sarah Jenkins</span>
-            <span className="text-xs text-gray-500">sarah@acmecorp.com</span>
+            <span className="text-sm font-semibold text-sr-text-blue">Bernard Bebeni</span>
+            <span className="text-xs text-gray-500">bernard@acmecorp.com</span>
           </div>
         </div>
       </div>

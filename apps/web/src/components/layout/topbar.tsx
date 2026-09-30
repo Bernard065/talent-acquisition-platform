@@ -27,11 +27,6 @@ export const Topbar = () => {
           placeholder="Search candidates, jobs, or keywords..." 
           className="pl-10 h-10 w-full bg-gray-50 border-transparent focus:bg-white focus:border-sr-mint focus:ring-1 focus:ring-sr-mint transition-all"
         />
-        <div className="absolute right-3 hidden lg:flex items-center gap-1">
-          <kbd className="inline-flex h-5 items-center gap-1 rounded border bg-gray-100 px-1.5 font-mono text-[10px] font-medium text-gray-500 opacity-100">
-            <span className="text-xs">⌘</span>K
-          </kbd>
-        </div>
       </div>
 
       {/* Right Actions */}
@@ -54,7 +49,7 @@ export const Topbar = () => {
 
         {/* Mobile Profile Avatar */}
         <div className="md:hidden ml-2 w-8 h-8 rounded-full bg-sr-mint text-sr-text-blue flex items-center justify-center font-bold text-xs">
-          SJ
+          BB
         </div>
       </div>
     </header>
