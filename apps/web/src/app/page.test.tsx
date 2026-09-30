@@ -28,5 +28,15 @@ describe("home page scaffold", () => {
     expect(markup).toContain("Improve your time-to-hire");
     expect(markup).toContain("Reduce your admin work");
     expect(markup).toContain("Speed up your hiring");
+
+    // Platform Ecosystem
+    expect(markup).toContain("Mind");
+    expect(markup).toContain("The End-to-End Talent Operating System");
+
+    // AI Assistant
+    expect(markup).toContain("Hiring");
+    expect(markup).toContain("without");
+    expect(markup).toContain("the headaches");
+    expect(markup).toContain("Meet Neural AI");
   });
 });
