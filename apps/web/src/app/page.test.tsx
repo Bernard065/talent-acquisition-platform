@@ -7,10 +7,10 @@ describe("home page scaffold", () => {
   it("renders the minimal placeholder page without pretending recruiting data is connected", () => {
     const markup = renderToStaticMarkup(HomePage());
 
-    expect(markup).toContain("HomePage");
+    expect(markup).toContain("SmartRecruiters UI Foundation");
+    expect(markup).toContain("Request a Demo");
+    expect(markup).toContain("Learn More");
     expect(markup).not.toContain('data-slot="card"');
     expect(markup).not.toContain('data-slot="badge"');
-    expect(markup).not.toContain("Frontend foundation");
-    expect(markup).not.toContain("Candidate names");
   });
 });

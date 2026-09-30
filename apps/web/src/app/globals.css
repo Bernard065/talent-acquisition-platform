@@ -1,33 +1,19 @@
 @import "tailwindcss";
 
 @theme {
-  --color-ink: #1c302c;
-  --color-ink-soft: #52635e;
-  --color-copy-muted: #68766f;
-  --color-line: #e7ebe7;
-  --color-canvas: #f8f9f6;
-  --color-brand: #286a57;
-  --color-accent-dark: #1d5142;
-  --color-accent-pale: #e8f1ec;
-  --color-surface: #ffffff;
-  --color-surface-soft: #f5f7f3;
-  --color-line-soft: #e3e9e3;
-  --color-control-line: #e2e8e3;
-  --color-disabled: #586862;
-  --color-disabled-marker: #95a39d;
-  --color-disabled-label: #6b7872;
-  --color-logo-mark: #f7f7ef;
-  --color-status-warning: #d4974b;
-  --color-status-warning-label: #795f41;
-  --color-breadcrumb-muted: #b6c0bb;
-  --color-control-muted: #64736d;
-  --color-icon-muted: #a4aea9;
-  --color-footer-muted: #65736d;
-  --color-focus: #8cb7a5;
-  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
-  --font-display: Inter, ui-sans-serif, system-ui, -apple-system,
-    BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --color-sr-green: #4BD675;
+  --color-sr-green-light: #35A754;
+  --color-sr-green-dark: #073114;
+  --color-sr-blue: #0841B0;
+  --color-sr-text-blue: #11314A;
+  --color-sr-mint: #DBF3E5;
+  --color-sr-dark-gray: #141414;
+  --color-sr-gray: #8C8C8C;
+  --color-sr-light-gray: #F3F4F6;
+  --color-button-shadow: #23874070;
+
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 @theme inline {
@@ -53,25 +39,25 @@
 
 @layer base {
   :root {
-    --background: var(--color-canvas);
-    --foreground: var(--color-ink);
-    --card: var(--color-surface);
-    --card-foreground: var(--color-ink);
-    --popover: var(--color-surface);
-    --popover-foreground: var(--color-ink);
-    --primary: var(--color-accent-dark);
+    --background: #ffffff;
+    --foreground: var(--color-sr-text-blue);
+    --card: #ffffff;
+    --card-foreground: var(--color-sr-text-blue);
+    --popover: #ffffff;
+    --popover-foreground: var(--color-sr-text-blue);
+    --primary: var(--color-sr-green);
     --primary-foreground: #ffffff;
-    --secondary: var(--color-accent-pale);
-    --secondary-foreground: var(--color-accent-dark);
-    --muted: var(--color-surface-soft);
-    --muted-foreground: var(--color-copy-muted);
-    --accent: var(--color-accent-pale);
-    --accent-foreground: var(--color-accent-dark);
+    --secondary: var(--color-sr-mint);
+    --secondary-foreground: var(--color-sr-text-blue);
+    --muted: var(--color-sr-light-gray);
+    --muted-foreground: var(--color-sr-gray);
+    --accent: var(--color-sr-light-gray);
+    --accent-foreground: var(--color-sr-text-blue);
     --destructive: #b42318;
-    --border: var(--color-line);
-    --input: var(--color-control-line);
-    --ring: var(--color-focus);
-    --radius: 0.625rem;
+    --border: #e5e7eb;
+    --input: #e5e7eb;
+    --ring: var(--color-sr-green);
+    --radius: 0.5rem;
     color-scheme: light;
     font-synthesis: none;
     text-rendering: optimizeLegibility;
@@ -82,8 +68,8 @@
     min-width: 320px;
     min-height: 100vh;
     margin: 0;
-    color: var(--color-ink);
-    background: var(--color-canvas);
+    color: var(--foreground);
+    background: var(--background);
     font-family: var(--font-sans);
   }
 
@@ -93,7 +79,7 @@
   }
 
   a:focus-visible {
-    outline: 3px solid var(--color-focus);
+    outline: 3px solid var(--ring);
     outline-offset: 3px;
   }
 }
