@@ -1,17 +1,16 @@
 import React from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
 
 export const HelpfulResources = () => {
   return (
     <section className="w-full py-20 md:py-32 bg-[#F8FAFC]">
-      <div className="max-w-[1220px] mx-auto px-4 lg:px-4">
-        
+      <div className="max-w-305 mx-auto px-4 lg:px-4">
+
         {/* Header */}
         <div className="text-center max-w-2xl mx-auto mb-16">
           <p className="text-sm font-semibold uppercase tracking-widest text-sr-gray mb-4">
-            Whether you're a seasoned recruiter or hiring your first employee,
+            Whether you&apos;re a seasoned recruiter or hiring your first employee,
           </p>
           <h2 className="text-4xl md:text-5xl font-display font-light text-sr-text-blue tracking-tight">
             We have helpful resources <strong className="font-bold">just for you.</strong>
@@ -20,18 +19,18 @@ export const HelpfulResources = () => {
 
         {/* Resources Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-16">
-          
+
           {/* Resource 1 */}
-          <Link href="#" className="group relative rounded-3xl overflow-hidden block aspect-[4/3] md:aspect-[16/10] shadow-md hover:shadow-xl transition-shadow duration-300">
-            <Image 
-              src="/images/resource-high-volume.jpg" 
-              alt="High-Volume Recruiting" 
+          <Link href="#" className="group relative rounded-3xl overflow-hidden block aspect-4/3 md:aspect-16/10 shadow-md hover:shadow-xl transition-shadow duration-300">
+            <Image
+              src="/images/resource-high-volume.jpg"
+              alt="High-Volume Recruiting"
               fill
               className="object-cover group-hover:scale-105 transition-transform duration-700"
             />
             {/* Gradient Overlay */}
-            <div className="absolute inset-0 bg-gradient-to-t from-sr-dark-gray/90 via-sr-dark-gray/40 to-transparent"></div>
-            
+            <div className="absolute inset-0 bg-linear-to-t from-sr-dark-gray/90 via-sr-dark-gray/40 to-transparent"></div>
+
             {/* Content Overlay */}
             <div className="absolute inset-0 p-8 md:p-12 flex flex-col justify-end text-white">
               <h3 className="text-3xl md:text-4xl font-display font-bold mb-3">
@@ -50,16 +49,16 @@ export const HelpfulResources = () => {
           </Link>
 
           {/* Resource 2 */}
-          <Link href="#" className="group relative rounded-3xl overflow-hidden block aspect-[4/3] md:aspect-[16/10] shadow-md hover:shadow-xl transition-shadow duration-300">
-            <Image 
-              src="/images/resource-enterprise.jpg" 
-              alt="Enterprise Recruiting" 
+          <Link href="#" className="group relative rounded-3xl overflow-hidden block aspect-4/3 md:aspect-16/10 shadow-md hover:shadow-xl transition-shadow duration-300">
+            <Image
+              src="/images/resource-enterprise.jpg"
+              alt="Enterprise Recruiting"
               fill
               className="object-cover group-hover:scale-105 transition-transform duration-700"
             />
             {/* Gradient Overlay */}
-            <div className="absolute inset-0 bg-gradient-to-t from-sr-dark-gray/90 via-sr-dark-gray/40 to-transparent"></div>
-            
+            <div className="absolute inset-0 bg-linear-to-t from-sr-dark-gray/90 via-sr-dark-gray/40 to-transparent"></div>
+
             {/* Content Overlay */}
             <div className="absolute inset-0 p-8 md:p-12 flex flex-col justify-end text-white">
               <h3 className="text-3xl md:text-4xl font-display font-bold mb-3">
