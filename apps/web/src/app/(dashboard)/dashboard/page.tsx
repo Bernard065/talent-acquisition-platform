@@ -14,11 +14,11 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-bold text-sr-text-blue tracking-tight">Good morning, Bernard</h1>
           <p className="text-sm text-gray-500 mt-1">Here is what&apos;s happening with your pipeline today.</p>
         </div>
-        <div className="flex items-center gap-3">
-          <Button variant="outline" className="h-9 border-gray-200 text-gray-700 hover:bg-gray-50 hover:text-gray-900">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mt-4 sm:mt-0 w-full sm:w-auto">
+          <Button variant="outline" className="h-9 border-gray-200 text-gray-700 hover:bg-gray-50 hover:text-gray-900 w-full sm:w-auto">
             Customize
           </Button>
-          <Button variant="secondary" className="h-9 bg-sr-mint hover:bg-sr-green text-sr-text-blue hover:text-white transition-colors">
+          <Button variant="secondary" className="h-9 bg-sr-mint hover:bg-sr-green text-sr-text-blue hover:text-white transition-colors w-full sm:w-auto">
             Share Report
           </Button>
         </div>

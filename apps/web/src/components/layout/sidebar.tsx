@@ -62,17 +62,24 @@ const navigation = [
   },
 ];
 
-export const Sidebar = () => {
+export const Sidebar = ({ onClose }: { onClose?: () => void }) => {
   const pathname = usePathname();
 
   return (
-    <aside className="w-64 border-r border-gray-200 bg-white flex flex-col h-full sticky top-0 hidden md:flex">
+    <aside className="w-64 border-r border-gray-200 bg-white flex flex-col h-full h-[100dvh]">
       {/* Brand */}
-      <div className="h-16 flex items-center px-6 border-b border-gray-200">
+      <div className="h-16 flex items-center justify-between px-6 border-b border-gray-200 shrink-0">
         <Link href="/" className="flex items-center gap-2 group">
           <svg className="h-7 w-7 text-sr-green transition-colors" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/><path d="M17.599 6.5a3 3 0 0 0 .399-1.375"/></svg>
           <span className="font-display font-bold text-xl tracking-tight text-sr-text-blue">MindHire</span>
         </Link>
+        {onClose && (
+          <button onClick={onClose} className="md:hidden text-gray-500 hover:text-sr-text-blue p-1">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Navigation */}
