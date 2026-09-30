@@ -5,8 +5,8 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "Talent Acquisition Platform",
-    template: "%s · Talent Acquisition Platform",
+    default: "MindHire",
+    template: "%s · MindHire",
   },
   description: "A secure workspace for the end-to-end hiring lifecycle.",
   robots: {

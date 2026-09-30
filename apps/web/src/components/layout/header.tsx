@@ -32,8 +32,8 @@ export function Header() {
         {/* Left: Logo */}
         <div className="flex-shrink-0">
           <Link href="/" className="font-display font-bold text-2xl tracking-tighter text-sr-text-blue flex items-center gap-2">
-            <span className="w-8 h-8 rounded bg-sr-green text-white flex items-center justify-center text-lg">T</span>
-            Talent Acquisition Platform
+            <span className="w-8 h-8 rounded bg-sr-green text-white flex items-center justify-center text-lg">M</span>
+            MindHire
           </Link>
         </div>
 
