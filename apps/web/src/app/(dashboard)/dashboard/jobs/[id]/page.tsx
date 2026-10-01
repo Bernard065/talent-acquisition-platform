@@ -6,7 +6,7 @@ import { JobStatusBadge } from "@/components/jobs/job-status-badge";
 
 export default async function JobPipelinePage(props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
-  const jobId = params.id;
+  const _jobId = params.id;
   
   // In a real app, fetch job details based on ID (using jobId). 
   // For now, we'll mock a job title based on the candidates we have.
