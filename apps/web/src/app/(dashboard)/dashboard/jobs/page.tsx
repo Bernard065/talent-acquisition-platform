@@ -6,6 +6,7 @@ import { mockJobs } from "@/lib/mock-jobs";
 import type { JobStatus } from "@/lib/mock-jobs";
 import { JobFilters } from "@/components/jobs/job-filters";
 import { JobCard } from "@/components/jobs/job-card";
+import Link from "next/link";
 
 export default function JobsPage() {
   const [activeStatus, setActiveStatus] = useState<JobStatus | "all">("all");
@@ -39,11 +40,14 @@ export default function JobsPage() {
         <Button
           variant="secondary"
           className="h-10 bg-sr-mint hover:bg-sr-green text-sr-text-blue hover:text-white transition-colors font-semibold gap-2 w-full sm:w-auto"
+          asChild
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Create New Job
+          <Link href="/dashboard/jobs/new">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Create New Job
+          </Link>
         </Button>
       </div>
 

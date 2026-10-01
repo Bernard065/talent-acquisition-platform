@@ -3,6 +3,7 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import Link from "next/link";
 
 export const Topbar = ({ onMenuClick }: { onMenuClick?: () => void }) => {
   return (
@@ -31,11 +32,13 @@ export const Topbar = ({ onMenuClick }: { onMenuClick?: () => void }) => {
 
       {/* Right Actions */}
       <div className="flex items-center gap-2 lg:gap-4 shrink-0">
-        <Button variant="outline" className="hidden lg:flex h-9 border-gray-200 text-sr-text-blue hover:bg-gray-50 hover:text-sr-text-blue font-medium text-sm gap-2">
-          <svg className="w-4 h-4 text-sr-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          New Job
+        <Button variant="outline" className="hidden lg:flex h-9 border-gray-200 text-sr-text-blue hover:bg-gray-50 hover:text-sr-text-blue font-medium text-sm gap-2" asChild>
+          <Link href="/dashboard/jobs/new">
+            <svg className="w-4 h-4 text-sr-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            New Job
+          </Link>
         </Button>
         
         <div className="h-6 w-px bg-gray-200 hidden lg:block mx-1"></div>
