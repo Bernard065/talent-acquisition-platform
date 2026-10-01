@@ -19,7 +19,7 @@ dependencies = [
   "pydantic-settings>=2.7,<3.0",
   "pyjwt[crypto]>=2.13.0",
   "redis>=5.2,<6.0",
-  "sqlalchemy[asyncio]>=2.0,<3.0",
+  "sqlalchemy[asyncio]>=2.0,<2.1",
   "structlog>=24.4,<27.0",
   "uvicorn[standard]>=0.32,<1.0",
   "httpx>=0.28.1,<1.0",
@@ -58,6 +58,10 @@ asyncio_mode = "auto"
 
 asyncio_default_fixture_loop_scope = "function"
 
+filterwarnings = [
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated.*:Warning",
+]
+
 [tool.pyright]
 
 extraPaths = ["."]
@@ -81,6 +85,12 @@ strict = true
 warn_unreachable = true
 
 warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+
+module = "boto3"
+
+ignore_missing_imports = true
 
 [tool.pylint.main]
 

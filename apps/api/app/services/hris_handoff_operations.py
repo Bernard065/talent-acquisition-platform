@@ -107,7 +107,7 @@ def _decode_cursor(cursor: str) -> _Cursor:
     )
 
 
-def _base_statement(context: TenantContext) -> Select[tuple[HrisHandoff, HrisProvider]]:
+def _base_statement(context: TenantContext) -> Select:  # type: ignore[type-arg]
     return (
         select(HrisHandoff, HrisConnection.provider)
         .join(
@@ -176,11 +176,11 @@ async def list_hris_handoff_operations(
     ).limit(limit + 1)
 
     result = await session.execute(statement)
-    rows = result.all()
+    rows = result.tuples().all()
 
     operations = tuple(
-        HrisHandoffOperation(handoff=handoff, provider=provider)
-        for handoff, provider in rows[:limit]
+        HrisHandoffOperation(handoff=row[0], provider=row[1])
+        for row in rows[:limit]
     )
 
     next_cursor = (
@@ -206,10 +206,9 @@ async def get_hris_handoff_operation(
 
     statement = _base_statement(context).where(HrisHandoff.id == handoff_id)
     result = await session.execute(statement)
-    row = result.one_or_none()
+    row = result.tuples().one_or_none()
 
     if row is None:
         raise HrisHandoffNotFoundError("HRIS handoff not found.")
 
-    handoff, provider = row
-    return HrisHandoffOperation(handoff=handoff, provider=provider)
+    return HrisHandoffOperation(handoff=row[0], provider=row[1])
