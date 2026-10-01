@@ -3,6 +3,7 @@ import { MetricsSummary } from "@/components/analytics/metrics-summary";
 import { HiringFunnel } from "@/components/analytics/hiring-funnel";
 import { SourceOfHire } from "@/components/analytics/source-of-hire";
 import { DetailedPipeline } from "@/components/analytics/detailed-pipeline";
+import { ApplicationsChart } from "@/components/analytics/applications-chart";
 
 export const metadata = {
   title: "Analytics | MindHire",
@@ -36,6 +37,9 @@ export default function AnalyticsPage() {
 
       {/* Top Metrics Row */}
       <MetricsSummary />
+
+      {/* Interactive Trends Chart */}
+      <ApplicationsChart />
 
       {/* Main Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
