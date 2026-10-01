@@ -33,3 +33,10 @@ export interface PipelineReport {
   jobTitle: string;
   candidates: PipelineCandidate[];
 }
+
+export interface TimeSeriesData {
+  date: string;
+  applications: number;
+  interviews: number;
+  offers: number;
+}

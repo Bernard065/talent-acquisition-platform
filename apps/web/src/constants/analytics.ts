@@ -43,3 +43,20 @@ export const PIPELINE_REPORTS: import("@/types/analytics").PipelineReport[] = [
     ]
   }
 ];
+
+export const TRENDS_DATA: import("@/types/analytics").TimeSeriesData[] = [
+  { date: "Oct 1", applications: 120, interviews: 15, offers: 2 },
+  { date: "Oct 2", applications: 132, interviews: 18, offers: 3 },
+  { date: "Oct 3", applications: 101, interviews: 12, offers: 1 },
+  { date: "Oct 4", applications: 145, interviews: 22, offers: 4 },
+  { date: "Oct 5", applications: 190, interviews: 25, offers: 6 },
+  { date: "Oct 6", applications: 210, interviews: 30, offers: 5 },
+  { date: "Oct 7", applications: 175, interviews: 28, offers: 8 },
+  { date: "Oct 8", applications: 188, interviews: 35, offers: 7 },
+  { date: "Oct 9", applications: 220, interviews: 40, offers: 9 },
+  { date: "Oct 10", applications: 245, interviews: 42, offers: 12 },
+  { date: "Oct 11", applications: 270, interviews: 48, offers: 15 },
+  { date: "Oct 12", applications: 295, interviews: 55, offers: 18 },
+  { date: "Oct 13", applications: 310, interviews: 60, offers: 20 },
+  { date: "Oct 14", applications: 335, interviews: 68, offers: 22 },
+];
