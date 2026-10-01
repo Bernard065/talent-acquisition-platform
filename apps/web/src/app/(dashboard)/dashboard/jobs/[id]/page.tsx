@@ -4,11 +4,8 @@ import { KanbanBoard } from "@/components/jobs/kanban-board";
 import { mockCandidates } from "@/lib/mock-candidates";
 import { JobStatusBadge } from "@/components/jobs/job-status-badge";
 
-export default async function JobPipelinePage(props: { params: Promise<{ id: string }> }) {
-  const params = await props.params;
-  const _jobId = params.id;
-  
-  // In a real app, fetch job details based on ID (using jobId). 
+export default async function JobPipelinePage() {
+  // In a real app, fetch job details based on ID (using params.id). 
   // For now, we'll mock a job title based on the candidates we have.
   const jobTitle = "Senior Frontend Engineer";
   

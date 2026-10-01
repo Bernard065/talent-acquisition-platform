@@ -1,14 +1,17 @@
 "use client";
 
-import React, { useState, use } from "react";
+import React, { useState, use, useEffect } from "react";
 import Link from "next/link";
-import { mockJobs } from "@/lib/mock-jobs";
 import { notFound } from "next/navigation";
 import { ArrowLeft, UploadCloud, CheckCircle, Briefcase } from "lucide-react";
+import { fetchApi } from "@/lib/api-client";
+import type { PublicJobDetail } from "@/types/api";
 
 export default function ApplyPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
-  const job = mockJobs.find((j) => j.id === resolvedParams.id);
+  
+  const [job, setJob] = useState<PublicJobDetail | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -23,20 +26,42 @@ export default function ApplyPage({ params }: { params: Promise<{ id: string }> 
     coverLetter: ""
   });
 
-  if (!job) {
-    notFound();
-  }
+  useEffect(() => {
+    async function loadJob() {
+      try {
+        const data = await fetchApi<PublicJobDetail>(`/public/jobs/${resolvedParams.id}`);
+        setJob(data);
+      } catch {
+        notFound();
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadJob();
+  }, [resolvedParams.id]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     
-    // Simulate API submission
+    // Simulate API submission for now until we build the POST endpoint
     setTimeout(() => {
       setIsSubmitting(false);
       setIsSuccess(true);
     }, 1500);
   };
+
+  if (isLoading) {
+    return (
+      <div className="bg-gray-50 min-h-screen py-24 px-6 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-sr-text-blue"></div>
+      </div>
+    );
+  }
+
+  if (!job) {
+    return null;
+  }
 
   if (isSuccess) {
     return (
@@ -63,14 +88,14 @@ export default function ApplyPage({ params }: { params: Promise<{ id: string }> 
   return (
     <div className="bg-gray-50 min-h-screen pb-24">
       <div className="max-w-3xl mx-auto px-6 pt-12">
-        <Link href={`/careers/${job.id}`} className="inline-flex items-center gap-2 text-sm font-semibold text-gray-500 hover:text-sr-text-blue transition-colors mb-8">
+        <Link href={`/careers/${job.public_id}`} className="inline-flex items-center gap-2 text-sm font-semibold text-gray-500 hover:text-sr-text-blue transition-colors mb-8">
           <ArrowLeft className="w-4 h-4" /> Back to Job Description
         </Link>
         
         <div className="mb-10">
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Apply for {job.title}</h1>
           <p className="text-gray-500 mt-2 flex items-center gap-2">
-            <Briefcase className="w-4 h-4" /> {job.department} • {job.location}
+            {job.department && <><Briefcase className="w-4 h-4" /> {job.department} •</>} {job.location || "Remote"}
           </p>
         </div>
 
