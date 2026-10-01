@@ -2,10 +2,8 @@
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import cast
 
 from sqlalchemy import extract, select
-from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.functions import Function, count
 
@@ -272,9 +270,7 @@ async def get_recruiting_metrics(
         for source in sources
     )
 
-    time_to_hire_row = cast(
-        Row[tuple[int, float | None]],
-        (
+    time_to_hire_row: tuple[int, float | None] = (
             await session.execute(
                 select(
                     count(ApplicationStageHistory.id),
@@ -299,8 +295,7 @@ async def get_recruiting_metrics(
                     >= Application.applied_at,
                 )
             )
-        ).one(),
-    )
+        ).tuples().one()
 
     hired_count = int(time_to_hire_row[0] or 0)
     average_seconds = time_to_hire_row[1]

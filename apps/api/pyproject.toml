@@ -82,6 +82,12 @@ warn_unreachable = true
 
 warn_unused_ignores = true
 
+[[tool.mypy.overrides]]
+
+module = "boto3"
+
+ignore_missing_imports = true
+
 [tool.pylint.main]
 
 init-hook = "import sys; sys.path.insert(0, '.')"

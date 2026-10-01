@@ -135,7 +135,7 @@ async def search_consented_talent_pool(
         (await session.execute(
             statement.order_by(Candidate.created_at.desc(), Candidate.id.desc())
             .limit(limit + 1)
-        )).all()
+        )).tuples().all()
     )
     has_next_page = len(rows) > limit
     items = [TalentPoolSearchItem(candidate=row[0], consent_event=row[1]) for row in rows[:limit]]
@@ -155,7 +155,7 @@ async def search_consented_talent_pool(
 
 def _active_consented_candidate_statement(
     tenant_id: UUID,
-) -> Select[tuple[Candidate, CandidateTalentPoolConsentEvent]]:
+) -> Select:  # type: ignore[type-arg]
     """Build a query anchored to each candidate's latest consent event."""
     consent_event = aliased(CandidateTalentPoolConsentEvent)
     newer_event = aliased(CandidateTalentPoolConsentEvent)
