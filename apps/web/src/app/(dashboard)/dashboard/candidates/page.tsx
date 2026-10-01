@@ -1,13 +1,17 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { mockCandidates } from "@/lib/mock-candidates";
 import type { CandidateStage } from "@/lib/mock-candidates";
 import { CandidateFilters } from "@/components/candidates/candidate-filters";
 import { CandidateStageBadge } from "@/components/candidates/candidate-stage-badge";
 
+import { useRouter } from "next/navigation";
+
 export default function CandidatesPage() {
+  const router = useRouter();
   const [activeStage, setActiveStage] = useState<CandidateStage | "all">("all");
   const [activeDepartment, setActiveDepartment] = useState("All Departments");
   const [searchQuery, setSearchQuery] = useState("");
@@ -80,14 +84,16 @@ export default function CandidatesPage() {
               });
 
               return (
-                <div key={cand.id} className="p-4 hover:bg-gray-50 transition-colors">
+                <Link href={`/dashboard/candidates/${cand.id}`} key={cand.id} className="block p-4 hover:bg-gray-50 transition-colors">
                   <div className="flex items-start justify-between gap-3 mb-3">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-sr-mint text-sr-text-blue flex items-center justify-center font-bold text-sm shrink-0">
                         {cand.initials}
                       </div>
                       <div className="flex flex-col">
-                        <span className="font-semibold text-sr-text-blue">{cand.name}</span>
+                        <span className="font-semibold text-sr-text-blue hover:text-sr-green transition-colors">
+                          {cand.name}
+                        </span>
                         <span className="text-xs text-gray-500">{cand.email}</span>
                       </div>
                     </div>
@@ -122,7 +128,7 @@ export default function CandidatesPage() {
                       </svg>
                     </button>
                   </div>
-                </div>
+                </Link>
               );
             })
           ) : (
@@ -161,7 +167,11 @@ export default function CandidatesPage() {
                   });
 
                   return (
-                    <tr key={cand.id} className="hover:bg-gray-50 transition-colors group">
+                    <tr 
+                      key={cand.id} 
+                      className="hover:bg-gray-50 transition-colors group cursor-pointer"
+                      onClick={() => router.push(`/dashboard/candidates/${cand.id}`)}
+                    >
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className="w-9 h-9 rounded-full bg-sr-mint text-sr-text-blue flex items-center justify-center font-bold text-xs shrink-0">
@@ -199,7 +209,10 @@ export default function CandidatesPage() {
                         {appliedDate}
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <button className="text-gray-400 hover:text-sr-text-blue transition-colors p-1">
+                        <button 
+                          className="text-gray-400 hover:text-sr-text-blue transition-colors p-1"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z" />
                           </svg>
