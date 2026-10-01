@@ -22,3 +22,24 @@ export const SOURCE_OF_HIRE: SourceMetric[] = [
   { source: "Indeed", count: 3, percentage: 5 },
   { source: "Other", count: 1, percentage: 3 },
 ];
+
+export const PIPELINE_REPORTS: import("@/types/analytics").PipelineReport[] = [
+  {
+    jobId: "job-1",
+    jobTitle: "Senior Frontend Engineer",
+    candidates: [
+      { id: "c-1", name: "Sarah Chen", initials: "SC", stage: "Technical Interview", timeInStage: "2 days", matchScore: 94, status: "On Track" },
+      { id: "c-2", name: "Mike Kumar", initials: "MK", stage: "Final Round", timeInStage: "5 days", matchScore: 88, status: "Slipping" },
+      { id: "c-3", name: "Elena Rodriguez", initials: "ER", stage: "Screening", timeInStage: "1 day", matchScore: 91, status: "On Track" },
+      { id: "c-4", name: "David Kim", initials: "DK", stage: "Offer Extended", timeInStage: "8 days", matchScore: 96, status: "Stalled" },
+    ]
+  },
+  {
+    jobId: "job-2",
+    jobTitle: "Product Manager",
+    candidates: [
+      { id: "c-5", name: "Jessica Alba", initials: "JA", stage: "Culture Fit", timeInStage: "3 days", matchScore: 89, status: "On Track" },
+      { id: "c-6", name: "Tom Holland", initials: "TH", stage: "Screening", timeInStage: "4 days", matchScore: 82, status: "Slipping" },
+    ]
+  }
+];

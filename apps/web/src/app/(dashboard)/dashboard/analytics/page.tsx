@@ -2,6 +2,7 @@ import React from "react";
 import { MetricsSummary } from "@/components/analytics/metrics-summary";
 import { HiringFunnel } from "@/components/analytics/hiring-funnel";
 import { SourceOfHire } from "@/components/analytics/source-of-hire";
+import { DetailedPipeline } from "@/components/analytics/detailed-pipeline";
 
 export const metadata = {
   title: "Analytics | MindHire",
@@ -42,13 +43,7 @@ export default function AnalyticsPage() {
         <SourceOfHire />
       </div>
 
-      {/* Placeholder for future detailed table */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 flex items-center justify-center h-48 border-dashed">
-        <div className="text-center">
-          <h3 className="text-lg font-bold text-gray-400">Detailed Pipeline Report</h3>
-          <p className="text-sm text-gray-400 mt-1">Select specific jobs to view detailed candidate progression data.</p>
-        </div>
-      </div>
+      <DetailedPipeline />
     </div>
   );
 }
