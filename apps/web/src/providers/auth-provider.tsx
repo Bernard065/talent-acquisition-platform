@@ -66,10 +66,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = async (token: string) => {
-    // In a real implementation, we would send the token to a Next.js API route
-    // to set it as an httpOnly cookie.
-    // For now, we simulate this by making a request to our internal route.
     try {
+      // Send the token to our Next.js API route to be set as a secure httpOnly cookie
       await fetch("/api/auth/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
