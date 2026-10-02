@@ -13,7 +13,10 @@ import type { ApiErrorBody, HttpMethod } from "./types";
 // Configuration
 // ---------------------------------------------------------------------------
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const isServer = typeof window === "undefined";
+const API_BASE_URL = isServer
+  ? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
+  : ""; // Browser requests go to Next.js proxy to attach httpOnly cookies
 const API_PREFIX = "/api/v1";
 
 // ---------------------------------------------------------------------------
@@ -60,9 +63,26 @@ function buildHeaders(
     Accept: "application/json",
   };
 
-  const token = _getToken();
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
+  if (isServer) {
+    // In Server Components, pull the token directly from cookies
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { cookies } = require("next/headers");
+      const cookieStore = cookies();
+      const token = cookieStore.get("auth_token")?.value;
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+    } catch {
+      // Ignore errors if used outside of Next.js server context
+    }
+  } else {
+    // In the browser, the middleware will inject the token into the proxied request.
+    // We can also allow the token accessor as a fallback if set manually.
+    const token = _getToken();
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
   }
 
   if (MUTATING_METHODS.has(method) && idempotencyKey) {
