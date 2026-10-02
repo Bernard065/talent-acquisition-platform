@@ -16,7 +16,7 @@ import type { ApiErrorBody, HttpMethod } from "./types";
 const isServer = typeof window === "undefined";
 const API_BASE_URL = isServer
   ? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
-  : ""; // Browser requests go to Next.js proxy to attach httpOnly cookies
+  : window.location.origin; // Browser requests go to Next.js proxy to attach httpOnly cookies
 const API_PREFIX = "/api/v1";
 
 // ---------------------------------------------------------------------------
