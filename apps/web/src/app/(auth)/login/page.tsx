@@ -29,6 +29,7 @@ export default function LoginPage() {
       await login(token);
       router.push("/dashboard");
     } catch (err) {
+      console.error("Login attempt failed:", err);
       setError("Failed to login with this token. Check your network or the token validity.");
     } finally {
       setIsLoading(false);

@@ -35,6 +35,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(identity);
         }
       } catch (err) {
+        console.error("Auth init failed:", err);
         if (mounted) {
           setUser(null);
         }
