@@ -23,11 +23,11 @@ export default function CareersPage() {
             We are a team of builders, designers, and problem solvers. Join us in our mission to connect great talent with great opportunities.
           </p>
         </div>
-
+        
         {/* Decorative elements */}
         <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
-          <div className="absolute top-[-20%] right-[-10%] w-[50%] h-[150%] bg-blue-500/10 rotate-12 blur-3xl rounded-full" />
-          <div className="absolute top-[60%] left-[-10%] w-[40%] h-[80%] bg-emerald-500/10 -rotate-12 blur-3xl rounded-full" />
+          <div className="absolute -top-[20%] -right-[10%] w-[50%] h-[150%] bg-blue-500/10 rotate-12 blur-3xl rounded-full" />
+          <div className="absolute top-[60%] -left-[10%] w-[40%] h-[80%] bg-emerald-500/10 -rotate-12 blur-3xl rounded-full" />
         </div>
       </div>
 
@@ -40,8 +40,8 @@ export default function CareersPage() {
 
         <div className="grid grid-cols-1 gap-4">
           {activeJobs.map((job) => (
-            <Link
-              key={job.id}
+            <Link 
+              key={job.id} 
               href={`/careers/${job.id}`}
               className="bg-white border border-gray-200 rounded-xl p-6 sm:p-8 hover:border-sr-mint hover:shadow-md transition-all group flex flex-col sm:flex-row sm:items-center justify-between gap-6"
             >

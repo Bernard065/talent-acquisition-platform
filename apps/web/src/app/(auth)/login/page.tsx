@@ -2,39 +2,12 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 export default function LoginPage() {
-  const [token, setToken] = useState("");
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const { login } = useAuth();
-  const router = useRouter();
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!token) {
-      setError("Please enter a valid developer JWT.");
-      return;
-    }
-
-    setIsLoading(true);
-    setError("");
-
-    try {
-      await login(token);
-      router.push("/dashboard");
-    } catch (err) {
-      console.error("Login attempt failed:", err);
-      setError("Failed to login with this token. Check your network or the token validity.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const [showPassword, setShowPassword] = useState(false);
 
   return (
     <div className="flex flex-col gap-6">
@@ -47,35 +20,66 @@ export default function LoginPage() {
 
       <div className="flex flex-col gap-2 text-center lg:text-left mb-4">
         <h1 className="text-3xl font-semibold tracking-tight text-sr-text-blue">
-          Developer Login
+          Welcome back
         </h1>
         <p className="text-sm text-sr-gray">
-          Enter a valid developer JWT to authenticate against the local backend.
+          Enter your details below to log into your account
         </p>
       </div>
 
-      <form onSubmit={handleLogin} className="flex flex-col gap-5">
+      <form className="flex flex-col gap-5">
         <div className="grid gap-2">
-          <Label htmlFor="token">Bearer Token (JWT)</Label>
+          <Label htmlFor="email">Work Email</Label>
           <Input
-            id="token"
-            type="text"
-            placeholder="eyJhbGciOiJSUzI1NiIs..."
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
+            id="email"
+            type="email"
+            placeholder="m@example.com"
             required
             className="h-12"
           />
         </div>
+        <div className="grid gap-2">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="password">Password</Label>
+            <Link
+              href="/forgot-password"
+              className="text-sm text-sr-text-blue font-semibold hover:text-sr-green hover:underline transition-colors"
+            >
+              Forgot your password?
+            </Link>
+          </div>
+          <div className="relative">
+            <Input 
+              id="password" 
+              type={showPassword ? "text" : "password"} 
+              required 
+              className="h-12 pr-10"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+            >
+              {showPassword ? (
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                </svg>
+              ) : (
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+              )}
+            </button>
+          </div>
+        </div>
         
-        {error && <p className="text-sm text-red-500 font-medium">{error}</p>}
-
         <Button 
           type="submit" 
-          disabled={isLoading}
+          variant="secondary"
           className="w-full bg-sr-mint hover:bg-sr-green text-sr-text-blue hover:text-white h-12 text-base font-semibold mt-2 transition-colors"
         >
-          {isLoading ? "Signing in..." : "Sign In"}
+          Sign In
         </Button>
 
         {/* Divider */}
@@ -91,7 +95,7 @@ export default function LoginPage() {
         </div>
 
         {/* SSO Providers */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 opacity-50 pointer-events-none">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Button variant="outline" type="button" className="h-12 border-gray-200 hover:bg-gray-50 text-gray-900 hover:text-gray-900">
             <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
               <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
