@@ -11,7 +11,7 @@ from jwt import InvalidTokenError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authorization import TenantContext
-from app.core.security import JwtVerifier
+from app.core.security import JwtVerifier, TokenClaims
 from app.db.session import Database
 from app.domains.calendar.enums import CalendarProvider
 from app.services.abuse_control import PublicApplicationAbuseGuard
@@ -24,6 +24,10 @@ from app.services.hris_credentials import HrisCredentialVault
 from app.services.object_storage import ObjectStorage
 from app.services.offer_signature_callback_provider import (
     OfferSignatureCallbackVerifier,
+)
+from app.services.tenant_identity import (
+    Auth0OrganizationNotMappedError,
+    resolve_auth0_organization_tenant_id,
 )
 from app.services.webhook_secrets import WebhookSigningSecretVault
 
@@ -47,54 +51,6 @@ async def get_idempotency_key(
     return idempotency_key
 
 
-async def get_tenant_context(
-    request: Request,
-    credentials: Annotated[
-        HTTPAuthorizationCredentials | None,
-        Depends(bearer_scheme),
-    ],
-) -> TenantContext:
-    """Build caller context exclusively from verified access-token claims."""
-
-    if credentials is None or credentials.scheme.lower() != "bearer":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="missing bearer token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    cached_context = getattr(request.state, "verified_tenant_context", None)
-    if isinstance(cached_context, TenantContext):
-        structlog.contextvars.bind_contextvars(
-            tenant_id=str(cached_context.tenant_id),
-            subject=cached_context.subject,
-        )
-        return cached_context
-
-    request_id = request.headers.get("X-Request-ID", "unknown")
-    verifier: JwtVerifier = request.app.state.jwt_verifier
-
-    try:
-        context = await run_in_threadpool(
-            verifier.verify,
-            credentials.credentials,
-            request_id,
-        )
-    except InvalidTokenError:
-        logger.warning("authentication_failed", request_id=request_id)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="invalid access token",
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from None
-
-    structlog.contextvars.bind_contextvars(
-        tenant_id=str(context.tenant_id),
-        subject=context.subject,
-    )
-    return context
-
-
 async def get_db_session(request: Request) -> AsyncIterator[AsyncSession]:
     """Provide one database session for the current HTTP request."""
     database = getattr(request.app.state, "database", None)
@@ -115,6 +71,79 @@ async def get_db_session(request: Request) -> AsyncIterator[AsyncSession]:
         except Exception:
             await session.rollback()
             raise
+
+
+async def get_verified_token_claims(
+    request: Request,
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Depends(bearer_scheme),
+    ],
+) -> TokenClaims:
+    """Verify bearer credentials and return only the signed Auth0 claims."""
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="missing bearer token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    cached_claims = getattr(request.state, "verified_auth0_claims", None)
+    if isinstance(cached_claims, TokenClaims):
+        return cached_claims
+
+    request_id = request.headers.get("X-Request-ID", "unknown")
+    verifier: JwtVerifier = request.app.state.jwt_verifier
+    try:
+        claims = await run_in_threadpool(
+            verifier.verify,
+            credentials.credentials,
+        )
+    except InvalidTokenError:
+        logger.warning("authentication_failed", request_id=request_id)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid access token",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from None
+
+    request.state.verified_auth0_claims = claims
+    return claims
+
+
+async def get_tenant_context(
+    request: Request,
+    claims: Annotated[TokenClaims, Depends(get_verified_token_claims)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> TenantContext:
+    """Resolve the verified Auth0 Organization to an internal tenant."""
+    request_id = request.headers.get("X-Request-ID", "unknown")
+    try:
+        tenant_id = await resolve_auth0_organization_tenant_id(
+            session,
+            organization_id=claims.org_id,
+        )
+    except Auth0OrganizationNotMappedError:
+        logger.warning(
+            "authentication_organization_not_mapped",
+            request_id=request_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permission.",
+        ) from None
+
+    context = TenantContext(
+        tenant_id=tenant_id,
+        subject=claims.sub,
+        roles=frozenset(claims.roles),
+        request_id=request_id,
+    )
+    structlog.contextvars.bind_contextvars(
+        tenant_id=str(context.tenant_id),
+        subject=context.subject,
+    )
+    return context
 
 
 async def get_object_storage(request: Request) -> ObjectStorage:

@@ -245,22 +245,20 @@ async def enforce_request_rate_limit(request: Request) -> Response | None:
         if separator and scheme.lower() == "bearer" and token.strip():
             verifier = getattr(request.app.state, "jwt_verifier", None)
             if isinstance(verifier, JwtVerifier):
-                request_id = request.headers.get("X-Request-ID", "unknown")
                 try:
-                    tenant_context = await run_in_threadpool(
+                    claims = await run_in_threadpool(
                         verifier.verify,
                         token.strip(),
-                        request_id,
                     )
                 except InvalidTokenError:
                     # Keep invalid-token attempts under an IP bucket. The
                     # authentication dependency still returns the 401.
                     key_identity = f"invalid-auth:{client_address}"
                 else:
-                    request.state.verified_tenant_context = tenant_context
+                    request.state.verified_auth0_claims = claims
                     key_identity = (
-                        f"tenant:{tenant_context.tenant_id}"
-                        f":subject:{tenant_context.subject}"
+                        f"organization:{claims.org_id}"
+                        f":subject:{claims.sub}"
                     )
         else:
             key_identity = f"unauthenticated:{client_address}"
