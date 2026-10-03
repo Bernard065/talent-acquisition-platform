@@ -15,6 +15,12 @@ class Tenant(Base):
     """A tenant organization in the application."""
 
     __tablename__ = "tenants"
+    __table_args__ = (
+        UniqueConstraint(
+            "auth0_organization_id",
+            name="uq_tenants_auth0_organization_id",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
@@ -23,6 +29,10 @@ class Tenant(Base):
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     slug: Mapped[str] = mapped_column(String(63), nullable=False, unique=True)
+    auth0_organization_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
