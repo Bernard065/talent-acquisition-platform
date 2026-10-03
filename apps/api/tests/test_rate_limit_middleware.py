@@ -10,7 +10,7 @@ from prometheus_client import REGISTRY
 
 from app.core.authorization import Role, TenantContext
 from app.core.config import Settings
-from app.core.security import JwtVerifier
+from app.core.security import JwtVerifier, TokenClaims
 from app.main import create_app
 from app.observability.metrics import RATE_LIMIT_REQUESTS
 from app.services.rate_limiting import (
@@ -36,16 +36,15 @@ class _FakeJwtVerifier(JwtVerifier):
         super().__init__(_settings())
         self._context = context
 
-    def verify(self, token: str, request_id: str) -> TenantContext:
-        """Validate a fixed test token and return the configured tenant."""
+    def verify(self, token: str) -> TokenClaims:
+        """Validate a fixed test token and return configured Auth0 claims."""
         if token != "valid-test-token":  # noqa: S105
             raise InvalidTokenError("invalid token")
 
-        return TenantContext(
-            tenant_id=self._context.tenant_id,
-            subject=self._context.subject,
-            roles=self._context.roles,
-            request_id=request_id,
+        return TokenClaims(
+            sub=self._context.subject,
+            org_id=f"org_{self._context.tenant_id.hex}",
+            roles=set(self._context.roles),
         )
 
 

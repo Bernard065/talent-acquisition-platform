@@ -1,23 +1,22 @@
 """JWT authentication and security utilities."""
 
 from typing import Any
-from uuid import UUID
 
 import jwt
 from jwt import InvalidTokenError, PyJWKClient
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from app.core.authorization import Role, TenantContext
+from app.core.authorization import Role
 from app.core.config import Settings
 
 
 class TokenClaims(BaseModel):
-    """Claims contract agreed with the external identity provider."""
+    """Verified identity claims accepted from the Auth0 access token."""
 
     model_config = ConfigDict(extra="ignore")
 
     sub: str = Field(min_length=1)
-    tenant_id: UUID
+    org_id: str = Field(min_length=1, max_length=255)
     roles: set[Role] = Field(default_factory=set)
 
 
@@ -28,8 +27,8 @@ class JwtVerifier:
         self._settings = settings
         self._jwks_client = PyJWKClient(str(settings.jwt_jwks_url))
 
-    def verify(self, token: str, request_id: str) -> TenantContext:
-        """Verify an access token and return its authenticated tenant context."""
+    def verify(self, token: str) -> TokenClaims:
+        """Verify an access token and return its validated identity claims."""
         try:
             header: dict[str, Any] = jwt.get_unverified_header(token)
 
@@ -47,7 +46,7 @@ class JwtVerifier:
                 issuer=str(self._settings.jwt_issuer),
                 leeway=self._settings.jwt_leeway_seconds,
                 options={
-                    "require": ["exp", "iat", "iss", "aud", "sub", "tenant_id"],
+                    "require": ["exp", "iat", "iss", "aud", "sub", "org_id"],
                 },
             )
 
@@ -56,9 +55,4 @@ class JwtVerifier:
         except (InvalidTokenError, ValidationError) as error:
             raise InvalidTokenError("invalid access token") from error
 
-        return TenantContext(
-            tenant_id=claims.tenant_id,
-            subject=claims.sub,
-            roles=frozenset(claims.roles),
-            request_id=request_id,
-        )
+        return claims
