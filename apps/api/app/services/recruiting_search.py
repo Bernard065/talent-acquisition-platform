@@ -394,16 +394,17 @@ async def search_application_pipeline(
     for application in page.items:
         candidate = candidates.get(application.candidate_id)
         requisition_title = requisitions.get(application.requisition_id)
-        candidate_is_active = (
-            candidate is not None and candidate[2] is CandidatePrivacyStatus.ACTIVE
-        )
+        if candidate is not None and candidate[2] is CandidatePrivacyStatus.ACTIVE:
+            candidate_name = candidate[0]
+            candidate_email = candidate[1]
+        else:
+            candidate_name = "Candidate unavailable"
+            candidate_email = None
         records.append(
             ApplicationPipelineRecord(
                 application=application,
-                candidate_name=(
-                    candidate[0] if candidate_is_active else "Candidate unavailable"
-                ),
-                candidate_email=(candidate[1] if candidate_is_active else None),
+                candidate_name=candidate_name,
+                candidate_email=candidate_email,
                 requisition_title=requisition_title or "Job unavailable",
             )
         )
