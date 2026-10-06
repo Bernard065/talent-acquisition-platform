@@ -38,8 +38,26 @@ export default function JobsPage() {
   }, []);
 
   useEffect(() => {
-    if (sessionStatus === "authenticated") void loadPostings();
-  }, [sessionStatus, loadPostings]);
+    if (sessionStatus !== "authenticated") return;
+
+    let isCurrent = true;
+    void listJobPostings({ limit: 100 })
+      .then((result) => {
+        if (!isCurrent) return;
+        setPostings(result.items);
+        setNextCursor(result.next_cursor);
+      })
+      .catch(() => {
+        if (isCurrent) setError("We couldn’t load jobs from your workspace. Please try again.");
+      })
+      .finally(() => {
+        if (isCurrent) setIsLoading(false);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [sessionStatus]);
 
   const departments = useMemo(
     () => Array.from(new Set(postings.map((posting) => posting.department).filter((value): value is string => Boolean(value)))).sort(),

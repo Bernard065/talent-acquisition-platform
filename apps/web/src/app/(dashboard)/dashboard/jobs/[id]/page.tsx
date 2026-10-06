@@ -30,8 +30,26 @@ export default function JobPostingPage() {
   }, [id]);
 
   useEffect(() => {
-    if (sessionStatus === "authenticated") void loadPosting();
-  }, [sessionStatus, loadPosting]);
+    if (sessionStatus !== "authenticated") return;
+
+    let isCurrent = true;
+    void getJobPosting(id)
+      .then((result) => {
+        if (isCurrent) setPosting(result);
+      })
+      .catch(() => {
+        if (isCurrent) {
+          setError("We couldn’t load this job posting. Check your access and try again.");
+        }
+      })
+      .finally(() => {
+        if (isCurrent) setIsLoading(false);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [sessionStatus, id]);
 
   async function changePublication() {
     if (!posting) return;
