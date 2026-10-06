@@ -1,49 +1,58 @@
-import React from "react";
-import { StatsCards } from "@/components/dashboard/stats-cards";
-import { RecentActivity } from "@/components/dashboard/recent-activity";
-import { UpcomingInterviews } from "@/components/dashboard/upcoming-interviews";
+"use client";
 
-export const metadata = {
-  title: "Dashboard | MindHire",
-  description: "Recruiter overview and hiring pipeline metrics",
-};
+import Link from "next/link";
+import { useSession } from "next-auth/react";
 
 export default function DashboardPage() {
-  const todayFormatted = new Intl.DateTimeFormat("en-US", {
-    weekday: "long",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(new Date());
+  const { data: session } = useSession();
+  const name = session?.user?.name?.trim().split(/\s+/)[0];
 
   return (
-    <div className="flex flex-col gap-6 max-w-[1600px] mx-auto w-full">
-      {/* 1. Welcome Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-sr-text-blue tracking-tight">
-            Welcome back, Bernard
-          </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Here&apos;s what&apos;s happening with your hiring pipeline
-          </p>
-        </div>
-        <div className="inline-flex items-center gap-2 self-start sm:self-auto bg-white px-3.5 py-2 rounded-xl border border-gray-200 shadow-sm text-xs sm:text-sm font-medium text-gray-600">
-          <svg className="w-4 h-4 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-          </svg>
-          <span>{todayFormatted}</span>
-        </div>
-      </div>
+    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-8">
+      <header>
+        <p className="text-sm font-medium text-gray-500">Recruiter workspace</p>
+        <h1 className="mt-1 text-2xl font-bold tracking-tight text-sr-text-blue">
+          {name ? `Welcome, ${name}` : "Welcome to MindHire"}
+        </h1>
+        <p className="mt-2 text-sm text-gray-600">
+          Manage hiring requests and move approved roles into recruiting.
+        </p>
+      </header>
 
-      {/* 2. Stats Cards Row */}
-      <StatsCards />
+      <section aria-labelledby="get-started-heading">
+        <h2 id="get-started-heading" className="text-lg font-semibold text-sr-text-blue">
+          Hiring workspace
+        </h2>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <Link
+            href="/dashboard/requisitions"
+            className="group rounded-xl border border-gray-200 bg-white p-6 transition-colors hover:border-sr-green"
+          >
+            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Plan</span>
+            <h3 className="mt-2 text-lg font-semibold text-sr-text-blue group-hover:text-sr-green">
+              Requisitions
+            </h3>
+            <p className="mt-2 text-sm leading-6 text-gray-600">
+              Create hiring requests and track their approval status.
+            </p>
+            <span className="mt-4 inline-block text-sm font-semibold text-sr-text-blue">View requisitions →</span>
+          </Link>
 
-      {/* 3. Two-Column Layout Below Stats */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        <RecentActivity />
-        <UpcomingInterviews />
-      </div>
+          <Link
+            href="/dashboard/jobs"
+            className="group rounded-xl border border-gray-200 bg-white p-6 transition-colors hover:border-sr-green"
+          >
+            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Recruit</span>
+            <h3 className="mt-2 text-lg font-semibold text-sr-text-blue group-hover:text-sr-green">
+              Job postings
+            </h3>
+            <p className="mt-2 text-sm leading-6 text-gray-600">
+              Review draft, published, and expired job postings for your workspace.
+            </p>
+            <span className="mt-4 inline-block text-sm font-semibold text-sr-text-blue">View job postings →</span>
+          </Link>
+        </div>
+      </section>
     </div>
   );
 }
