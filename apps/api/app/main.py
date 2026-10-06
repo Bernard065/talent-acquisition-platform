@@ -61,6 +61,7 @@ from app.api.v1.requisitions import router as requisitions_router
 from app.api.v1.webhooks import (
     router as webhooks_router,  # pyright: ignore[reportAttributeAccessIssue]
 )
+from app.api.v1.workspace_invitations import router as workspace_invitations_router
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.core.rate_limit_middleware import enforce_request_rate_limit
@@ -381,6 +382,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application.include_router(
         identity_router,
+        prefix=active_settings.api_prefix,
+    )
+
+    application.include_router(
+        workspace_invitations_router,
         prefix=active_settings.api_prefix,
     )
 

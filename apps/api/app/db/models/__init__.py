@@ -28,7 +28,7 @@ from app.db.models.candidate_retention_review import CandidateRetentionReview
 from app.db.models.candidate_talent_pool_consent import CandidateTalentPoolConsentEvent
 from app.db.models.hris import HrisConnection, HrisHandoff
 from app.db.models.idempotency import IdempotencyRecord
-from app.db.models.identity import Tenant, User, UserRoleAssignment
+from app.db.models.identity import Tenant, User, UserRoleAssignment, WorkspaceInvitation
 from app.db.models.interview import InterviewParticipant, InterviewSession
 from app.db.models.interview_feedback import InterviewFeedback
 from app.db.models.interview_session_lifecycle import (
@@ -114,6 +114,7 @@ __all__ = [
     "Tenant",
     "User",
     "UserRoleAssignment",
+    "WorkspaceInvitation",
     "WebhookDelivery",
     "WebhookEndpoint",
     "WebhookEvent",
