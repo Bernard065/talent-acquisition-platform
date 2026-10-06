@@ -1,40 +1,69 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
-import { mockJobs } from "@/lib/mock-jobs";
-import type { JobStatus } from "@/lib/mock-jobs";
 import { JobFilters } from "@/components/jobs/job-filters";
 import { JobCard } from "@/components/jobs/job-card";
-import Link from "next/link";
+import { listJobPostings } from "@/lib/api/services/jobs";
+import type { JobPostingResponse, JobPostingStatus } from "@/types/api/jobs";
 
 export default function JobsPage() {
-  const [activeStatus, setActiveStatus] = useState<JobStatus | "all">("all");
+  const { status: sessionStatus } = useSession();
+  const [postings, setPostings] = useState<JobPostingResponse[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [activeStatus, setActiveStatus] = useState<JobPostingStatus | "all">("all");
   const [activeDepartment, setActiveDepartment] = useState("All Departments");
   const [searchQuery, setSearchQuery] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const filteredJobs = useMemo(() => {
-    return mockJobs.filter((job) => {
-      const matchesStatus = activeStatus === "all" || job.status === activeStatus;
-      const matchesDepartment =
-        activeDepartment === "All Departments" || job.department === activeDepartment;
-      const matchesSearch =
-        searchQuery === "" ||
-        job.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        job.department.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        job.location.toLowerCase().includes(searchQuery.toLowerCase());
+  const loadPostings = useCallback(async (cursor?: string) => {
+    setError(null);
+    if (cursor) setIsLoadingMore(true);
+    else setIsLoading(true);
+
+    try {
+      const result = await listJobPostings({ limit: 100, cursor });
+      setPostings((current) => cursor ? [...current, ...result.items] : result.items);
+      setNextCursor(result.next_cursor);
+    } catch {
+      setError("We couldn’t load jobs from your workspace. Please try again.");
+    } finally {
+      setIsLoading(false);
+      setIsLoadingMore(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (sessionStatus === "authenticated") void loadPostings();
+  }, [sessionStatus, loadPostings]);
+
+  const departments = useMemo(
+    () => Array.from(new Set(postings.map((posting) => posting.department).filter((value): value is string => Boolean(value)))).sort(),
+    [postings],
+  );
+
+  const filteredPostings = useMemo(() => {
+    const query = searchQuery.trim().toLocaleLowerCase();
+    return postings.filter((posting) => {
+      const matchesStatus = activeStatus === "all" || posting.status === activeStatus;
+      const matchesDepartment = activeDepartment === "All Departments" || posting.department === activeDepartment;
+      const matchesSearch = !query || [posting.title, posting.department, posting.location]
+        .some((value) => value?.toLocaleLowerCase().includes(query));
       return matchesStatus && matchesDepartment && matchesSearch;
     });
-  }, [activeStatus, activeDepartment, searchQuery]);
+  }, [postings, activeStatus, activeDepartment, searchQuery]);
 
   return (
     <div className="flex flex-col gap-6 max-w-[1600px] mx-auto w-full">
-      {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-sr-text-blue tracking-tight">Jobs</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Manage your open positions and track applicants
+            Manage job postings created from approved requisitions
           </p>
         </div>
         <Button
@@ -43,15 +72,12 @@ export default function JobsPage() {
           asChild
         >
           <Link href="/dashboard/jobs/new">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Create New Job
+            <span aria-hidden="true">+</span>
+            Create requisition
           </Link>
         </Button>
       </div>
 
-      {/* Filters */}
       <JobFilters
         onStatusChange={setActiveStatus}
         onDepartmentChange={setActiveDepartment}
@@ -59,32 +85,55 @@ export default function JobsPage() {
         activeStatus={activeStatus}
         activeDepartment={activeDepartment}
         searchQuery={searchQuery}
-        totalCount={mockJobs.length}
-        filteredCount={filteredJobs.length}
+        totalCount={postings.length}
+        filteredCount={filteredPostings.length}
+        departments={departments}
       />
 
-      {/* Job Cards List */}
-      <div className="flex flex-col gap-3">
-        {filteredJobs.length > 0 ? (
-          filteredJobs.map((job) => <JobCard key={job.id} job={job} />)
-        ) : (
-          <div className="bg-white rounded-xl border border-dashed border-gray-300 p-12 text-center">
-            <div className="mx-auto w-14 h-14 bg-gray-50 rounded-full flex items-center justify-center mb-4">
-              <svg className="w-7 h-7 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-            </div>
-            <h3 className="text-base font-semibold text-sr-text-blue mb-1">No jobs found</h3>
-            <p className="text-sm text-gray-500">
-              Try adjusting your search or filters to find what you&apos;re looking for.
-            </p>
+      {error ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-8 text-center">
+          <p className="text-sm text-red-800">{error}</p>
+          <Button className="mt-4" variant="outline" onClick={() => void loadPostings()}>
+            Try again
+          </Button>
+        </div>
+      ) : isLoading ? (
+        <div className="rounded-xl border border-gray-200 bg-white p-8 text-sm text-gray-500" aria-live="polite">
+          Loading jobs…
+        </div>
+      ) : filteredPostings.length ? (
+        <>
+          <div className="flex flex-col gap-3">
+            {filteredPostings.map((posting) => <JobCard key={posting.id} job={posting} />)}
           </div>
-        )}
-      </div>
+          {nextCursor && (
+            <div className="flex justify-center">
+              <Button variant="outline" disabled={isLoadingMore} onClick={() => void loadPostings(nextCursor)}>
+                {isLoadingMore ? "Loading…" : "Load more jobs"}
+              </Button>
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="rounded-xl border border-dashed border-gray-300 bg-white p-12 text-center">
+          <h2 className="text-base font-semibold text-sr-text-blue mb-1">
+            {postings.length ? "No jobs match these filters" : "No job postings yet"}
+          </h2>
+          <p className="text-sm text-gray-500">
+            {postings.length
+              ? "Adjust your search or filters to see more results."
+              : "Create a requisition and turn it into a job posting when it is approved."}
+          </p>
+          {!postings.length && (
+            <Button className="mt-4" variant="outline" asChild>
+              <Link href="/dashboard/jobs/new">Create a requisition</Link>
+            </Button>
+          )}
+        </div>
+      )}
 
-      {/* Results count on mobile */}
       <div className="text-sm text-gray-500 text-center lg:hidden">
-        Showing {filteredJobs.length} of {mockJobs.length} jobs
+        Showing {filteredPostings.length} of {postings.length} jobs
       </div>
     </div>
   );

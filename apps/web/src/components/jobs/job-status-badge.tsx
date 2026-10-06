@@ -1,16 +1,16 @@
-import type { JobStatus } from "@/lib/mock-jobs";
+import type { JobPostingStatus } from "@/types/api/jobs";
 
-const statusConfig: Record<JobStatus, { label: string; className: string }> = {
-  active: {
-    label: "Active",
+const statusConfig: Record<JobPostingStatus, { label: string; className: string }> = {
+  published: {
+    label: "Published",
     className: "bg-green-50 text-green-700 border-green-200",
   },
-  paused: {
-    label: "Paused",
+  unpublished: {
+    label: "Unpublished",
     className: "bg-amber-50 text-amber-700 border-amber-200",
   },
-  closed: {
-    label: "Closed",
+  expired: {
+    label: "Expired",
     className: "bg-gray-100 text-gray-600 border-gray-200",
   },
   draft: {
@@ -19,7 +19,7 @@ const statusConfig: Record<JobStatus, { label: string; className: string }> = {
   },
 };
 
-export const JobStatusBadge = ({ status }: { status: JobStatus }) => {
+export const JobStatusBadge = ({ status }: { status: JobPostingStatus }) => {
   const config = statusConfig[status];
   return (
     <span
@@ -27,11 +27,11 @@ export const JobStatusBadge = ({ status }: { status: JobStatus }) => {
     >
       <span
         className={`w-1.5 h-1.5 rounded-full mr-1.5 ${
-          status === "active"
+          status === "published"
             ? "bg-green-500"
-            : status === "paused"
+            : status === "unpublished"
               ? "bg-amber-500"
-              : status === "closed"
+              : status === "expired"
                 ? "bg-gray-400"
                 : "bg-blue-500"
         }`}
