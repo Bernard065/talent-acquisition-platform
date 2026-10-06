@@ -46,8 +46,28 @@ export default function RequisitionsPage() {
   }, []);
 
   useEffect(() => {
-    if (sessionStatus === "authenticated") void loadRequisitions();
-  }, [sessionStatus, loadRequisitions]);
+    if (sessionStatus !== "authenticated") return;
+
+    let isCurrent = true;
+    void listRequisitions({ limit: 100 })
+      .then((result) => {
+        if (!isCurrent) return;
+        setRequisitions(result.items);
+        setNextCursor(result.next_cursor ?? null);
+      })
+      .catch(() => {
+        if (isCurrent) {
+          setError("We couldn’t load requisitions from your workspace. Please try again.");
+        }
+      })
+      .finally(() => {
+        if (isCurrent) setIsLoading(false);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [sessionStatus]);
 
   return (
     <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6">
