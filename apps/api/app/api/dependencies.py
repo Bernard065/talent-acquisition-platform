@@ -26,8 +26,8 @@ from app.services.offer_signature_callback_provider import (
     OfferSignatureCallbackVerifier,
 )
 from app.services.tenant_identity import (
-    Auth0OrganizationNotMappedError,
-    resolve_auth0_organization_tenant_id,
+    IdentityProviderOrganizationNotMappedError,
+    resolve_identity_provider_organization_tenant_id,
 )
 from app.services.webhook_secrets import WebhookSigningSecretVault
 
@@ -80,7 +80,7 @@ async def get_verified_token_claims(
         Depends(bearer_scheme),
     ],
 ) -> TokenClaims:
-    """Verify bearer credentials and return only the signed Auth0 claims."""
+    """Verify bearer credentials and return only signed identity claims."""
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -88,7 +88,7 @@ async def get_verified_token_claims(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    cached_claims = getattr(request.state, "verified_auth0_claims", None)
+    cached_claims = getattr(request.state, "verified_identity_claims", None)
     if isinstance(cached_claims, TokenClaims):
         return cached_claims
 
@@ -107,7 +107,7 @@ async def get_verified_token_claims(
             headers={"WWW-Authenticate": "Bearer"},
         ) from None
 
-    request.state.verified_auth0_claims = claims
+    request.state.verified_identity_claims = claims
     return claims
 
 
@@ -116,14 +116,14 @@ async def get_tenant_context(
     claims: Annotated[TokenClaims, Depends(get_verified_token_claims)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> TenantContext:
-    """Resolve the verified Auth0 Organization to an internal tenant."""
+    """Resolve the verified identity-provider organization to a tenant."""
     request_id = request.headers.get("X-Request-ID", "unknown")
     try:
-        tenant_id = await resolve_auth0_organization_tenant_id(
+        tenant_id = await resolve_identity_provider_organization_tenant_id(
             session,
             organization_id=claims.org_id,
         )
-    except Auth0OrganizationNotMappedError:
+    except IdentityProviderOrganizationNotMappedError:
         logger.warning(
             "authentication_organization_not_mapped",
             request_id=request_id,

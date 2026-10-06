@@ -255,7 +255,7 @@ async def enforce_request_rate_limit(request: Request) -> Response | None:
                     # authentication dependency still returns the 401.
                     key_identity = f"invalid-auth:{client_address}"
                 else:
-                    request.state.verified_auth0_claims = claims
+                    request.state.verified_identity_claims = claims
                     key_identity = (
                         f"organization:{claims.org_id}"
                         f":subject:{claims.sub}"
