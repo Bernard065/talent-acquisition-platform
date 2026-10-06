@@ -542,7 +542,12 @@ class Settings(BaseSettings):
             raise ValueError(
                 "WEB_APP_BASE_URL must be an origin without a path, query, or fragment."
             )
-        if self.app_env == "production" and self.web_app_base_url.scheme != "https":
+        if (
+            self.app_env == "production"
+            and self.supabase_url is not None
+            and self.supabase_secret_key is not None
+            and self.web_app_base_url.scheme != "https"
+        ):
             raise ValueError("WEB_APP_BASE_URL must use HTTPS in production.")
         if (
             self.candidate_processor_deletion_worker_retry_base_seconds
