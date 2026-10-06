@@ -11,7 +11,7 @@ from app.core.config import Settings
 
 
 class TokenClaims(BaseModel):
-    """Verified identity claims accepted from the Auth0 access token."""
+    """Verified identity claims accepted from the configured OIDC provider."""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -21,7 +21,7 @@ class TokenClaims(BaseModel):
 
 
 class JwtVerifier:
-    """Verifies RS256 access tokens against the configured JWKS endpoint."""
+    """Verifies configured access tokens against the identity provider JWKS."""
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings

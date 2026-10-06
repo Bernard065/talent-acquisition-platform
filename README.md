@@ -38,5 +38,8 @@ deployment configuration are described in
 
 ## Repository status
 
-The frontend foundation lives in [`apps/web`](apps/web/README.md). This repository
-is still in foundation setup; see `docs/architecture.md` and `CONTRIBUTING.md`.
+The recruiter web app lives in [`apps/web`](apps/web/README.md). Its initial
+authenticated requisition and job-posting flows use Supabase Auth with Auth.js;
+setup requirements are in [`docs/integrations/supabase-auth.md`](docs/integrations/supabase-auth.md).
+Other recruiter modules remain under development. See `docs/architecture.md`
+and `CONTRIBUTING.md` for the platform foundation.

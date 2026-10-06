@@ -473,7 +473,7 @@ class Settings(BaseSettings):
     jwt_issuer: AnyHttpUrl
     jwt_audience: str = Field(min_length=1)
     jwt_jwks_url: AnyHttpUrl
-    jwt_algorithm: Literal["RS256"]
+    jwt_algorithm: Literal["RS256", "ES256"]
     jwt_leeway_seconds: int = Field(ge=0, le=300)
 
     calendar_oauth_provider: Literal["none", "google"] = "none"
