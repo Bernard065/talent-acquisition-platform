@@ -50,6 +50,18 @@ export async function publishJobPosting(
   });
 }
 
+export async function unpublishJobPosting(
+  id: string,
+  body: ExpectedJobPostingVersionRequest,
+  idempotencyKey: string,
+  options?: RequestOptions,
+): Promise<JobPostingResponse> {
+  return post<JobPostingResponse>(`/job-postings/${id}/unpublish`, body, {
+    ...options,
+    idempotencyKey,
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Public Jobs
 // ---------------------------------------------------------------------------

@@ -1,34 +1,26 @@
 "use client";
 
 import React from "react";
-import type { JobStatus } from "@/lib/mock-jobs";
+import type { JobPostingStatus } from "@/types/api/jobs";
 
-const statuses: { value: JobStatus | "all"; label: string }[] = [
+const statuses: { value: JobPostingStatus | "all"; label: string }[] = [
   { value: "all", label: "All Jobs" },
-  { value: "active", label: "Active" },
-  { value: "paused", label: "Paused" },
+  { value: "published", label: "Published" },
+  { value: "unpublished", label: "Unpublished" },
   { value: "draft", label: "Draft" },
-  { value: "closed", label: "Closed" },
-];
-
-const departments = [
-  "All Departments",
-  "Engineering",
-  "Design",
-  "Marketing",
-  "Sales",
-  "People",
+  { value: "expired", label: "Expired" },
 ];
 
 interface JobFiltersProps {
-  onStatusChange: (status: JobStatus | "all") => void;
+  onStatusChange: (status: JobPostingStatus | "all") => void;
   onDepartmentChange: (department: string) => void;
   onSearchChange: (query: string) => void;
-  activeStatus: JobStatus | "all";
+  activeStatus: JobPostingStatus | "all";
   activeDepartment: string;
   searchQuery: string;
   totalCount: number;
   filteredCount: number;
+  departments: string[];
 }
 
 export const JobFilters = ({
@@ -40,6 +32,7 @@ export const JobFilters = ({
   searchQuery,
   totalCount,
   filteredCount,
+  departments,
 }: JobFiltersProps) => {
   return (
     <div className="flex flex-col gap-4">
@@ -82,7 +75,7 @@ export const JobFilters = ({
           onChange={(e) => onDepartmentChange(e.target.value)}
           className="h-10 px-4 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:border-sr-mint focus:ring-1 focus:ring-sr-mint transition-all cursor-pointer w-full sm:w-auto"
         >
-          {departments.map((dept) => (
+          {["All Departments", ...departments].map((dept) => (
             <option key={dept} value={dept}>
               {dept}
             </option>

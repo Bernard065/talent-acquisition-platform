@@ -1,58 +1,149 @@
-import React from "react";
-import Link from "next/link";
-import { KanbanBoard } from "@/components/jobs/kanban-board";
-import { mockCandidates } from "@/lib/mock-candidates";
-import { JobStatusBadge } from "@/components/jobs/job-status-badge";
+"use client";
 
-export default async function JobPipelinePage(props: { params: Promise<{ id: string }> }) {
-  const params = await props.params;
-  const _jobId = params.id;
-  
-  // In a real app, fetch job details based on ID (using jobId). 
-  // For now, we'll mock a job title based on the candidates we have.
-  const jobTitle = "Senior Frontend Engineer";
-  
-  // Filter mock candidates to those that match this job role for realism
-  const jobCandidates = mockCandidates.filter(c => c.role === jobTitle || c.role.includes("Frontend"));
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { Button } from "@/components/ui/button";
+import { JobStatusBadge } from "@/components/jobs/job-status-badge";
+import { getJobPosting, publishJobPosting, unpublishJobPosting } from "@/lib/api/services/jobs";
+import type { JobPostingResponse } from "@/types/api/jobs";
+
+export default function JobPostingPage() {
+  const { id } = useParams<{ id: string }>();
+  const { status: sessionStatus } = useSession();
+  const [posting, setPosting] = useState<JobPostingResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const loadPosting = useCallback(async () => {
+    setError(null);
+    setIsLoading(true);
+    try {
+      setPosting(await getJobPosting(id));
+    } catch {
+      setError("We couldn’t load this job posting. Check your access and try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (sessionStatus !== "authenticated") return;
+
+    let isCurrent = true;
+    void getJobPosting(id)
+      .then((result) => {
+        if (isCurrent) setPosting(result);
+      })
+      .catch(() => {
+        if (isCurrent) {
+          setError("We couldn’t load this job posting. Check your access and try again.");
+        }
+      })
+      .finally(() => {
+        if (isCurrent) setIsLoading(false);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [sessionStatus, id]);
+
+  async function changePublication() {
+    if (!posting) return;
+    setIsSaving(true);
+    setError(null);
+    try {
+      const body = { expected_version: posting.version };
+      const updated = posting.status === "published"
+        ? await unpublishJobPosting(posting.id, body, crypto.randomUUID())
+        : await publishJobPosting(posting.id, body, crypto.randomUUID());
+      setPosting(updated);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "We couldn’t update this job posting.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-64px)] w-full -m-4 sm:-m-6 md:-m-8 p-4 sm:p-6 md:p-8 bg-white overflow-hidden">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 shrink-0">
-        <div className="flex items-center gap-3">
-          <Link href="/dashboard/jobs" className="p-2 -ml-2 text-gray-400 hover:text-sr-text-blue transition-colors rounded-lg hover:bg-gray-100">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-          </Link>
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-sr-text-blue tracking-tight">{jobTitle}</h1>
-              <JobStatusBadge status="active" />
-            </div>
-            <p className="text-sm text-gray-500 mt-1">
-              San Francisco, CA • Full-time • {jobCandidates.length} Candidates
-            </p>
-          </div>
-        </div>
-        
-        <div className="flex items-center gap-3">
-          <button className="h-10 px-4 rounded-lg border border-gray-200 text-gray-700 bg-white hover:bg-gray-50 transition-colors font-medium text-sm">
-            Edit Job
-          </button>
-          <button className="h-10 px-4 rounded-lg bg-sr-mint text-sr-text-blue hover:bg-sr-green hover:text-white transition-colors font-semibold text-sm flex items-center gap-2">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Add Candidate
-          </button>
-        </div>
-      </div>
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+      <Link href="/dashboard/jobs" className="text-sm font-medium text-gray-600 hover:text-sr-text-blue">
+        ← Back to jobs
+      </Link>
 
-      {/* Kanban Board Area */}
-      <div className="flex-1 overflow-hidden">
-        <KanbanBoard initialCandidates={jobCandidates} />
-      </div>
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800" role="alert">
+          {error}
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="rounded-xl border border-gray-200 bg-white p-8 text-sm text-gray-500" aria-live="polite">
+          Loading job posting…
+        </div>
+      ) : posting ? (
+        <>
+          <section className="rounded-xl border border-gray-200 bg-white p-6 sm:p-8">
+            <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <div className="mb-3 flex flex-wrap items-center gap-3">
+                  <h1 className="text-2xl font-bold tracking-tight text-sr-text-blue">{posting.title}</h1>
+                  <JobStatusBadge status={posting.status} />
+                </div>
+                <p className="text-sm text-gray-600">
+                  {[posting.department, posting.location, posting.employment_type.replaceAll("_", " ")]
+                    .filter(Boolean).join(" · ")}
+                </p>
+              </div>
+              {posting.status !== "expired" && (
+                <Button onClick={() => void changePublication()} disabled={isSaving}>
+                  {isSaving
+                    ? "Saving…"
+                    : posting.status === "published"
+                      ? "Unpublish job"
+                      : "Publish job"}
+                </Button>
+              )}
+            </div>
+
+            <dl className="mt-8 grid gap-5 border-t border-gray-100 pt-6 sm:grid-cols-3">
+              <div>
+                <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">Created</dt>
+                <dd className="mt-1 text-sm text-gray-900">
+                  {new Date(posting.created_at).toLocaleDateString()}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">Last updated</dt>
+                <dd className="mt-1 text-sm text-gray-900">
+                  {new Date(posting.updated_at).toLocaleDateString()}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">Expires</dt>
+                <dd className="mt-1 text-sm text-gray-900">
+                  {posting.expires_at ? new Date(posting.expires_at).toLocaleDateString() : "No expiry set"}
+                </dd>
+              </div>
+            </dl>
+          </section>
+
+          <section className="rounded-xl border border-gray-200 bg-white p-6 sm:p-8">
+            <h2 className="text-lg font-semibold text-sr-text-blue">Job description</h2>
+            <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-gray-700">{posting.description}</p>
+          </section>
+        </>
+      ) : (
+        <div className="rounded-xl border border-gray-200 bg-white p-8 text-center">
+          <p className="text-sm text-gray-600">This job posting isn’t available.</p>
+          <Button className="mt-4" variant="outline" onClick={() => void loadPosting()}>
+            Try again
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
