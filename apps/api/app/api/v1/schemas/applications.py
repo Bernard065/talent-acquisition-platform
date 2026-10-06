@@ -39,3 +39,24 @@ class ApplicationListResponse(BaseModel):
 
     items: list[ApplicationResponse]
     next_cursor: str | None = None
+
+
+class ApplicationPipelineItemResponse(BaseModel):
+    """Recruiter-safe summary used to render an application pipeline card."""
+
+    id: UUID
+    candidate_id: UUID
+    candidate_name: str
+    candidate_email: str | None
+    requisition_id: UUID
+    requisition_title: str
+    status: ApplicationStatus
+    applied_at: datetime
+    version: int
+
+
+class ApplicationPipelineListResponse(BaseModel):
+    """Cursor-paginated application summaries for the recruiter pipeline."""
+
+    items: list[ApplicationPipelineItemResponse]
+    next_cursor: str | None = None

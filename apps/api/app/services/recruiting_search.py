@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.authorization import Role, TenantContext
 from app.db.models.application import Application
 from app.db.models.candidate import Candidate
+from app.db.models.requisition import Requisition
 from app.domains.candidates.enums import (
     ApplicationStatus,
     CandidateConsentStatus,
@@ -66,6 +67,24 @@ class ApplicationSearchPage:
     """Cursor-paginated application search results."""
 
     items: list[Application]
+    next_cursor: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ApplicationPipelineRecord:
+    """One application with the minimal recruiter-facing card details."""
+
+    application: Application
+    candidate_name: str
+    candidate_email: str | None
+    requisition_title: str
+
+
+@dataclass(frozen=True, slots=True)
+class ApplicationPipelinePage:
+    """Cursor-paginated application summaries for pipeline views."""
+
+    items: list[ApplicationPipelineRecord]
     next_cursor: str | None
 
 
@@ -320,3 +339,74 @@ async def search_applications(
             else None
         ),
     )
+
+
+async def search_application_pipeline(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    filters: ApplicationSearchFilters | None = None,
+    limit: int = 50,
+    cursor: str | None = None,
+) -> ApplicationPipelinePage:
+    """Search applications and hydrate card labels in two bounded queries."""
+
+    page = await search_applications(
+        session,
+        context=context,
+        filters=filters,
+        limit=limit,
+        cursor=cursor,
+    )
+    if not page.items:
+        return ApplicationPipelinePage(items=[], next_cursor=page.next_cursor)
+
+    candidate_ids = {application.candidate_id for application in page.items}
+    requisition_ids = {application.requisition_id for application in page.items}
+
+    candidate_rows = await session.execute(
+        select(
+            Candidate.id,
+            Candidate.full_name,
+            Candidate.email,
+            Candidate.privacy_status,
+        ).where(
+            Candidate.tenant_id == context.tenant_id,
+            Candidate.id.in_(candidate_ids),
+        )
+    )
+    candidates = {
+        candidate_id: (name, email, privacy_status)
+        for candidate_id, name, email, privacy_status in candidate_rows
+    }
+
+    requisition_rows = await session.execute(
+        select(Requisition.id, Requisition.title).where(
+            Requisition.tenant_id == context.tenant_id,
+            Requisition.id.in_(requisition_ids),
+        )
+    )
+    requisitions = {
+        requisition_id: title for requisition_id, title in requisition_rows
+    }
+
+    records: list[ApplicationPipelineRecord] = []
+    for application in page.items:
+        candidate = candidates.get(application.candidate_id)
+        requisition_title = requisitions.get(application.requisition_id)
+        if candidate is not None and candidate[2] is CandidatePrivacyStatus.ACTIVE:
+            candidate_name = candidate[0]
+            candidate_email = candidate[1]
+        else:
+            candidate_name = "Candidate unavailable"
+            candidate_email = None
+        records.append(
+            ApplicationPipelineRecord(
+                application=application,
+                candidate_name=candidate_name,
+                candidate_email=candidate_email,
+                requisition_title=requisition_title or "Job unavailable",
+            )
+        )
+
+    return ApplicationPipelinePage(items=records, next_cursor=page.next_cursor)

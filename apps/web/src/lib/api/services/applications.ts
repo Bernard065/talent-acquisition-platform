@@ -6,13 +6,30 @@ import type {
   ApplicationCreateRequest,
   ApplicationStatus,
   ApplicationRejectionReason,
+  ApplicationPipelineListResponse,
 } from "@/types/api";
 
+export interface ApplicationSearchParams extends PaginationParams {
+  requisition_id?: string;
+  candidate_id?: string;
+  status?: ApplicationStatus;
+}
+
 export async function listApplications(
-  params?: PaginationParams,
+  params?: ApplicationSearchParams,
   options?: RequestOptions,
 ): Promise<ApplicationListResponse> {
   return get<ApplicationListResponse>("/applications", {
+    ...options,
+    params: { ...options?.params, ...params } as Record<string, string>,
+  });
+}
+
+export async function listApplicationPipeline(
+  params?: ApplicationSearchParams,
+  options?: RequestOptions,
+): Promise<ApplicationPipelineListResponse> {
+  return get<ApplicationPipelineListResponse>("/applications/pipeline", {
     ...options,
     params: { ...options?.params, ...params } as Record<string, string>,
   });

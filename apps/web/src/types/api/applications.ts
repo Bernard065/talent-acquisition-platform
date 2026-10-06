@@ -35,3 +35,20 @@ export interface ApplicationListResponse {
   items: ApplicationResponse[];
   next_cursor?: string | null;
 }
+
+export interface ApplicationPipelineItem {
+  id: string;
+  candidate_id: string;
+  candidate_name: string;
+  candidate_email: string | null;
+  requisition_id: string;
+  requisition_title: string;
+  status: ApplicationStatus;
+  applied_at: string;
+  version: number;
+}
+
+export interface ApplicationPipelineListResponse {
+  items: ApplicationPipelineItem[];
+  next_cursor?: string | null;
+}
