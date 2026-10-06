@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     )
 
     database_url: PostgresDsn | None = None
+    supabase_url: AnyHttpUrl | None = None
+    supabase_secret_key: SecretStr | None = None
+    supabase_publishable_key: SecretStr | None = None
+    web_app_base_url: AnyHttpUrl = AnyHttpUrl("http://localhost:3000")
     redis_url: str
     allowed_origins: list[str] = Field(default_factory=list)
     # Canonical origin that serves public job-detail pages and the sitemap.
@@ -530,6 +534,16 @@ class Settings(BaseSettings):
 
         if self.app_env == "production" and self.public_site_base_url.scheme != "https":
             raise ValueError("PUBLIC_SITE_BASE_URL must use HTTPS in production.")
+        if (
+            self.web_app_base_url.path not in {"", "/"}
+            or self.web_app_base_url.query is not None
+            or self.web_app_base_url.fragment is not None
+        ):
+            raise ValueError(
+                "WEB_APP_BASE_URL must be an origin without a path, query, or fragment."
+            )
+        if self.app_env == "production" and self.web_app_base_url.scheme != "https":
+            raise ValueError("WEB_APP_BASE_URL must use HTTPS in production.")
         if (
             self.candidate_processor_deletion_worker_retry_base_seconds
             > self.candidate_processor_deletion_worker_retry_max_seconds

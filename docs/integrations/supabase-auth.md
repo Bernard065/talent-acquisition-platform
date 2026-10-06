@@ -92,9 +92,9 @@ role list when metadata has not been provisioned; the API will reject such a
 token for tenant data.
 
 Users without a provisioned organization and roles can authenticate but the
-API will deny access. Tenant invitation, membership administration, and
-organization switching remain application workflows; this integration does
-not make Supabase user metadata an authorization source.
+API will deny access. Workspace invitations assign `organization_id` and
+`roles` through the Supabase Admin API; this integration does not make
+user-editable metadata an authorization source.
 
 ## Local setup
 
@@ -106,6 +106,46 @@ not make Supabase user metadata an authorization source.
 5. Provision each tenant's external organization identifier and assign each
    authorized user `organization_id` and `roles` in trusted `app_metadata`.
 6. Apply the API Alembic migrations before using tenant-authenticated routes.
+
+## Workspace invitations and first administrator
+
+Configure these variables for the API:
+
+- `SUPABASE_URL`: the same Supabase project URL used by the web app.
+- `SUPABASE_SECRET_KEY`: a Supabase secret key available only to the API.
+- `SUPABASE_PUBLISHABLE_KEY`: the project publishable key, used when validating
+  the one-time invitation token.
+- `WEB_APP_BASE_URL`: the web app origin, such as `http://localhost:3000`.
+
+Apply the migrations, configure `WEB_APP_BASE_URL/accept-invitation` as an
+allowed Supabase redirect URL, and update **Authentication → Email Templates →
+Invite user** to include the token hash in the redirect. For example:
+
+```html
+<h2>Join {{ .Data.workspace_name }}</h2>
+<p>You have been invited as {{ .Data.invited_role }}.</p>
+<p>This invitation link expires in one hour.</p>
+<a href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&type=invite">Accept your invitation</a>
+```
+
+The invitation link is single-use. Its lifetime follows the Supabase email OTP
+expiry setting (one hour by default); set that value to one hour to keep the
+workspace invitation expiry consistent. The invited person chooses a password
+on the acceptance page and is then redirected to sign in.
+
+Create a workspace and send its first administrator invitation from the API
+directory:
+
+```sh
+uv run python -m app.scripts.bootstrap_workspace \
+  --name "Acme Hiring" --slug acme-hiring --admin-email admin@example.com
+```
+
+The command stores a tenant, assigns a generated external organization ID, and
+invites the first administrator. Subsequent invitations and revocations are
+available to workspace administrators under **Dashboard → Team**. Resending an
+invitation is not currently supported; revoke it and contact support to
+reissue an expired link.
 
 ## Password recovery
 
@@ -126,6 +166,6 @@ The app accepts passwords of at least eight characters. Supabase Auth also
 applies the project's configured password policy. The forgot-password response
 does not disclose whether an email address has an account.
 
-The app currently supports email/password sign-in and password recovery.
-Social login, tenant invitations, and user provisioning are separate workflows
-to implement before production rollout.
+The app currently supports email/password sign-in, password recovery, and
+workspace invitations. Social login and organization switching are separate
+workflows.

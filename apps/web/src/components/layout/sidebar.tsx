@@ -61,6 +61,15 @@ const navigation = [
     ),
   },
   {
+    name: "Team",
+    href: "/dashboard/team",
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a4 4 0 00-5.5-3.7M9 20H2v-2a4 4 0 017.5-1.8M16 3.1a4 4 0 010 7.8M8 3.1a4 4 0 000 7.8m8 9.1a4 4 0 10-8 0" />
+      </svg>
+    ),
+  },
+  {
     name: "Settings",
     href: "/dashboard/settings",
     icon: (
