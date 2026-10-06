@@ -63,7 +63,7 @@ export async function transitionApplicationStage(
   idempotencyKey: string,
   options?: RequestOptions,
 ): Promise<ApplicationResponse> {
-  return post<ApplicationResponse>(`/applications/${id}/transitions`, body, {
+  return post<ApplicationResponse>(`/applications/${id}/stage-transitions`, body, {
     ...options,
     idempotencyKey,
   });
