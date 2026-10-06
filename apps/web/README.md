@@ -2,8 +2,9 @@
 
 The frontend is a Next.js App Router application written in TypeScript and
 styled with Tailwind CSS v4. Theme tokens live in `src/app/globals.css`; layout
-and component styling use Tailwind utility classes. The app does not yet
-authenticate users or make API requests.
+and component styling use Tailwind utility classes. Auth.js manages the web
+session and authenticates email/password credentials with Supabase Auth. The
+resulting Supabase access token is used for authenticated FastAPI requests.
 
 Reusable shadcn/ui components are source-owned under `src/components/ui` and
 configured by `components.json`. Their semantic color tokens map to the
@@ -14,6 +15,7 @@ and avoid introducing a second styling system.
 
 - Node.js 24.x LTS (see `.nvmrc`)
 - npm 11+
+- Copy `.env.example` to `.env.local` and set the Auth.js and Supabase values.
 
 ## Local development
 
@@ -35,6 +37,7 @@ npm test
 npm run build
 ```
 
-The application route is intentionally minimal. The app is marked `noindex`
-until authentication, API integration, and the deployment/access model are in
-place. Do not add real or fabricated recruiting data to this scaffold.
+The app is marked `noindex` until its deployment/access model is in place. Do
+not add real or fabricated recruiting data to this scaffold. See
+[`../../docs/integrations/supabase-auth.md`](../../docs/integrations/supabase-auth.md)
+for identity-provider and API claim setup.

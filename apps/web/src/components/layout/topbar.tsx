@@ -1,58 +1,55 @@
 "use client";
 
-import React from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useSession } from "next-auth/react";
+
+const pageTitles: Array<{ href: string; title: string }> = [
+  { href: "/dashboard/jobs/new", title: "Create requisition" },
+  { href: "/dashboard/requisitions", title: "Requisitions" },
+  { href: "/dashboard/jobs", title: "Jobs" },
+  { href: "/dashboard/candidates", title: "Candidates" },
+  { href: "/dashboard/interviews", title: "Interviews" },
+  { href: "/dashboard/analytics", title: "Analytics" },
+  { href: "/dashboard/settings", title: "Settings" },
+  { href: "/dashboard", title: "Dashboard" },
+];
 
 export const Topbar = ({ onMenuClick }: { onMenuClick?: () => void }) => {
+  const pathname = usePathname();
+  const { data: session } = useSession();
+  const pageTitle = pageTitles.find(({ href }) => pathname === href || pathname.startsWith(`${href}/`))?.title ?? "Dashboard";
+  const name = session?.user?.name || session?.user?.email || "Workspace member";
+  const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toLocaleUpperCase()).join("");
+
   return (
-    <header className="h-16 border-b border-gray-200 bg-white flex items-center justify-between px-4 lg:px-8 sticky top-0 z-30 gap-4 shrink-0">
-      
-      {/* Mobile Menu Button (shown only on mobile) */}
-      <div className="flex items-center md:hidden shrink-0">
-        <Button variant="ghost" size="icon" className="text-gray-500 hover:text-sr-text-blue" onClick={onMenuClick}>
-          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-          </svg>
-        </Button>
-      </div>
-
-      {/* Global Search */}
-      <div className="flex-1 flex items-center max-w-md relative">
-        <svg className="w-5 h-5 text-gray-400 absolute left-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-        </svg>
-        <Input 
-          type="search" 
-          placeholder="Search candidates, jobs, or skills..." 
-          className="pl-10 h-10 w-full bg-gray-50 border-transparent focus:bg-white focus:border-sr-mint focus:ring-1 focus:ring-sr-mint transition-all placeholder:text-gray-400"
-        />
-      </div>
-
-      {/* Right Actions */}
-      <div className="flex items-center gap-2 lg:gap-4 shrink-0">
-        <Button variant="outline" className="hidden lg:flex h-9 border-gray-200 text-sr-text-blue hover:bg-gray-50 hover:text-sr-text-blue font-medium text-sm gap-2" asChild>
-          <Link href="/dashboard/jobs/new">
-            <svg className="w-4 h-4 text-sr-green" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+    <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center justify-between gap-4 border-b border-gray-200 bg-white px-4 lg:px-8">
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="flex shrink-0 items-center md:hidden">
+          <Button variant="ghost" size="icon" aria-label="Open navigation" className="text-gray-500 hover:text-sr-text-blue" onClick={onMenuClick}>
+            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
-            New Job
-          </Link>
-        </Button>
-        
-        <div className="h-6 w-px bg-gray-200 hidden lg:block mx-1"></div>
+          </Button>
+        </div>
+        <h1 className="truncate text-base font-semibold text-sr-text-blue">{pageTitle}</h1>
+      </div>
 
-        <Button variant="ghost" size="icon" className="text-gray-500 hover:text-sr-text-blue relative">
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-          </svg>
-          <span className="absolute top-2 right-2.5 w-2 h-2 rounded-full bg-red-500 ring-2 ring-white"></span>
-        </Button>
-
-        {/* Mobile Profile Avatar */}
-        <div className="md:hidden ml-2 w-8 h-8 rounded-full bg-sr-mint text-sr-text-blue flex items-center justify-center font-bold text-xs">
-          BB
+      <div className="flex shrink-0 items-center gap-3">
+        {pathname !== "/dashboard/jobs/new" && (
+          <Button variant="outline" className="hidden h-9 border-gray-200 text-sm font-medium text-sr-text-blue hover:bg-gray-50 hover:text-sr-text-blue lg:flex" asChild>
+            <Link href="/dashboard/jobs/new">Create requisition</Link>
+          </Button>
+        )}
+        <div className="hidden text-right md:block">
+          <span className="block max-w-48 truncate text-sm font-medium text-sr-text-blue">{name}</span>
+          {session?.user?.email && session.user.email !== name && (
+            <span className="block max-w-48 truncate text-xs text-gray-500">{session.user.email}</span>
+          )}
+        </div>
+        <div aria-hidden="true" className="flex h-8 w-8 items-center justify-center rounded-full bg-sr-mint text-xs font-bold text-sr-text-blue">
+          {initials || "WM"}
         </div>
       </div>
     </header>
