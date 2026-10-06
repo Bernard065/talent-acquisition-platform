@@ -122,7 +122,7 @@ async def test_tenant_context_resolves_only_from_auth0_org_mapping(
     mapped_tenant = Tenant(
         name="Mapped tenant",
         slug=f"mapped-{uuid4().hex[:12]}",
-        auth0_organization_id="org_context_mapping_test",
+        identity_provider_organization_id="org_context_mapping_test",
     )
     forged_tenant = Tenant(
         name="Unrelated tenant",

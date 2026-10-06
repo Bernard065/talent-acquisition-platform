@@ -17,8 +17,8 @@ class Tenant(Base):
     __tablename__ = "tenants"
     __table_args__ = (
         UniqueConstraint(
-            "auth0_organization_id",
-            name="uq_tenants_auth0_organization_id",
+            "identity_provider_organization_id",
+            name="uq_tenants_identity_provider_organization_id",
         ),
     )
 
@@ -29,7 +29,7 @@ class Tenant(Base):
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     slug: Mapped[str] = mapped_column(String(63), nullable=False, unique=True)
-    auth0_organization_id: Mapped[str | None] = mapped_column(
+    identity_provider_organization_id: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,
     )
