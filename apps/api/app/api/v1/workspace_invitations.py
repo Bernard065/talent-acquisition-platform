@@ -64,6 +64,12 @@ def _require_admin(context: TenantContext) -> None:
         raise HTTPException(status_code=403, detail="Insufficient permission.")
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    """Return a JSON object or an empty object for a non-object response value."""
+
+    return value if isinstance(value, dict) else {}
+
+
 def _admin_headers(settings: Settings) -> dict[str, str]:
     """Build the admin authorization headers for Supabase requests."""
 
@@ -191,7 +197,8 @@ async def create_invitation(
         },
         params={"redirect_to": redirect},
     )
-    user = invited.get("user") if isinstance(invited.get("user"), dict) else invited
+    invited_payload = _as_dict(invited)
+    user = _as_dict(invited_payload.get("user")) or invited_payload
     user_id = user.get("id")
     if not user_id:
         await session.rollback()
@@ -274,10 +281,11 @@ async def accept_invitation(body: AcceptInvitation, request: Request, session: S
         headers={"apikey": key, "Content-Type": "application/json"},
         json={"token_hash": body.token_hash, "type": "invite"},
     )
-    auth_user = payload.get("user") if isinstance(payload.get("user"), dict) else {}
+    payload_object = _as_dict(payload)
+    auth_user = _as_dict(payload_object.get("user"))
     email = str(auth_user.get("email", "")).casefold()
     subject = str(auth_user.get("id", ""))
-    access_token = payload.get("access_token")
+    access_token = payload_object.get("access_token")
     if not email or not subject or not access_token:
         raise HTTPException(
             status_code=400,

@@ -11,7 +11,7 @@ from uuid import uuid4
 
 from sqlalchemy import select
 
-from app.api.v1.workspace_invitations import _supabase_request
+from app.api.v1.workspace_invitations import _as_dict, _supabase_request
 from app.core.authorization import Role
 from app.core.config import get_settings
 from app.db.models.identity import Tenant, WorkspaceInvitation
@@ -60,7 +60,8 @@ async def bootstrap(name: str, slug: str, email: str) -> None:
                     },
                     params={"redirect_to": redirect},
                 )
-                auth_user = result.get("user") if isinstance(result.get("user"), dict) else result
+                result_object = _as_dict(result)
+                auth_user = _as_dict(result_object.get("user")) or result_object
                 user_id = auth_user.get("id")
                 if not user_id:
                     raise RuntimeError("Supabase did not return an invited user.")
