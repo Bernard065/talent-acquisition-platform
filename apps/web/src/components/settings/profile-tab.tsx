@@ -1,3 +1,4 @@
+import { InlineSvgIcon005, InlineSvgIcon006 } from "@/components/icons";
 import React, { useState } from "react";
 
 export const ProfileTab = () => {
@@ -33,9 +34,7 @@ export const ProfileTab = () => {
             <label className="text-sm font-medium text-gray-700 mb-1.5 block">Email Address</label>
             <div className="relative">
               <input type="email" defaultValue="bernard@acmecorp.com" disabled className="h-11 pl-10 pr-4 rounded-lg border border-gray-200 bg-gray-50 text-gray-500 w-full cursor-not-allowed" />
-              <svg className="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-              </svg>
+              <InlineSvgIcon005 className="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5" />
             </div>
             <p className="text-xs text-gray-400 mt-1.5">Email cannot be changed directly. Contact IT support.</p>
           </div>
@@ -60,9 +59,7 @@ export const ProfileTab = () => {
             <button type="submit" className={`h-11 px-6 rounded-lg font-semibold transition-all flex items-center gap-2 ${isSavedFeedback ? "bg-green-500 text-white" : "bg-sr-mint text-sr-text-blue hover:bg-sr-green hover:text-white"}`}>
               {isSavedFeedback ? (
                 <>
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                  </svg>
+                  <InlineSvgIcon006 className="w-5 h-5" />
                   Saved!
                 </>
               ) : (

@@ -1,3 +1,4 @@
+import { ExtractedSvgIcon11, ExtractedSvgIcon12, ExtractedSvgIcon13, ExtractedSvgIcon14, ExtractedSvgIcon15, ExtractedSvgIcon16, ExtractedSvgIcon17 } from "@/components/icons";
 import React from "react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
@@ -35,9 +36,7 @@ const HomePage = () => {
               >
                 See how it works
                 <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 ml-1">
-                    <path d="M8 5v14l11-7z" />
-                  </svg>
+                  <ExtractedSvgIcon11 className="w-4 h-4 ml-1" />
                 </div>
               </Button>
             </div>
@@ -78,27 +77,27 @@ const HomePage = () => {
             {[1, 2].map((set) => (
               <React.Fragment key={set}>
                 <div className="flex items-center gap-3 text-gray-400 grayscale opacity-70 hover:opacity-100 transition-opacity">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/></svg>
+                  <ExtractedSvgIcon12 />
                   <span className="text-2xl font-bold font-display">Acme Corp</span>
                 </div>
                 <div className="flex items-center gap-3 text-gray-400 grayscale opacity-70 hover:opacity-100 transition-opacity">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+                  <ExtractedSvgIcon13 />
                   <span className="text-2xl font-bold font-display">GlobalNet</span>
                 </div>
                 <div className="flex items-center gap-3 text-gray-400 grayscale opacity-70 hover:opacity-100 transition-opacity">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/><path d="M22 7v3a2 2 0 0 1-2 2v0a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7"/></svg>
+                  <ExtractedSvgIcon14 />
                   <span className="text-2xl font-bold font-display">ShopFront</span>
                 </div>
                 <div className="flex items-center gap-3 text-gray-400 grayscale opacity-70 hover:opacity-100 transition-opacity">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.5 19c-1.5 0-2.5-2-2.5-2a3 3 0 0 1-2 0c0 0-1 2-2.5 2C9 19 8 18 8 17s1-2 2.5-2c0 0 1-2 2.5-2a3 3 0 0 1 2 0c1.5 0 2.5 2 2.5 2s-1 1-2.5 1Z"/><path d="M22 17c0-3-2-5-4-5-1-4-4-6-7-6S5 8 4 12c-2 0-4 2-4 5s2 4 4 4h16c2 0 2-2 2-4Z"/></svg>
+                  <ExtractedSvgIcon15 />
                   <span className="text-2xl font-bold font-display">CloudSync</span>
                 </div>
                 <div className="flex items-center gap-3 text-gray-400 grayscale opacity-70 hover:opacity-100 transition-opacity">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/><line x1="12" x2="12" y1="22" y2="12"/><line x1="22" x2="12" y1="8.5" y2="12"/><line x1="2" x2="12" y1="8.5" y2="12"/></svg>
+                  <ExtractedSvgIcon16 />
                   <span className="text-2xl font-bold font-display">BlockChain</span>
                 </div>
                 <div className="flex items-center gap-3 text-gray-400 grayscale opacity-70 hover:opacity-100 transition-opacity">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 22h14a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v4"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m3 15 2 2 4-4"/></svg>
+                  <ExtractedSvgIcon17 />
                   <span className="text-2xl font-bold font-display">DocuSign</span>
                 </div>
               </React.Fragment>

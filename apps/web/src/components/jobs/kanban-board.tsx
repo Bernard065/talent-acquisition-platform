@@ -1,4 +1,6 @@
 "use client";
+import { ExtractedSvgIcon25 } from "@/components/icons";
+
 
 import React, { useState } from "react";
 import type { Candidate, CandidateStage } from "@/lib/mock-candidates";
@@ -127,9 +129,7 @@ export const KanbanBoard = ({ initialCandidates }: KanbanBoardProps) => {
                     </div>
 
                     <div className="text-gray-300 group-hover:text-sr-text-blue transition-colors">
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                      </svg>
+                      <ExtractedSvgIcon25 className="w-4 h-4" />
                     </div>
                   </div>
                 </div>

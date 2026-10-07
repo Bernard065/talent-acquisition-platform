@@ -1,3 +1,4 @@
+import { ExtractedSvgIcon06, ExtractedSvgIcon07, ExtractedSvgIcon08 } from "@/components/icons";
 import React from "react";
 import Link from "next/link";
 import { mockCandidates } from "@/lib/mock-candidates";
@@ -18,9 +19,7 @@ export default async function CandidateProfilePage(props: { params: Promise<{ id
       {/* Header and Back Link */}
       <div className="flex flex-col gap-4">
         <Link href="/dashboard/candidates" className="text-sm font-medium text-gray-500 hover:text-sr-text-blue transition-colors flex items-center gap-1 w-fit">
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
+          <ExtractedSvgIcon06 className="w-4 h-4" />
           Back to Candidates
         </Link>
 
@@ -33,15 +32,11 @@ export default async function CandidateProfilePage(props: { params: Promise<{ id
               <h1 className="text-2xl font-bold text-gray-900 tracking-tight">{candidate.name}</h1>
               <div className="text-sm text-gray-500 mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span className="flex items-center gap-1">
-                  <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                  </svg>
+                  <ExtractedSvgIcon07 className="w-4 h-4 text-gray-400" />
                   {candidate.role}
                 </span>
                 <span className="flex items-center gap-1">
-                  <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                  </svg>
+                  <ExtractedSvgIcon08 className="w-4 h-4 text-gray-400" />
                   {candidate.email}
                 </span>
               </div>
