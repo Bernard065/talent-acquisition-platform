@@ -31,6 +31,11 @@ export interface CandidateListResponse {
   next_cursor?: string | null;
 }
 
+export interface CandidateFilterOptionsResponse {
+  sources: string[];
+  locations: string[];
+}
+
 export interface CandidatePrivacyOperationResponse {
   candidate_id: string;
   consent_status: CandidateConsentStatus;

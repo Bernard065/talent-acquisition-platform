@@ -2,19 +2,34 @@ import { get, post, type RequestOptions } from "../client";
 import type { PaginationParams } from "../types";
 import type {
   CandidateResponse,
+  CandidateConsentStatus,
+  CandidateFilterOptionsResponse,
   CandidateListResponse,
   CandidateCreateRequest,
   CandidatePrivacyOperationResponse,
 } from "@/types/api";
 
+export interface CandidateSearchParams extends PaginationParams {
+  query?: string;
+  source?: string;
+  location?: string;
+  consent_status?: CandidateConsentStatus;
+}
+
 export async function listCandidates(
-  params?: PaginationParams,
+  params?: CandidateSearchParams,
   options?: RequestOptions,
 ): Promise<CandidateListResponse> {
   return get<CandidateListResponse>("/candidates", {
     ...options,
-    params: { ...options?.params, ...params } as Record<string, string>,
+    params: { ...options?.params, ...params },
   });
+}
+
+export async function getCandidateFilterOptions(
+  options?: RequestOptions,
+): Promise<CandidateFilterOptionsResponse> {
+  return get<CandidateFilterOptionsResponse>("/candidates/filter-options", options);
 }
 
 export async function getCandidate(
@@ -41,7 +56,7 @@ export async function requestCandidateErasure(
   options?: RequestOptions,
 ): Promise<CandidatePrivacyOperationResponse> {
   return post<CandidatePrivacyOperationResponse>(
-    `/candidates/${id}/erasure-requests`,
+    `/candidates/${id}/erasure`,
     undefined,
     {
       ...options,
