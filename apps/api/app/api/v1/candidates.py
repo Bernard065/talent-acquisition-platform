@@ -16,6 +16,7 @@ from app.api.v1.schemas.candidate_talent_pool_consent import (
 )
 from app.api.v1.schemas.candidates import (
     CandidateCreateRequest,
+    CandidateFilterOptionsResponse,
     CandidateListResponse,
     CandidatePrivacyOperationResponse,
     CandidateResponse,
@@ -45,6 +46,7 @@ from app.services.candidates import (
 from app.services.idempotency import IdempotencyResult, execute_idempotently
 from app.services.recruiting_search import (
     CandidateSearchFilters,
+    get_candidate_filter_options,
     search_candidates,
 )
 from app.services.talent_pool_search import (
@@ -202,6 +204,25 @@ async def search_candidates_endpoint(
             for candidate in page.items
         ],
         next_cursor=page.next_cursor,
+    )
+
+
+@router.get(
+    "/filter-options",
+    response_model=CandidateFilterOptionsResponse,
+    summary="List candidate filter options",
+)
+async def candidate_filter_options_endpoint(
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+) -> CandidateFilterOptionsResponse:
+    """Return all source and location values available to the current tenant."""
+    options = await get_candidate_filter_options(session, context=context)
+    response.headers["Cache-Control"] = "private, no-store"
+    return CandidateFilterOptionsResponse(
+        sources=options.sources,
+        locations=options.locations,
     )
 
 

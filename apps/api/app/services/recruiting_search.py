@@ -63,6 +63,14 @@ class CandidateSearchPage:
 
 
 @dataclass(frozen=True, slots=True)
+class CandidateFilterOptions:
+    """Distinct tenant-wide filter values for candidate discovery."""
+
+    sources: list[str]
+    locations: list[str]
+
+
+@dataclass(frozen=True, slots=True)
 class ApplicationSearchPage:
     """Cursor-paginated application search results."""
 
@@ -94,6 +102,39 @@ def _require_recruiting_read_role(context: TenantContext) -> None:
         raise CandidateAccessDeniedError(
             "Caller is not permitted to search recruiting records."
         )
+
+
+async def get_candidate_filter_options(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+) -> CandidateFilterOptions:
+    """Return distinct filter values across active candidates in this tenant."""
+    _require_recruiting_read_role(context)
+    base_conditions = (
+        Candidate.tenant_id == context.tenant_id,
+        Candidate.privacy_status == CandidatePrivacyStatus.ACTIVE,
+    )
+    sources = list(
+        await session.scalars(
+            select(Candidate.source)
+            .where(*base_conditions)
+            .distinct()
+            .order_by(Candidate.source)
+        )
+    )
+    locations = list(
+        await session.scalars(
+            select(Candidate.location)
+            .where(*base_conditions, Candidate.location.is_not(None))
+            .distinct()
+            .order_by(Candidate.location)
+        )
+    )
+    return CandidateFilterOptions(
+        sources=sources,
+        locations=[location for location in locations if location is not None],
+    )
 
 
 def _normalize_aware_datetime(value: datetime, *, field_name: str) -> datetime:

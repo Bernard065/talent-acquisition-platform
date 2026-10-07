@@ -3,98 +3,66 @@ import { ExtractedSvgIcon09 } from "@/components/icons";
 
 
 import React from "react";
-import type { CandidateStage } from "@/lib/mock-candidates";
-
-const stages: { value: CandidateStage | "all"; label: string }[] = [
-  { value: "all", label: "All Candidates" },
-  { value: "new", label: "New Applied" },
-  { value: "screening", label: "Screening" },
-  { value: "interview", label: "Interviewing" },
-  { value: "offer", label: "Offered" },
-  { value: "hired", label: "Hired" },
-  { value: "rejected", label: "Rejected" },
-];
-
-const departments = [
-  "All Departments",
-  "Engineering",
-  "Design",
-  "Marketing",
-  "Sales",
-  "People",
-];
-
 interface CandidateFiltersProps {
-  onStageChange: (stage: CandidateStage | "all") => void;
-  onDepartmentChange: (department: string) => void;
   onSearchChange: (query: string) => void;
-  activeStage: CandidateStage | "all";
-  activeDepartment: string;
+  onSourceChange: (source: string) => void;
+  onLocationChange: (location: string) => void;
   searchQuery: string;
-  totalCount: number;
-  filteredCount: number;
+  source: string;
+  location: string;
+  sourceOptions: string[];
+  locationOptions: string[];
 }
 
 export const CandidateFilters = ({
-  onStageChange,
-  onDepartmentChange,
   onSearchChange,
-  activeStage,
-  activeDepartment,
+  onSourceChange,
+  onLocationChange,
   searchQuery,
-  totalCount,
-  filteredCount,
+  source,
+  location,
+  sourceOptions,
+  locationOptions,
 }: CandidateFiltersProps) => {
   return (
     <div className="flex flex-col gap-4">
-      {/* Stage Tabs */}
-      <div className="flex items-center gap-1 overflow-x-auto pb-1 -mx-1 px-1" style={{ scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}>
-        {stages.map((s) => (
-          <button
-            key={s.value}
-            onClick={() => onStageChange(s.value)}
-            className={`px-4 py-2.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors shrink-0 ${
-              activeStage === s.value
-                ? "bg-sr-text-blue text-white"
-                : "text-gray-600 hover:bg-gray-100 hover:text-sr-text-blue"
-            }`}
-          >
-            {s.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Search and Department Filter */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+      <div className="flex flex-col lg:flex-row items-stretch gap-3">
         {/* Search */}
-        <div className="relative flex-1">
+        <div className="relative flex-1 min-w-56">
           <ExtractedSvgIcon09 className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Search by name, email, or role..."
+            aria-label="Search candidates by name or email"
+            placeholder="Search by name or email..."
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
             className="w-full h-10 pl-10 pr-4 rounded-lg border border-gray-200 bg-white text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-sr-mint focus:ring-1 focus:ring-sr-mint transition-all"
           />
         </div>
 
-        {/* Department Dropdown */}
         <select
-          value={activeDepartment}
-          onChange={(e) => onDepartmentChange(e.target.value)}
-          className="h-10 px-4 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 focus:outline-none focus:border-sr-mint focus:ring-1 focus:ring-sr-mint transition-all cursor-pointer w-full sm:w-auto"
+          aria-label="Filter candidates by source"
+          value={source}
+          onChange={(e) => onSourceChange(e.target.value)}
+          className="h-10 px-4 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none focus:border-sr-mint focus:ring-1 focus:ring-sr-mint transition-all w-full lg:w-52"
         >
-          {departments.map((dept) => (
-            <option key={dept} value={dept}>
-              {dept}
-            </option>
+          <option value="">All sources</option>
+          {sourceOptions.map((option) => (
+            <option key={option} value={option}>{option}</option>
           ))}
         </select>
 
-        {/* Result count */}
-        <div className="text-sm text-gray-500 whitespace-nowrap hidden lg:block">
-          Showing {filteredCount} of {totalCount} candidates
-        </div>
+        <select
+          aria-label="Filter candidates by location"
+          value={location}
+          onChange={(e) => onLocationChange(e.target.value)}
+          className="h-10 px-4 rounded-lg border border-gray-200 bg-white text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none focus:border-sr-mint focus:ring-1 focus:ring-sr-mint transition-all w-full lg:w-52"
+        >
+          <option value="">All locations</option>
+          {locationOptions.map((option) => (
+            <option key={option} value={option}>{option}</option>
+          ))}
+        </select>
       </div>
     </div>
   );

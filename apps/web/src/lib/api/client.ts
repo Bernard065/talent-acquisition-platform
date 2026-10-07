@@ -39,12 +39,16 @@ export function setTokenAccessor(accessor: TokenAccessor): void {
 /** Methods that carry a request body and require an idempotency key. */
 const MUTATING_METHODS = new Set<HttpMethod>(["POST", "PUT", "PATCH", "DELETE"]);
 
-function buildUrl(path: string, params?: Record<string, string>): string {
+export type QueryParamValue = string | number | boolean | null | undefined;
+
+export type QueryParams = Record<string, QueryParamValue>;
+
+function buildUrl(path: string, params?: QueryParams): string {
   const url = new URL(`${API_PREFIX}${path}`, API_BASE_URL);
   if (params) {
     for (const [key, value] of Object.entries(params)) {
       if (value !== undefined && value !== null && value !== "") {
-        url.searchParams.set(key, value);
+        url.searchParams.set(key, String(value));
       }
     }
   }
@@ -90,7 +94,7 @@ async function parseErrorBody(response: Response): Promise<ApiError> {
 
 export interface RequestOptions {
   /** Query parameters appended to the URL. */
-  params?: Record<string, string>;
+  params?: QueryParams;
 
   /** Idempotency key for mutating requests. */
   idempotencyKey?: string;
