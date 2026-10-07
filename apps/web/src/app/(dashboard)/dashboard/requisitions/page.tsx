@@ -1,11 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
-import { listRequisitions } from "@/lib/api/services/requisitions";
-import type { RequisitionResponse, RequisitionStatus } from "@/types/api/requisitions";
+import { useRequisitions } from "@/lib/api/hooks/requisitions";
+import type { RequisitionStatus } from "@/types/api/requisitions";
 
 const statusStyle: Record<RequisitionStatus, string> = {
   draft: "bg-gray-100 text-gray-700",
@@ -23,51 +22,12 @@ function formatStatus(status: RequisitionStatus) {
 
 export default function RequisitionsPage() {
   const { status: sessionStatus } = useSession();
-  const [requisitions, setRequisitions] = useState<RequisitionResponse[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-
-  const loadRequisitions = useCallback(async (cursor?: string) => {
-    setError(null);
-    if (cursor) setIsLoadingMore(true);
-    else setIsLoading(true);
-    try {
-      const result = await listRequisitions({ limit: 100, cursor });
-      setRequisitions((current) => cursor ? [...current, ...result.items] : result.items);
-      setNextCursor(result.next_cursor ?? null);
-    } catch {
-      setError("We couldn’t load requisitions from your workspace. Please try again.");
-    } finally {
-      setIsLoading(false);
-      setIsLoadingMore(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (sessionStatus !== "authenticated") return;
-
-    let isCurrent = true;
-    void listRequisitions({ limit: 100 })
-      .then((result) => {
-        if (!isCurrent) return;
-        setRequisitions(result.items);
-        setNextCursor(result.next_cursor ?? null);
-      })
-      .catch(() => {
-        if (isCurrent) {
-          setError("We couldn’t load requisitions from your workspace. Please try again.");
-        }
-      })
-      .finally(() => {
-        if (isCurrent) setIsLoading(false);
-      });
-
-    return () => {
-      isCurrent = false;
-    };
-  }, [sessionStatus]);
+  const requisitionsQuery = useRequisitions({ limit: 100 });
+  const requisitions = requisitionsQuery.data?.pages.flatMap((page) => page.items) ?? [];
+  const isLoading = sessionStatus !== "authenticated" || requisitionsQuery.isLoading;
+  const error = requisitionsQuery.isError
+    ? "We couldn’t load requisitions from your workspace. Please try again."
+    : null;
 
   return (
     <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6">
@@ -84,7 +44,7 @@ export default function RequisitionsPage() {
       {error ? (
         <div className="rounded-xl border border-red-200 bg-red-50 p-8 text-center">
           <p className="text-sm text-red-800">{error}</p>
-          <Button className="mt-4" variant="outline" onClick={() => void loadRequisitions()}>Try again</Button>
+          <Button className="mt-4" variant="outline" onClick={() => void requisitionsQuery.refetch()}>Try again</Button>
         </div>
       ) : isLoading ? (
         <div className="rounded-xl border border-gray-200 bg-white p-8 text-sm text-gray-500" aria-live="polite">
@@ -115,10 +75,14 @@ export default function RequisitionsPage() {
               </li>
             ))}
           </ul>
-          {nextCursor && (
+          {requisitionsQuery.hasNextPage && (
             <div className="flex justify-center border-t border-gray-100 p-4">
-              <Button variant="outline" disabled={isLoadingMore} onClick={() => void loadRequisitions(nextCursor)}>
-                {isLoadingMore ? "Loading…" : "Load more requisitions"}
+              <Button
+                variant="outline"
+                disabled={requisitionsQuery.isFetchingNextPage}
+                onClick={() => void requisitionsQuery.fetchNextPage()}
+              >
+                {requisitionsQuery.isFetchingNextPage ? "Loading…" : "Load more requisitions"}
               </Button>
             </div>
           )}
