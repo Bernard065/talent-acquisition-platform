@@ -1,4 +1,6 @@
 "use client";
+import { ExtractedSvgIcon02, ExtractedSvgIcon03, ExtractedSvgIcon04, ExtractedSvgIcon05 } from "@/components/icons";
+
 
 import React, { useState, useMemo } from "react";
 import Link from "next/link";
@@ -51,9 +53,7 @@ export default function CandidatesPage() {
             variant="secondary"
             className="h-10 bg-sr-mint hover:bg-sr-green text-sr-text-blue hover:text-white transition-colors font-semibold gap-2 w-full sm:w-auto"
           >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
+            <ExtractedSvgIcon02 className="w-4 h-4" />
             Add Candidate
           </Button>
         </div>
@@ -123,9 +123,7 @@ export default function CandidatesPage() {
                     </div>
                     <button className="text-sr-text-blue hover:text-sr-green transition-colors text-sm font-medium flex items-center gap-1">
                       View
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
+                      <ExtractedSvgIcon03 className="w-4 h-4" />
                     </button>
                   </div>
                 </Link>
@@ -134,9 +132,7 @@ export default function CandidatesPage() {
           ) : (
             <div className="p-8 text-center">
               <div className="mx-auto w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center mb-3">
-                <svg className="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                </svg>
+                <ExtractedSvgIcon04 className="w-6 h-6 text-gray-400" />
               </div>
               <h3 className="text-sm font-semibold text-sr-text-blue mb-1">No candidates found</h3>
               <p className="text-sm text-gray-500">Adjust filters to find candidates.</p>
@@ -213,9 +209,7 @@ export default function CandidatesPage() {
                           className="text-gray-400 hover:text-sr-text-blue transition-colors p-1"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z" />
-                          </svg>
+                          <ExtractedSvgIcon05 className="w-5 h-5" />
                         </button>
                       </td>
                     </tr>
@@ -225,9 +219,7 @@ export default function CandidatesPage() {
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center">
                     <div className="mx-auto w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center mb-3">
-                      <svg className="w-6 h-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                      </svg>
+                      <ExtractedSvgIcon04 className="w-6 h-6 text-gray-400" />
                     </div>
                     <h3 className="text-sm font-semibold text-sr-text-blue mb-1">No candidates found</h3>
                     <p className="text-sm text-gray-500">

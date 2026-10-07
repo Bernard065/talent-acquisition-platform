@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { MindHireMark, InlineSvgIcon001, InlineSvgIcon002, Menu, X } from "@/components/icons";
 
 
 
@@ -18,11 +19,7 @@ export function Header() {
         <div className="shrink-0 z-50">
           <Link href="/" className="font-display font-bold text-xl lg:text-2xl tracking-tighter text-sr-text-blue flex items-center gap-2">
             <span className="w-7 h-7 lg:w-8 lg:h-8 rounded bg-sr-green text-white flex items-center justify-center p-1.5">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-full h-full">
-                <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/>
-                <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/>
-                <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/>
-              </svg>
+              <MindHireMark className="w-full h-full" />
             </span>
             MindHire
           </Link>
@@ -35,9 +32,7 @@ export function Header() {
               <span className="text-[15px] font-semibold text-sr-text-blue group-hover:text-black transition-colors flex items-center gap-1">
                 {navItem.title}
                 {navItem.megaMenu && (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="opacity-50 group-hover:opacity-100 group-hover:-rotate-180 transition-all duration-200">
-                    <path d="m6 9 6 6 6-6"/>
-                  </svg>
+                  <InlineSvgIcon001 className="opacity-50 group-hover:opacity-100 group-hover:-rotate-180 transition-all duration-200" />
                 )}
               </span>
               {/* Active indicator line */}
@@ -91,17 +86,7 @@ export function Header() {
             className="text-sr-text-blue p-2 -mr-2"
             aria-label="Toggle Menu"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              {isMobileMenuOpen ? (
-                <>
-                  <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
-                </>
-              ) : (
-                <>
-                  <line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/>
-                </>
-              )}
-            </svg>
+            {isMobileMenuOpen ? <X className="h-6 w-6" aria-hidden="true" /> : <Menu className="h-6 w-6" aria-hidden="true" />}
           </button>
         </div>
       </div>
@@ -114,9 +99,7 @@ export function Header() {
               <div key={navItem.title} className="w-full flex items-center justify-between py-4 border-b border-gray-100 cursor-pointer group">
                 <span className="text-lg font-semibold text-sr-text-blue group-hover:text-sr-green transition-colors">{navItem.title}</span>
                 {navItem.megaMenu && (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-sr-green">
-                    <path d="m9 18 6-6-6-6"/>
-                  </svg>
+                  <InlineSvgIcon002 className="text-sr-green" />
                 )}
               </div>
             ))}

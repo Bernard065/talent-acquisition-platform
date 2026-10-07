@@ -1,5 +1,6 @@
 import React from "react";
 import { STATS_DATA } from "@/constants/dashboard";
+import { ArrowDown, ArrowUp } from "@/components/icons";
 
 export const StatsCards = () => {
   return (
@@ -12,13 +13,9 @@ export const StatsCards = () => {
             </div>
             <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${stat.changeType === "positive" ? "text-emerald-700 bg-emerald-50 border border-emerald-100" : "text-red-700 bg-red-50 border border-red-100"}`}>
               {stat.isDown ? (
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-                </svg>
+                <ArrowDown className="w-3 h-3" aria-hidden="true" />
               ) : (
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-                </svg>
+                <ArrowUp className="w-3 h-3" aria-hidden="true" />
               )}
               {stat.change}
             </span>

@@ -1,4 +1,6 @@
 "use client";
+import { ExtractedSvgIcon09 } from "@/components/icons";
+
 
 import React from "react";
 import type { JobPostingStatus } from "@/types/api/jobs";
@@ -57,9 +59,7 @@ export const JobFilters = ({
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
         {/* Search */}
         <div className="relative flex-1">
-          <svg className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
+          <ExtractedSvgIcon09 className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             placeholder="Search jobs by title..."

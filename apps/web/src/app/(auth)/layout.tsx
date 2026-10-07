@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { MindHireMark } from "@/components/icons";
 
 export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
@@ -13,7 +14,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
 
         <div className="absolute inset-0 flex flex-col justify-end p-16 z-20 text-white">
           <Link href="/" className="flex items-center gap-2 mb-12 hover:opacity-80 transition-opacity">
-            <svg className="h-8 w-8 text-sr-mint" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/><path d="M17.599 6.5a3 3 0 0 0 .399-1.375"/></svg>
+            <MindHireMark className="h-8 w-8 text-sr-mint" />
             <span className="font-display font-bold text-2xl tracking-tight">MindHire</span>
           </Link>
           <blockquote className="space-y-6">

@@ -1,3 +1,4 @@
+import { ExtractedSvgIcon21 } from "@/components/icons";
 import React from "react";
 import { UPCOMING_INTERVIEWS } from "@/constants/dashboard";
 
@@ -28,9 +29,7 @@ export const UpcomingInterviews = () => {
               </div>
               <div className="flex items-center justify-between sm:justify-end gap-2.5 pt-2 sm:pt-0 border-t border-gray-100 sm:border-t-0">
                 <div className="flex items-center gap-1.5 text-xs text-gray-500 whitespace-nowrap">
-                  <svg className="w-3.5 h-3.5 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
+                  <ExtractedSvgIcon21 className="w-3.5 h-3.5 text-gray-400 shrink-0" />
                   <span>{interview.datetime}</span>
                 </div>
                 <span className={`inline-flex items-center text-xs font-medium px-2.5 py-0.5 rounded-full border ${interview.badgeStyle}`}>

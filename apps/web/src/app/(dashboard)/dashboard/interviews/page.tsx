@@ -1,4 +1,6 @@
 "use client";
+import { ExtractedSvgIcon09, ExtractedSvgIcon10 } from "@/components/icons";
+
 
 import React, { useState } from "react";
 import { MOCK_INTERVIEWS } from "@/constants/interviews";
@@ -44,9 +46,7 @@ export default function InterviewsPage() {
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full h-10 pl-10 pr-4 rounded-lg border border-gray-200 bg-white text-sm outline-none focus:border-sr-green focus:ring-1 focus:ring-sr-green transition-all"
           />
-          <svg className="w-4 h-4 text-gray-400 absolute left-3.5 top-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
+          <ExtractedSvgIcon09 className="w-4 h-4 text-gray-400 absolute left-3.5 top-3" />
         </div>
       </div>
 
@@ -102,9 +102,7 @@ export default function InterviewsPage() {
         ) : (
           <div className="text-center py-20 bg-gray-50 rounded-xl border border-gray-100 border-dashed">
             <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm border border-gray-100">
-              <svg className="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
+              <ExtractedSvgIcon10 className="w-8 h-8 text-gray-300" />
             </div>
             <h3 className="text-lg font-bold text-gray-700">No interviews found</h3>
             <p className="text-gray-500 mt-1 max-w-sm mx-auto text-sm">

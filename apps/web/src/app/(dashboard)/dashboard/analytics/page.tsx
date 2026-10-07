@@ -1,3 +1,4 @@
+import { ExtractedSvgIcon01 } from "@/components/icons";
 import React from "react";
 import { MetricsSummary } from "@/components/analytics/metrics-summary";
 import { HiringFunnel } from "@/components/analytics/hiring-funnel";
@@ -27,9 +28,7 @@ export default function AnalyticsPage() {
             <option>All Time</option>
           </select>
           <button className="h-10 px-4 rounded-lg bg-sr-mint text-sr-text-blue font-bold text-sm hover:bg-sr-green hover:text-white transition-colors flex items-center gap-2">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
+            <ExtractedSvgIcon01 className="w-4 h-4" />
             Export
           </button>
         </div>

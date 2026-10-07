@@ -1,4 +1,6 @@
 "use client";
+import { InlineSvgIcon004 } from "@/components/icons";
+
 
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -28,9 +30,7 @@ export const Topbar = ({ onMenuClick }: { onMenuClick?: () => void }) => {
       <div className="flex min-w-0 items-center gap-3">
         <div className="flex shrink-0 items-center md:hidden">
           <Button variant="ghost" size="icon" aria-label="Open navigation" className="text-gray-500 hover:text-sr-text-blue" onClick={onMenuClick}>
-            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
+            <InlineSvgIcon004 className="h-6 w-6" />
           </Button>
         </div>
         <h1 className="truncate text-base font-semibold text-sr-text-blue">{pageTitle}</h1>
