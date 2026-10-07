@@ -21,7 +21,7 @@ export async function listApplications(
 ): Promise<ApplicationListResponse> {
   return get<ApplicationListResponse>("/applications", {
     ...options,
-    params: { ...options?.params, ...params } as Record<string, string>,
+    params: { ...options?.params, ...params },
   });
 }
 
@@ -31,7 +31,7 @@ export async function listApplicationPipeline(
 ): Promise<ApplicationPipelineListResponse> {
   return get<ApplicationPipelineListResponse>("/applications/pipeline", {
     ...options,
-    params: { ...options?.params, ...params } as Record<string, string>,
+    params: { ...options?.params, ...params },
   });
 }
 

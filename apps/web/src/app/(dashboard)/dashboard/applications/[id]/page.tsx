@@ -1,16 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
-import { getApplication } from "@/lib/api/services/applications";
-import { getCandidate } from "@/lib/api/services/candidates";
-import { getRequisition } from "@/lib/api/services/requisitions";
-import type { ApplicationResponse, CandidateResponse, RequisitionResponse } from "@/types/api";
+import { useApplication } from "@/lib/api/hooks/applications";
+import { useCandidate } from "@/lib/api/hooks/candidates";
+import { useRequisition } from "@/lib/api/hooks/requisitions";
+import type { ApplicationStatus } from "@/types/api/applications";
 
-const STATUS_LABELS: Record<ApplicationResponse["status"], string> = {
+const STATUS_LABELS: Record<ApplicationStatus, string> = {
   applied: "New",
   screening: "Screening",
   interview: "Interview",
@@ -31,7 +30,7 @@ function Detail({ label, value }: { label: string; value: string | null | undefi
   return (
     <div>
       <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</dt>
-      <dd className="mt-1 break-words text-sm text-gray-900">{value || "Not provided"}</dd>
+      <dd className="mt-1 wrap-break-word text-sm text-gray-900">{value || "Not provided"}</dd>
     </div>
   );
 }
@@ -39,38 +38,16 @@ function Detail({ label, value }: { label: string; value: string | null | undefi
 export default function ApplicationDetailsPage() {
   const { status: sessionStatus } = useSession();
   const { id } = useParams<{ id: string }>();
-  const [application, setApplication] = useState<ApplicationResponse | null>(null);
-  const [candidate, setCandidate] = useState<CandidateResponse | null>(null);
-  const [requisition, setRequisition] = useState<RequisitionResponse | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (sessionStatus !== "authenticated" || !id) return;
-    let isCurrent = true;
-
-    void getApplication(id)
-      .then(async (applicationResult) => {
-        const [candidateResult, requisitionResult] = await Promise.all([
-          getCandidate(applicationResult.candidate_id).catch(() => null),
-          getRequisition(applicationResult.requisition_id).catch(() => null),
-        ]);
-        if (!isCurrent) return;
-        setApplication(applicationResult);
-        setCandidate(candidateResult);
-        setRequisition(requisitionResult);
-      })
-      .catch(() => {
-        if (isCurrent) setError("We couldn’t load this application. It may have been removed or you may not have access.");
-      })
-      .finally(() => {
-        if (isCurrent) setIsLoading(false);
-      });
-
-    return () => {
-      isCurrent = false;
-    };
-  }, [sessionStatus, id]);
+  const applicationQuery = useApplication(id);
+  const application = applicationQuery.data;
+  const candidateQuery = useCandidate(application?.candidate_id ?? "");
+  const requisitionQuery = useRequisition(application?.requisition_id ?? "");
+  const candidate = candidateQuery.data;
+  const requisition = requisitionQuery.data;
+  const isLoading = sessionStatus !== "authenticated" || applicationQuery.isLoading;
+  const error = applicationQuery.isError
+    ? "We couldn’t load this application. It may have been removed or you may not have access."
+    : null;
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
