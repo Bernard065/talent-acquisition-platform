@@ -1,63 +1,28 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { JobFilters } from "@/components/jobs/job-filters";
 import { JobCard } from "@/components/jobs/job-card";
-import { listJobPostings } from "@/lib/api/services/jobs";
-import type { JobPostingResponse, JobPostingStatus } from "@/types/api/jobs";
+import { useJobPostings } from "@/lib/api/hooks/jobs";
+import type { JobPostingStatus } from "@/types/api/jobs";
 
 export default function JobsPage() {
   const { status: sessionStatus } = useSession();
-  const [postings, setPostings] = useState<JobPostingResponse[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const postingsQuery = useJobPostings({ limit: 100 });
+  const postings = useMemo(
+    () => postingsQuery.data?.pages.flatMap((page) => page.items) ?? [],
+    [postingsQuery.data],
+  );
   const [activeStatus, setActiveStatus] = useState<JobPostingStatus | "all">("all");
   const [activeDepartment, setActiveDepartment] = useState("All Departments");
   const [searchQuery, setSearchQuery] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadPostings = useCallback(async (cursor?: string) => {
-    setError(null);
-    if (cursor) setIsLoadingMore(true);
-    else setIsLoading(true);
-
-    try {
-      const result = await listJobPostings({ limit: 100, cursor });
-      setPostings((current) => cursor ? [...current, ...result.items] : result.items);
-      setNextCursor(result.next_cursor);
-    } catch {
-      setError("We couldn’t load jobs from your workspace. Please try again.");
-    } finally {
-      setIsLoading(false);
-      setIsLoadingMore(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (sessionStatus !== "authenticated") return;
-
-    let isCurrent = true;
-    void listJobPostings({ limit: 100 })
-      .then((result) => {
-        if (!isCurrent) return;
-        setPostings(result.items);
-        setNextCursor(result.next_cursor);
-      })
-      .catch(() => {
-        if (isCurrent) setError("We couldn’t load jobs from your workspace. Please try again.");
-      })
-      .finally(() => {
-        if (isCurrent) setIsLoading(false);
-      });
-
-    return () => {
-      isCurrent = false;
-    };
-  }, [sessionStatus]);
+  const isLoading = sessionStatus !== "authenticated" || postingsQuery.isLoading;
+  const error = postingsQuery.isError
+    ? "We couldn’t load jobs from your workspace. Please try again."
+    : null;
 
   const departments = useMemo(
     () => Array.from(new Set(postings.map((posting) => posting.department).filter((value): value is string => Boolean(value)))).sort(),
@@ -111,7 +76,7 @@ export default function JobsPage() {
       {error ? (
         <div className="rounded-xl border border-red-200 bg-red-50 p-8 text-center">
           <p className="text-sm text-red-800">{error}</p>
-          <Button className="mt-4" variant="outline" onClick={() => void loadPostings()}>
+          <Button className="mt-4" variant="outline" onClick={() => void postingsQuery.refetch()}>
             Try again
           </Button>
         </div>
@@ -124,10 +89,14 @@ export default function JobsPage() {
           <div className="flex flex-col gap-3">
             {filteredPostings.map((posting) => <JobCard key={posting.id} job={posting} />)}
           </div>
-          {nextCursor && (
+          {postingsQuery.hasNextPage && (
             <div className="flex justify-center">
-              <Button variant="outline" disabled={isLoadingMore} onClick={() => void loadPostings(nextCursor)}>
-                {isLoadingMore ? "Loading…" : "Load more jobs"}
+              <Button
+                variant="outline"
+                disabled={postingsQuery.isFetchingNextPage}
+                onClick={() => void postingsQuery.fetchNextPage()}
+              >
+                {postingsQuery.isFetchingNextPage ? "Loading…" : "Load more jobs"}
               </Button>
             </div>
           )}
