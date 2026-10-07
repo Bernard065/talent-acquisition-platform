@@ -20,6 +20,7 @@ export default function LoginPage() {
     event.preventDefault();
     setError(null);
     setIsSubmitting(true);
+    let isNavigating = false;
 
     try {
       const result = await signIn("credentials", {
@@ -33,12 +34,13 @@ export default function LoginPage() {
         return;
       }
 
+      isNavigating = true;
       router.push("/dashboard");
       router.refresh();
     } catch {
       setError("Sign-in is temporarily unavailable. Please try again shortly.");
     } finally {
-      setIsSubmitting(false);
+      if (!isNavigating) setIsSubmitting(false);
     }
   }
 
@@ -60,7 +62,7 @@ export default function LoginPage() {
         </p>
       </div>
 
-      <form className="flex flex-col gap-5" onSubmit={handleSubmit}>
+      <form className="flex flex-col gap-5" onSubmit={handleSubmit} aria-busy={isSubmitting}>
         <div className="grid gap-2">
           <Label htmlFor="email">Work Email</Label>
           <Input
@@ -119,9 +121,33 @@ export default function LoginPage() {
         <Button 
           type="submit" 
           disabled={isSubmitting}
+          aria-busy={isSubmitting}
           variant="secondary"
           className="w-full bg-sr-mint hover:bg-sr-green text-sr-text-blue hover:text-white h-12 text-base font-semibold mt-2 transition-colors"
         >
+          {isSubmitting && (
+            <svg
+              className="mr-2 h-5 w-5 animate-spin"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              />
+            </svg>
+          )}
           {isSubmitting ? "Signing in…" : "Sign In"}
         </Button>
       </form>
