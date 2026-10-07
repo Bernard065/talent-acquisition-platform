@@ -33,13 +33,13 @@ JWKS endpoint. Do not configure the API with a shared signing secret.
 
 ## Tenant and role claims
 
-The API requires a signed `org_id` claim and a signed `roles` array. Configure
-a Supabase Custom Access Token Hook to add these claims from trusted
-`app_metadata`. The `app_metadata` values must be assigned by a trusted
-provisioning process using the Supabase Admin API; never accept organization or
-role values from `user_metadata`, sign-up forms, or browser input.
+The API accepts a signed `org_id` claim and `roles` array directly, or reads
+`organization_id` and `roles` from Supabase's signed `app_metadata` claim. The
+workspace bootstrap and invitation flows store those values in `app_metadata`
+through the Supabase Admin API. Never accept organization or role values from
+`user_metadata`, sign-up forms, or browser input.
 
-The hook should copy:
+If you use a Custom Access Token Hook, it can copy:
 
 - `app_metadata.organization_id` to the top-level `org_id` claim. This value
   must match a tenant's `identity_provider_organization_id` in the API database.
@@ -99,7 +99,8 @@ user-editable metadata an authorization source.
 ## Local setup
 
 1. Create a Supabase project and enable email/password authentication.
-2. Configure an asymmetric JWT signing key and the custom access-token hook.
+2. Configure an asymmetric JWT signing key. A custom access-token hook is
+   optional when the token already includes Supabase `app_metadata`.
 3. Add the project's issuer and JWKS settings to the API environment.
 4. Add the project URL and publishable key, plus an Auth.js secret, to the web
    environment.

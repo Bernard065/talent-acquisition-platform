@@ -4,7 +4,7 @@ from typing import Any
 
 import jwt
 from jwt import InvalidTokenError, PyJWKClient
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from app.core.authorization import Role
 from app.core.config import Settings
@@ -18,6 +18,34 @@ class TokenClaims(BaseModel):
     sub: str = Field(min_length=1)
     org_id: str = Field(min_length=1, max_length=255)
     roles: set[Role] = Field(default_factory=set)
+
+    @model_validator(mode="before")
+    @classmethod
+    def read_supabase_app_metadata(cls, value: Any) -> Any:
+        """Use trusted Supabase app_metadata when direct API claims are absent.
+
+        Supabase places administrator-managed user metadata under the signed
+        ``app_metadata`` claim. The workspace bootstrap stores the provider
+        organization ID and roles there, while other OIDC providers may issue
+        the API's canonical ``org_id`` and ``roles`` claims directly.
+        """
+        if not isinstance(value, dict):
+            return value
+
+        app_metadata = value.get("app_metadata")
+        if not isinstance(app_metadata, dict):
+            return value
+
+        normalized = dict(value)
+        if "org_id" not in normalized:
+            organization_id = app_metadata.get("organization_id")
+            if isinstance(organization_id, str):
+                normalized["org_id"] = organization_id
+        if "roles" not in normalized:
+            roles = app_metadata.get("roles")
+            if isinstance(roles, list):
+                normalized["roles"] = roles
+        return normalized
 
 
 class JwtVerifier:
@@ -46,7 +74,7 @@ class JwtVerifier:
                 issuer=str(self._settings.jwt_issuer),
                 leeway=self._settings.jwt_leeway_seconds,
                 options={
-                    "require": ["exp", "iat", "iss", "aud", "sub", "org_id"],
+                    "require": ["exp", "iat", "iss", "aud", "sub"],
                 },
             )
 
