@@ -267,26 +267,18 @@ async def accept_invitation(body: AcceptInvitation, request: Request, session: S
     """Accept a pending invitation by verifying the Supabase token."""
 
     settings = _settings(request)
-    publishable_key = settings.supabase_publishable_key
-    if publishable_key is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Workspace invitations are not configured.",
-        )
-    key = publishable_key.get_secret_value()
     payload = await _supabase_request(
         settings,
         "POST",
         "verify",
-        headers={"apikey": key, "Content-Type": "application/json"},
+        headers=_admin_headers(settings),
         json={"token_hash": body.token_hash, "type": "invite"},
     )
     payload_object = _as_dict(payload)
     auth_user = _as_dict(payload_object.get("user"))
     email = str(auth_user.get("email", "")).casefold()
     subject = str(auth_user.get("id", ""))
-    access_token = payload_object.get("access_token")
-    if not email or not subject or not access_token:
+    if not email or not subject:
         raise HTTPException(
             status_code=400,
             detail="The invitation link is invalid or expired.",
@@ -311,12 +303,7 @@ async def accept_invitation(body: AcceptInvitation, request: Request, session: S
     await _supabase_request(
         settings,
         "PUT",
-        "user",
-        headers={
-            "apikey": key,
-            "Authorization": "******",
-            "Content-Type": "application/json",
-        },
+        f"admin/users/{subject}",
         json={"password": body.password},
     )
     tenant = await session.get(Tenant, invitation.tenant_id)
