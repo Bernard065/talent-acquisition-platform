@@ -1,70 +1,38 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { JobStatusBadge } from "@/components/jobs/job-status-badge";
-import { getJobPosting, publishJobPosting, unpublishJobPosting } from "@/lib/api/services/jobs";
-import type { JobPostingResponse } from "@/types/api/jobs";
+import {
+  useJobPosting,
+  usePublishJobPosting,
+  useUnpublishJobPosting,
+} from "@/lib/api/hooks/jobs";
 
 export default function JobPostingPage() {
   const { id } = useParams<{ id: string }>();
   const { status: sessionStatus } = useSession();
-  const [posting, setPosting] = useState<JobPostingResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
+  const postingQuery = useJobPosting(id);
+  const publishMutation = usePublishJobPosting();
+  const unpublishMutation = useUnpublishJobPosting();
+  const posting = postingQuery.data;
+  const isLoading = sessionStatus !== "authenticated" || postingQuery.isLoading;
+  const isSaving = publishMutation.isPending || unpublishMutation.isPending;
+  const error = publishMutation.error ?? unpublishMutation.error;
 
-  const loadPosting = useCallback(async () => {
-    setError(null);
-    setIsLoading(true);
-    try {
-      setPosting(await getJobPosting(id));
-    } catch {
-      setError("We couldn’t load this job posting. Check your access and try again.");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [id]);
-
-  useEffect(() => {
-    if (sessionStatus !== "authenticated") return;
-
-    let isCurrent = true;
-    void getJobPosting(id)
-      .then((result) => {
-        if (isCurrent) setPosting(result);
-      })
-      .catch(() => {
-        if (isCurrent) {
-          setError("We couldn’t load this job posting. Check your access and try again.");
-        }
-      })
-      .finally(() => {
-        if (isCurrent) setIsLoading(false);
-      });
-
-    return () => {
-      isCurrent = false;
-    };
-  }, [sessionStatus, id]);
-
-  async function changePublication() {
+  function changePublication() {
     if (!posting) return;
-    setIsSaving(true);
-    setError(null);
-    try {
-      const body = { expected_version: posting.version };
-      const updated = posting.status === "published"
-        ? await unpublishJobPosting(posting.id, body, crypto.randomUUID())
-        : await publishJobPosting(posting.id, body, crypto.randomUUID());
-      setPosting(updated);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "We couldn’t update this job posting.");
-    } finally {
-      setIsSaving(false);
+    const variables = {
+      id: posting.id,
+      request: { expected_version: posting.version },
+      idempotencyKey: crypto.randomUUID(),
+    };
+    if (posting.status === "published") {
+      unpublishMutation.mutate(variables);
+    } else {
+      publishMutation.mutate(variables);
     }
   }
 
@@ -74,9 +42,14 @@ export default function JobPostingPage() {
         ← Back to jobs
       </Link>
 
+      {postingQuery.isError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800" role="alert">
+          We couldn’t load this job posting. Check your access and try again.
+        </div>
+      )}
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800" role="alert">
-          {error}
+          {error instanceof Error ? error.message : "We couldn’t update this job posting."}
         </div>
       )}
 
@@ -99,7 +72,7 @@ export default function JobPostingPage() {
                 </p>
               </div>
               {posting.status !== "expired" && (
-                <Button onClick={() => void changePublication()} disabled={isSaving}>
+          <Button onClick={changePublication} disabled={isSaving}>
                   {isSaving
                     ? "Saving…"
                     : posting.status === "published"
@@ -139,7 +112,7 @@ export default function JobPostingPage() {
       ) : (
         <div className="rounded-xl border border-gray-200 bg-white p-8 text-center">
           <p className="text-sm text-gray-600">This job posting isn’t available.</p>
-          <Button className="mt-4" variant="outline" onClick={() => void loadPosting()}>
+          <Button className="mt-4" variant="outline" onClick={() => void postingQuery.refetch()}>
             Try again
           </Button>
         </div>

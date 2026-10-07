@@ -15,7 +15,7 @@ export async function listJobPostings(
 ): Promise<JobPostingListResponse> {
   return get<JobPostingListResponse>("/job-postings", {
     ...options,
-    params: { ...options?.params, ...params } as Record<string, string>,
+    params: { ...options?.params, ...params },
   });
 }
 
@@ -72,7 +72,7 @@ export async function listPublicJobs(
 ): Promise<PublicJobListResponse> {
   return get<PublicJobListResponse>("/public/jobs", {
     ...options,
-    params: { ...options?.params, ...params } as Record<string, string>,
+    params: { ...options?.params, ...params },
   });
 }
 
