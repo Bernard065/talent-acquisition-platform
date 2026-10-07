@@ -87,6 +87,15 @@ class CandidateListResponse(BaseModel):
     next_cursor: str | None = None
 
 
+class CandidateFilterOptionsResponse(BaseModel):
+    """Tenant-wide source and location values for candidate filters."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    sources: list[str]
+    locations: list[str]
+
+
 class CandidatePrivacyOperationResponse(BaseModel):
     """PII-free acknowledgement for a consent or erasure operation."""
 
