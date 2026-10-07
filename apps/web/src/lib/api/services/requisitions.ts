@@ -14,7 +14,7 @@ export async function listRequisitions(
 ): Promise<RequisitionListResponse> {
   return get<RequisitionListResponse>("/requisitions", {
     ...options,
-    params: { ...options?.params, ...params } as Record<string, string>,
+    params: { ...options?.params, ...params },
   });
 }
 
