@@ -5,15 +5,24 @@ import type {
   InterviewSearchListResponse,
   ScheduleInterviewRequest,
   InterviewCancellationReason,
+  InterviewSessionStatus,
 } from "@/types/api";
 
+export interface InterviewSearchParams extends PaginationParams {
+  application_id?: string;
+  participant_user_id?: string;
+  status?: InterviewSessionStatus;
+  scheduled_after?: string;
+  scheduled_before?: string;
+}
+
 export async function listInterviews(
-  params?: PaginationParams,
+  params?: InterviewSearchParams,
   options?: RequestOptions,
 ): Promise<InterviewSearchListResponse> {
-  return get<InterviewSearchListResponse>("/interviews/search", {
+  return get<InterviewSearchListResponse>("/interviews", {
     ...options,
-    params: { ...options?.params, ...params } as Record<string, string>,
+    params: { ...options?.params, ...params },
   });
 }
 
@@ -25,11 +34,12 @@ export async function getInterview(
 }
 
 export async function scheduleInterview(
+  applicationId: string,
   body: ScheduleInterviewRequest,
   idempotencyKey: string,
   options?: RequestOptions,
 ): Promise<InterviewSessionResponse> {
-  return post<InterviewSessionResponse>("/interviews", body, {
+  return post<InterviewSessionResponse>(`/applications/${applicationId}/interviews`, body, {
     ...options,
     idempotencyKey,
   });
@@ -44,7 +54,7 @@ export async function cancelInterview(
   idempotencyKey: string,
   options?: RequestOptions,
 ): Promise<InterviewSessionResponse> {
-  return post<InterviewSessionResponse>(`/interviews/${id}/cancel`, body, {
+  return post<InterviewSessionResponse>(`/interview-sessions/${id}/cancel`, body, {
     ...options,
     idempotencyKey,
   });

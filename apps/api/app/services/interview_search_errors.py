@@ -7,3 +7,7 @@ class InterviewSearchAccessDeniedError(PermissionError):
 
 class InvalidInterviewSearchCursorError(ValueError):
     """Raised when interview-search keyset pagination state is invalid."""
+
+
+class InterviewSearchValidationError(ValueError):
+    """Raised when interview calendar search filters are semantically invalid."""

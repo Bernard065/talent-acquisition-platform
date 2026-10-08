@@ -15,8 +15,10 @@ from app.core.authorization import Role, TenantContext
 from app.db.models.identity import User
 from app.db.models.interview import InterviewParticipant, InterviewSession
 from app.domains.interviews.enums import InterviewSessionStatus
+from app.services.interview_lifecycle_errors import InterviewSessionNotFoundError
 from app.services.interview_search_errors import (
     InterviewSearchAccessDeniedError,
+    InterviewSearchValidationError,
     InvalidInterviewSearchCursorError,
 )
 
@@ -55,7 +57,9 @@ def _normalize_aware_datetime(
 ) -> datetime:
     """Require timezone-aware schedule range filters."""
     if value.tzinfo is None:
-        raise ValueError(f"{field_name} must include a UTC offset.")
+        raise InterviewSearchValidationError(
+            f"{field_name} must include a UTC offset."
+        )
 
     return value.astimezone(UTC)
 
@@ -75,6 +79,41 @@ def _encode_cursor(session: InterviewSession) -> str:
     ).encode("utf-8")
 
     return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+async def get_interview_session(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    interview_session_id: UUID,
+) -> InterviewSession:
+    """Return one tenant-owned interview visible to the caller."""
+    participant_user_id = await _authorized_participant_filter(
+        session,
+        context=context,
+        requested_participant_user_id=None,
+    )
+    statement = (
+        select(InterviewSession)
+        .options(selectinload(InterviewSession.participants))
+        .where(
+            InterviewSession.id == interview_session_id,
+            InterviewSession.tenant_id == context.tenant_id,
+        )
+    )
+    if participant_user_id is not None:
+        statement = statement.join(
+            InterviewParticipant,
+            InterviewParticipant.interview_session_id == InterviewSession.id,
+        ).where(
+            InterviewParticipant.tenant_id == context.tenant_id,
+            InterviewParticipant.user_id == participant_user_id,
+        )
+
+    interview = await session.scalar(statement)
+    if interview is None:
+        raise InterviewSessionNotFoundError("Interview session was not found.")
+    return interview
 
 
 def _decode_cursor(cursor: str) -> tuple[datetime, UUID]:
@@ -187,7 +226,7 @@ async def search_interviews(
             field_name="scheduled_before",
         )
     ):
-        raise ValueError(
+        raise InterviewSearchValidationError(
             "scheduled_after must not be later than scheduled_before."
         )
 
