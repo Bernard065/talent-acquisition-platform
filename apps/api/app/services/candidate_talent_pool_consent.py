@@ -181,6 +181,36 @@ async def record_candidate_talent_pool_consent(
     return event
 
 
+async def get_candidate_talent_pool_consent_state(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    candidate_id: UUID,
+) -> CandidateTalentPoolConsentEvent | None:
+    """Return the latest consent event for an active, tenant-owned candidate."""
+    _require_consent_role(context)
+    candidate = await session.scalar(
+        select(Candidate.id).where(
+            Candidate.id == candidate_id,
+            Candidate.tenant_id == context.tenant_id,
+            Candidate.privacy_status == CandidatePrivacyStatus.ACTIVE,
+        )
+    )
+    if candidate is None:
+        raise CandidateTalentPoolConsentNotFoundError("Candidate was not found.")
+
+    latest: CandidateTalentPoolConsentEvent | None = await session.scalar(
+        select(CandidateTalentPoolConsentEvent)
+        .where(
+            CandidateTalentPoolConsentEvent.tenant_id == context.tenant_id,
+            CandidateTalentPoolConsentEvent.candidate_id == candidate_id,
+        )
+        .order_by(CandidateTalentPoolConsentEvent.event_version.desc())
+        .limit(1)
+    )
+    return latest
+
+
 async def withdraw_talent_pool_consent_for_erasure(
     session: AsyncSession,
     *,
