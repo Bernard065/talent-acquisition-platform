@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { getUserDisplayName } from "@/lib/user-display-name";
 
 const pageTitles: Array<{ href: string; title: string }> = [
   { href: "/dashboard/jobs/new", title: "Create requisition" },
@@ -22,7 +23,7 @@ export const Topbar = ({ onMenuClick }: { onMenuClick?: () => void }) => {
   const pathname = usePathname();
   const { data: session } = useSession();
   const pageTitle = pageTitles.find(({ href }) => pathname === href || pathname.startsWith(`${href}/`))?.title ?? "Dashboard";
-  const name = session?.user?.name || session?.user?.email || "Workspace member";
+  const name = getUserDisplayName(session?.user?.name, session?.user?.email) || "Workspace member";
   const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toLocaleUpperCase()).join("");
 
   return (
@@ -44,9 +45,6 @@ export const Topbar = ({ onMenuClick }: { onMenuClick?: () => void }) => {
         )}
         <div className="hidden text-right md:block">
           <span className="block max-w-48 truncate text-sm font-medium text-sr-text-blue">{name}</span>
-          {session?.user?.email && session.user.email !== name && (
-            <span className="block max-w-48 truncate text-xs text-gray-500">{session.user.email}</span>
-          )}
         </div>
         <div aria-hidden="true" className="flex h-8 w-8 items-center justify-center rounded-full bg-sr-mint text-xs font-bold text-sr-text-blue">
           {initials || "WM"}

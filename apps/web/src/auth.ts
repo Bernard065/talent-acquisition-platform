@@ -9,8 +9,29 @@ type SupabaseTokenResponse = {
   access_token: string;
   refresh_token: string;
   expires_in: number;
-  user: { id: string; email?: string; user_metadata?: { full_name?: string } };
+  user: {
+    id: string;
+    email?: string;
+    user_metadata?: { full_name?: string; name?: string; given_name?: string };
+  };
 };
+
+function getUserDisplayName(user: SupabaseTokenResponse["user"]): string | undefined {
+  const metadataName =
+    user.user_metadata?.full_name?.trim() ||
+    user.user_metadata?.name?.trim() ||
+    user.user_metadata?.given_name?.trim();
+  if (metadataName) return metadataName;
+
+  const emailName = user.email?.split("@", 1)[0]?.trim();
+  if (!emailName) return undefined;
+
+  return emailName
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toLocaleUpperCase() + part.slice(1))
+    .join(" ");
+}
 
 type AuthToken = JWT;
 
@@ -91,7 +112,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         return {
           id: result.user.id,
           email: result.user.email,
-          name: result.user.user_metadata?.full_name ?? result.user.email,
+          name: getUserDisplayName(result.user),
           supabaseAccessToken: result.access_token,
           supabaseRefreshToken: result.refresh_token,
           supabaseExpiresAt: Date.now() + result.expires_in * 1000,

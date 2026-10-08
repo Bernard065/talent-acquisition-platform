@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useSession } from "next-auth/react";
+import { getUserFirstName } from "@/lib/user-display-name";
 
 export default function DashboardPage() {
   const { data: session } = useSession();
-  const name = session?.user?.name?.trim().split(/\s+/)[0];
+  const name = getUserFirstName(session?.user?.name, session?.user?.email);
 
   return (
     <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-8">
