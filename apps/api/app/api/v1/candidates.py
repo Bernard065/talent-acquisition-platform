@@ -12,6 +12,7 @@ from app.api.idempotency import IdempotencyKey, idempotency_response
 from app.api.v1.schemas.candidate_talent_pool_consent import (
     CandidateTalentPoolConsentGrantRequest,
     CandidateTalentPoolConsentResponse,
+    CandidateTalentPoolConsentStateResponse,
     CandidateTalentPoolConsentWithdrawalRequest,
 )
 from app.api.v1.schemas.candidates import (
@@ -30,12 +31,14 @@ from app.domains.candidates.enums import CandidateConsentStatus
 from app.domains.candidates.talent_pool_consent import (
     CandidateTalentPoolCaptureMethod,
     CandidateTalentPoolConsentEventType,
+    consent_is_active,
 )
 from app.services.candidate_privacy import (
     request_candidate_erasure,
     withdraw_candidate_consent,
 )
 from app.services.candidate_talent_pool_consent import (
+    get_candidate_talent_pool_consent_state,
     record_candidate_talent_pool_consent,
 )
 from app.services.candidates import (
@@ -359,6 +362,40 @@ async def grant_candidate_talent_pool_consent_endpoint(
         context=context,
         session=session,
         idempotency_key=idempotency_key,
+    )
+
+
+@router.get(
+    "/{candidate_id}/talent-pool-consent",
+    response_model=CandidateTalentPoolConsentStateResponse,
+    summary="Get candidate talent-pool consent state",
+)
+async def get_candidate_talent_pool_consent_state_endpoint(
+    candidate_id: UUID,
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+) -> CandidateTalentPoolConsentStateResponse:
+    """Return PII-minimized latest consent state for an active candidate."""
+    event = await get_candidate_talent_pool_consent_state(
+        session,
+        context=context,
+        candidate_id=candidate_id,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return CandidateTalentPoolConsentStateResponse(
+        candidate_id=candidate_id,
+        status=(
+            "unknown"
+            if event is None
+            else "granted"
+            if consent_is_active(event.event_type)
+            else "withdrawn"
+        ),
+        event_version=None if event is None else event.event_version,
+        capture_method=None if event is None else event.capture_method,
+        notice_version=None if event is None else event.notice_version,
+        recorded_at=None if event is None else event.recorded_at,
     )
 
 

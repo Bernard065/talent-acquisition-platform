@@ -43,3 +43,38 @@ export interface CandidatePrivacyOperationResponse {
   erasure_requested_at: string | null;
   erased_at: string | null;
 }
+
+export type CandidateTalentPoolCaptureMethod =
+  | "signed_form"
+  | "email_confirmation"
+  | "recruiter_recorded";
+
+export type CandidateTalentPoolConsentEventType = "granted" | "renewed" | "withdrawn";
+
+export interface CandidateTalentPoolConsentGrantRequest {
+  notice_version: string;
+  capture_method: CandidateTalentPoolCaptureMethod;
+}
+
+export interface CandidateTalentPoolConsentWithdrawalRequest {
+  capture_method: CandidateTalentPoolCaptureMethod;
+}
+
+export interface CandidateTalentPoolConsentResponse {
+  event_id: string;
+  candidate_id: string;
+  event_version: number;
+  event_type: CandidateTalentPoolConsentEventType;
+  capture_method: CandidateTalentPoolCaptureMethod;
+  notice_version: string | null;
+  recorded_at: string;
+}
+
+export interface CandidateTalentPoolConsentState {
+  candidate_id: string;
+  status: "unknown" | "granted" | "withdrawn";
+  event_version: number | null;
+  capture_method: CandidateTalentPoolCaptureMethod | null;
+  notice_version: string | null;
+  recorded_at: string | null;
+}

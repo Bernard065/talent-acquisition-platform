@@ -18,6 +18,19 @@ ConsentCaptureMethod = Literal[
 ]
 
 
+class CandidateTalentPoolConsentStateResponse(BaseModel):
+    """PII-minimized latest consent state used to guide valid recruiter actions."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    candidate_id: UUID
+    status: Literal["unknown", "granted", "withdrawn"]
+    event_version: int | None
+    capture_method: CandidateTalentPoolCaptureMethod | None
+    notice_version: str | None
+    recorded_at: datetime | None
+
+
 class CandidateTalentPoolConsentGrantRequest(BaseModel):
     """Evidence metadata for an explicit candidate consent grant or renewal."""
 

@@ -7,6 +7,10 @@ import type {
   CandidateListResponse,
   CandidateCreateRequest,
   CandidatePrivacyOperationResponse,
+  CandidateTalentPoolConsentGrantRequest,
+  CandidateTalentPoolConsentResponse,
+  CandidateTalentPoolConsentState,
+  CandidateTalentPoolConsentWithdrawalRequest,
 } from "@/types/api";
 
 export interface CandidateSearchParams extends PaginationParams {
@@ -62,5 +66,69 @@ export async function requestCandidateErasure(
       ...options,
       idempotencyKey,
     },
+  );
+}
+
+export async function withdrawCandidateConsent(
+  id: string,
+  idempotencyKey: string,
+  options?: RequestOptions,
+): Promise<CandidatePrivacyOperationResponse> {
+  return post<CandidatePrivacyOperationResponse>(
+    `/candidates/${id}/consent/withdraw`,
+    undefined,
+    {
+      ...options,
+      idempotencyKey,
+    },
+  );
+}
+
+export async function grantCandidateTalentPoolConsent(
+  id: string,
+  body: CandidateTalentPoolConsentGrantRequest,
+  idempotencyKey: string,
+  options?: RequestOptions,
+): Promise<CandidateTalentPoolConsentResponse> {
+  return post<CandidateTalentPoolConsentResponse>(
+    `/candidates/${id}/talent-pool-consent/grant`,
+    body,
+    { ...options, idempotencyKey },
+  );
+}
+
+export async function renewCandidateTalentPoolConsent(
+  id: string,
+  body: CandidateTalentPoolConsentGrantRequest,
+  idempotencyKey: string,
+  options?: RequestOptions,
+): Promise<CandidateTalentPoolConsentResponse> {
+  return post<CandidateTalentPoolConsentResponse>(
+    `/candidates/${id}/talent-pool-consent/renew`,
+    body,
+    { ...options, idempotencyKey },
+  );
+}
+
+export async function withdrawCandidateTalentPoolConsent(
+  id: string,
+  body: CandidateTalentPoolConsentWithdrawalRequest,
+  idempotencyKey: string,
+  options?: RequestOptions,
+): Promise<CandidateTalentPoolConsentResponse> {
+  return post<CandidateTalentPoolConsentResponse>(
+    `/candidates/${id}/talent-pool-consent/withdraw`,
+    body,
+    { ...options, idempotencyKey },
+  );
+}
+
+export async function getCandidateTalentPoolConsentState(
+  id: string,
+  options?: RequestOptions,
+): Promise<CandidateTalentPoolConsentState> {
+  return get<CandidateTalentPoolConsentState>(
+    `/candidates/${id}/talent-pool-consent`,
+    options,
   );
 }
