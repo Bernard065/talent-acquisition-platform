@@ -17,8 +17,8 @@ from app.api.v1.schemas.approvals import (
     ApprovalPolicyCreateRequest,
     ApprovalPolicyResponse,
     RequisitionApprovalInboxResponse,
-    RequisitionApprovalReviewResponse,
     RequisitionApprovalResponse,
+    RequisitionApprovalReviewResponse,
 )
 from app.core.authorization import TenantContext
 from app.db.models.approval import RequisitionApproval, RequisitionApprovalDecision
