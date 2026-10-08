@@ -240,6 +240,33 @@ async def not_found(
     )
 
 
+async def approval_policy_not_found(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Explain that the requested approval policy is not configured."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=(
+            "Approval policy not found or no active default policy is "
+            "configured."
+        ),
+    )
+
+
+async def invalid_approval_policy(
+    request: Request,
+    error: Exception,
+) -> JSONResponse:
+    """Return a readable conflict for an invalid policy operation."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_409_CONFLICT,
+        detail=str(error),
+    )
+
+
 async def candidate_or_application_not_found(
     request: Request,
     _: Exception,
@@ -1367,7 +1394,10 @@ def register_exception_handlers(application: FastAPI) -> None:
         conflict,
     )
 
-    application.add_exception_handler(ApprovalPolicyNotFoundError, not_found)
+    application.add_exception_handler(
+        ApprovalPolicyNotFoundError,
+        approval_policy_not_found,
+    )
     application.add_exception_handler(
         RequisitionApprovalNotFoundError,
         not_found,
@@ -1386,7 +1416,7 @@ def register_exception_handlers(application: FastAPI) -> None:
     )
     application.add_exception_handler(
         ApprovalPolicyInvalidError,
-        conflict,
+        invalid_approval_policy,
     )
 
     application.add_exception_handler(

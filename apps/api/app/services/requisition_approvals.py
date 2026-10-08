@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authorization import Role, TenantContext
@@ -66,6 +66,40 @@ class CreateApprovalPolicyCommand:
             )
 
 
+async def get_approval_policy_configuration(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+) -> tuple[ApprovalPolicy | None, list[User], list[UUID]]:
+    """Return the tenant's default policy and members available to assign."""
+    _require_role(context, _POLICY_ADMIN_ROLES)
+
+    policy = await session.scalar(
+        select(ApprovalPolicy).where(
+            ApprovalPolicy.tenant_id == context.tenant_id,
+            ApprovalPolicy.is_default.is_(True),
+        )
+    )
+    members = list(
+        await session.scalars(
+            select(User)
+            .where(User.tenant_id == context.tenant_id)
+            .order_by(User.display_name, User.email)
+        )
+    )
+    approver_user_ids: list[UUID] = []
+    if policy is not None:
+        approver_user_ids = list(
+            await session.scalars(
+                select(ApprovalPolicyStep.approver_user_id)
+                .where(ApprovalPolicyStep.approval_policy_id == policy.id)
+                .order_by(ApprovalPolicyStep.position)
+            )
+        )
+
+    return policy, members, approver_user_ids
+
+
 def _require_role(context: TenantContext, allowed_roles: frozenset[Role]) -> None:
     """Enforce service-level authorization without depending on HTTP."""
     if context.roles.isdisjoint(allowed_roles):
@@ -109,11 +143,31 @@ async def create_approval_policy(
     _require_role(context, _POLICY_ADMIN_ROLES)
 
     async with transactional(session):
-        await _tenant_users_by_id(
+        normalized_name = command.name.strip()
+        existing_policy = await session.scalar(
+            select(ApprovalPolicy.id).where(
+                ApprovalPolicy.tenant_id == context.tenant_id,
+                func.lower(ApprovalPolicy.name) == normalized_name.lower(),
+            )
+        )
+        if existing_policy is not None:
+            raise ApprovalPolicyInvalidError(
+                "An approval policy with that name already exists. "
+                "Update the existing policy or choose a different name."
+            )
+
+        approvers = await _tenant_users_by_id(
             session,
             tenant_id=context.tenant_id,
             user_ids=command.approver_user_ids,
         )
+        if any(
+            approver.external_subject == context.subject
+            for approver in approvers.values()
+        ):
+            raise ApprovalPolicyInvalidError(
+                "The policy creator cannot be assigned as an approver."
+            )
 
         if command.is_default:
             current_default = await session.scalar(
@@ -130,7 +184,7 @@ async def create_approval_policy(
 
         policy = ApprovalPolicy(
             tenant_id=context.tenant_id,
-            name=command.name.strip(),
+            name=normalized_name,
             is_default=command.is_default,
             is_active=True,
         )
@@ -159,6 +213,91 @@ async def create_approval_policy(
                 "is_default": policy.is_default,
                 "step_count": len(command.approver_user_ids),
             },
+        )
+
+    return policy
+
+
+async def update_approval_policy_approvers(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    policy_id: UUID,
+    approver_user_ids: tuple[UUID, ...],
+) -> ApprovalPolicy:
+    """Update ordered approvers on the current default policy.
+
+    Submitted approvals retain their immutable reviewer snapshots.
+    """
+    _require_role(context, _POLICY_ADMIN_ROLES)
+    if not approver_user_ids:
+        raise ApprovalPolicyInvalidError(
+            "An approval policy requires at least one approver."
+        )
+    if len(approver_user_ids) > 20:
+        raise ApprovalPolicyInvalidError("A policy may have at most 20 approvers.")
+    if len(set(approver_user_ids)) != len(approver_user_ids):
+        raise ApprovalPolicyInvalidError(
+            "An approver may appear only once in a policy."
+        )
+
+    async with transactional(session):
+        policy = await session.scalar(
+            select(ApprovalPolicy)
+            .where(
+                ApprovalPolicy.id == policy_id,
+                ApprovalPolicy.tenant_id == context.tenant_id,
+                ApprovalPolicy.is_default.is_(True),
+                ApprovalPolicy.is_active.is_(True),
+            )
+            .with_for_update()
+        )
+        if policy is None:
+            raise ApprovalPolicyNotFoundError(
+                "The active default approval policy was not found."
+            )
+
+        approvers = await _tenant_users_by_id(
+            session,
+            tenant_id=context.tenant_id,
+            user_ids=approver_user_ids,
+        )
+        if any(
+            user.external_subject == context.subject for user in approvers.values()
+        ):
+            raise ApprovalPolicyInvalidError(
+                "The policy creator cannot be assigned as an approver."
+            )
+
+        old_steps = list(
+            await session.scalars(
+                select(ApprovalPolicyStep)
+                .where(ApprovalPolicyStep.approval_policy_id == policy.id)
+                .with_for_update()
+            )
+        )
+        for step in old_steps:
+            await session.delete(step)
+        await session.flush()
+        session.add_all(
+            [
+                ApprovalPolicyStep(
+                    approval_policy_id=policy.id,
+                    position=position,
+                    approver_user_id=user_id,
+                )
+                for position, user_id in enumerate(approver_user_ids, start=1)
+            ]
+        )
+        policy.version += 1
+        await session.flush()
+        record_audit_event(
+            session,
+            context=context,
+            action="approval_policy.approvers_updated",
+            entity_type="approval_policy",
+            entity_id=str(policy.id),
+            details={"version": policy.version, "step_count": len(approver_user_ids)},
         )
 
     return policy
@@ -357,6 +496,68 @@ async def _resolve_actor(
         )
 
     return actor
+
+
+async def list_assigned_requisition_approvals(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+) -> list[tuple[RequisitionApproval, Requisition, RequisitionApprovalDecision]]:
+    """List pending requisitions assigned to the authenticated approver."""
+    actor = await _resolve_actor(session, context=context)
+    rows = await session.execute(
+        select(RequisitionApproval, Requisition, RequisitionApprovalDecision)
+        .join(
+            Requisition,
+            Requisition.id == RequisitionApproval.requisition_id,
+        )
+        .join(
+            RequisitionApprovalDecision,
+            RequisitionApprovalDecision.requisition_approval_id
+            == RequisitionApproval.id,
+        )
+        .where(
+            RequisitionApproval.tenant_id == context.tenant_id,
+            Requisition.tenant_id == context.tenant_id,
+            RequisitionApproval.status == ApprovalStatus.PENDING,
+            RequisitionApprovalDecision.approver_user_id == actor.id,
+            RequisitionApprovalDecision.status == ApprovalDecisionStatus.PENDING,
+        )
+        .order_by(RequisitionApproval.submitted_at.desc())
+    )
+    return list(rows.tuples())
+
+
+async def get_assigned_requisition_approval(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    approval_id: UUID,
+) -> tuple[RequisitionApproval, Requisition, RequisitionApprovalDecision]:
+    """Load approval details only when the caller is on its reviewer chain."""
+    actor = await _resolve_actor(session, context=context)
+    row = await session.execute(
+        select(RequisitionApproval, Requisition, RequisitionApprovalDecision)
+        .join(
+            Requisition,
+            Requisition.id == RequisitionApproval.requisition_id,
+        )
+        .join(
+            RequisitionApprovalDecision,
+            RequisitionApprovalDecision.requisition_approval_id
+            == RequisitionApproval.id,
+        )
+        .where(
+            RequisitionApproval.id == approval_id,
+            RequisitionApproval.tenant_id == context.tenant_id,
+            Requisition.tenant_id == context.tenant_id,
+            RequisitionApprovalDecision.approver_user_id == actor.id,
+        )
+    )
+    result = row.tuples().first()
+    if result is None:
+        raise RequisitionApprovalNotFoundError("Approval was not found.")
+    return result
 
 
 async def _load_current_approval(
