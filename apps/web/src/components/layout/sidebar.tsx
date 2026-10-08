@@ -4,6 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
+import { useCurrentIdentity } from "@/lib/api/hooks/auth";
 import { MindHireMark, LayoutDashboard, BriefcaseBusiness, FileText, Users, List, CalendarDays, ChartNoAxesColumnIncreasing, UsersRound, Settings, X } from "@/components/icons";
 
 const navigation = [
@@ -20,6 +21,11 @@ const navigation = [
   {
     name: "Requisitions",
     href: "/dashboard/requisitions",
+    icon: FileText,
+  },
+  {
+    name: "Approvals",
+    href: "/dashboard/approvals",
     icon: FileText,
   },
   {
@@ -54,9 +60,19 @@ const navigation = [
   },
 ];
 
+const adminNavigation = [
+  {
+    name: "Approval settings",
+    href: "/dashboard/settings/approvals",
+    icon: Settings,
+  },
+];
+
 export const Sidebar = ({ onClose }: { onClose?: () => void }) => {
   const pathname = usePathname();
   const { data: session } = useSession();
+  const identityQuery = useCurrentIdentity();
+  const isWorkspaceAdmin = identityQuery.data?.roles.includes("tenant_admin") ?? false;
   const userLabel = session?.user?.name || session?.user?.email || "Workspace member";
   const initials = userLabel
     .split(/\s+/)
@@ -83,7 +99,7 @@ export const Sidebar = ({ onClose }: { onClose?: () => void }) => {
       {/* Navigation */}
       <div className="flex-1 overflow-y-auto py-6 px-4">
         <nav className="flex flex-col gap-1">
-          {navigation.map((item) => {
+          {[...navigation, ...(isWorkspaceAdmin ? adminNavigation : [])].map((item) => {
             const isActive = pathname === item.href || (
               item.href !== "/dashboard" && pathname.startsWith(`${item.href}/`)
             );
