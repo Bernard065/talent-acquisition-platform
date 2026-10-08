@@ -6,7 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.domains.approvals.enums import ApprovalStatus
+from app.domains.approvals.enums import ApprovalDecisionStatus, ApprovalStatus
+from app.domains.requisitions.enums import RequisitionStatus
 
 
 class ApprovalPolicyCreateRequest(BaseModel):
@@ -17,6 +18,14 @@ class ApprovalPolicyCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     approver_user_ids: Annotated[list[UUID], Field(min_length=1, max_length=20)]
     is_default: bool = False
+
+
+class ApprovalPolicyApproversUpdateRequest(BaseModel):
+    """Replacement ordered approver list for an existing policy."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    approver_user_ids: Annotated[list[UUID], Field(min_length=1, max_length=20)]
 
 
 class ApprovalPolicyResponse(BaseModel):
@@ -30,6 +39,25 @@ class ApprovalPolicyResponse(BaseModel):
     is_default: bool
     is_active: bool
     created_at: datetime
+
+
+class ApprovalApproverResponse(BaseModel):
+    """Workspace member who can be assigned to an approval policy."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    display_name: str
+    email: str
+    is_current_user: bool
+
+
+class ApprovalPolicyConfigurationResponse(BaseModel):
+    """Current default approval policy and members available to assign."""
+
+    default_policy: ApprovalPolicyResponse | None
+    default_approver_user_ids: list[UUID]
+    available_approvers: list[ApprovalApproverResponse]
 
 
 class ApprovalDecisionRequest(BaseModel):
@@ -53,3 +81,30 @@ class RequisitionApprovalResponse(BaseModel):
     submitted_by_subject: str
     submitted_at: datetime
     completed_at: datetime | None
+
+
+class RequisitionApprovalReviewResponse(BaseModel):
+    """Requisition details visible to a user assigned to its approval chain."""
+
+    approval_id: UUID
+    requisition_id: UUID
+    title: str
+    description: str | None
+    department: str | None
+    location: str | None
+    headcount: int
+    requisition_status: RequisitionStatus
+    approval_status: ApprovalStatus
+    current_step: int
+    assigned_step: int
+    assigned_decision_status: ApprovalDecisionStatus
+    is_current_approver: bool
+    submitted_by_subject: str
+    submitted_at: datetime
+    completed_at: datetime | None
+
+
+class RequisitionApprovalInboxResponse(BaseModel):
+    """Pending approvals assigned to the authenticated tenant user."""
+
+    items: list[RequisitionApprovalReviewResponse]

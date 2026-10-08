@@ -14,6 +14,7 @@ import {
   transitionRequisition,
   updateRequisition,
 } from "../services/requisitions";
+import { submitRequisitionForApproval } from "../services/approvals";
 import type { PaginationParams } from "../types";
 import type {
   RequisitionCreateRequest,
@@ -103,6 +104,25 @@ export function useTransitionRequisition() {
           requisitionQueryKeys.detail(requisition.id),
           requisition,
         ),
+      ]);
+    },
+  });
+}
+
+export function useSubmitRequisitionForApproval() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ requisitionId, idempotencyKey }: {
+      requisitionId: string;
+      idempotencyKey: string;
+    }) => submitRequisitionForApproval(requisitionId, idempotencyKey),
+    onSuccess: async (_approval, { requisitionId }) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: requisitionQueryKeys.lists() }),
+        queryClient.invalidateQueries({
+          queryKey: requisitionQueryKeys.detail(requisitionId),
+        }),
       ]);
     },
   });
