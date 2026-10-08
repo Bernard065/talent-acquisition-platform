@@ -135,6 +135,7 @@ from app.services.interview_scheduling_errors import (
 )
 from app.services.interview_search_errors import (
     InterviewSearchAccessDeniedError,
+    InterviewSearchValidationError,
     InvalidInterviewSearchCursorError,
 )
 from app.services.job_posting_errors import (
@@ -653,11 +654,13 @@ async def interview_session_not_found(
     _: Exception,
 ) -> JSONResponse:
     """Hide an interview session outside the caller's tenant."""
-    return _error_response(
+    response = _error_response(
         request,
         status_code=status.HTTP_404_NOT_FOUND,
         detail="Interview session not found.",
     )
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
 
 
 async def interview_session_conflict(
@@ -842,6 +845,20 @@ async def invalid_interview_search_cursor(
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         detail="Invalid interview search cursor.",
     )
+
+
+async def invalid_interview_search_request(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Return a private validation failure for invalid interview filters."""
+    response = _error_response(
+        request,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail="Invalid interview search request.",
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
 
 
 def _private_error_response(
@@ -1280,6 +1297,10 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         InvalidInterviewSearchCursorError,
         invalid_interview_search_cursor,
+    )
+    application.add_exception_handler(
+        InterviewSearchValidationError,
+        invalid_interview_search_request,
     )
     application.add_exception_handler(
         JobPostingNotFoundError,

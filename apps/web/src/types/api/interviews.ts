@@ -1,13 +1,17 @@
 export type InterviewSessionStatus = "scheduled" | "completed" | "cancelled";
 export type InterviewParticipantRole = "interviewer" | "coordinator";
 
+export const INTERVIEW_CANCELLATION_REASONS = [
+  "candidate_withdrew",
+  "candidate_unavailable",
+  "interviewer_unavailable",
+  "requisition_closed",
+  "scheduling_conflict",
+  "other",
+] as const;
+
 export type InterviewCancellationReason =
-  | "candidate_withdrew"
-  | "candidate_unavailable"
-  | "interviewer_unavailable"
-  | "requisition_closed"
-  | "scheduling_conflict"
-  | "other";
+  (typeof INTERVIEW_CANCELLATION_REASONS)[number];
 
 export interface InterviewParticipantRequest {
   user_id: string;

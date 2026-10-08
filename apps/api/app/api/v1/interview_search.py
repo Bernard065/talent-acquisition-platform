@@ -11,11 +11,13 @@ from app.api.dependencies import get_db_session, get_tenant_context
 from app.api.v1.schemas.interviews import (
     InterviewSearchListResponse,
     InterviewSearchResultResponse,
+    InterviewSessionResponse,
 )
 from app.core.authorization import TenantContext
 from app.domains.interviews.enums import InterviewSessionStatus
 from app.services.interview_search import (
     InterviewSearchFilters,
+    get_interview_session,
     search_interviews,
 )
 
@@ -23,6 +25,27 @@ router = APIRouter(prefix="/interviews", tags=["Interviews"])
 
 CallerContext = Annotated[TenantContext, Depends(get_tenant_context)]
 DatabaseSession = Annotated[AsyncSession, Depends(get_db_session)]
+
+
+@router.get(
+    "/{interview_session_id}",
+    response_model=InterviewSessionResponse,
+    summary="Get one interview session",
+)
+async def get_interview_session_endpoint(
+    interview_session_id: UUID,
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+) -> InterviewSessionResponse:
+    """Return one interview visible to the caller without feedback content."""
+    interview = await get_interview_session(
+        session,
+        context=context,
+        interview_session_id=interview_session_id,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return InterviewSessionResponse.model_validate(interview)
 
 
 @router.get(
