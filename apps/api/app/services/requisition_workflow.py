@@ -45,11 +45,6 @@ async def transition_requisition_status(
     from a missing requisition to prevent cross-tenant resource discovery.
     """
 
-    if context.roles.isdisjoint(_TRANSITION_ROLES):
-        raise RequisitionTransitionForbiddenError(
-            "Caller is not permitted to transition requisitions."
-        )
-
     async with transactional(session):
         statement = (
             select(Requisition)
@@ -64,6 +59,17 @@ async def transition_requisition_status(
 
         if requisition is None:
             raise RequisitionNotFoundError("Requisition was not found.")
+
+        can_transition_as_owner = (
+            requisition.created_by_subject == context.subject
+            and requisition.status is RequisitionStatus.APPROVED
+            and target_status is RequisitionStatus.OPEN
+        )
+        if context.roles.isdisjoint(_TRANSITION_ROLES) and not can_transition_as_owner:
+            raise RequisitionTransitionForbiddenError(
+                "Only workspace admins, recruiters, or the requisition creator "
+                "may open an approved requisition."
+            )
 
         if (
             requisition.status is RequisitionStatus.PENDING_APPROVAL

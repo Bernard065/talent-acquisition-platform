@@ -39,6 +39,8 @@ export interface RequisitionResponse {
   created_by_subject: string;
   created_at: string;
   updated_at: string;
+  latest_rejection_comment?: string | null;
+  latest_rejection_at?: string | null;
 }
 
 export interface RequisitionListResponse {

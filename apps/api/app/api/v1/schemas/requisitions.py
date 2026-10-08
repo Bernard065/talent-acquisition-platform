@@ -75,6 +75,8 @@ class RequisitionResponse(BaseModel):
     created_by_subject: str
     created_at: datetime
     updated_at: datetime
+    latest_rejection_comment: str | None = None
+    latest_rejection_at: datetime | None = None
 
 
 class RequisitionListResponse(BaseModel):

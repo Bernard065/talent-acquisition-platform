@@ -17,6 +17,10 @@ class JobPostingRequisitionNotOpenError(ValueError):
     """Raised when publication is attempted for a non-open requisition."""
 
 
+class JobPostingRequisitionNotApprovedError(ValueError):
+    """Raised when a posting is requested before requisition approval."""
+
+
 class JobPostingValidationError(ValueError):
     """Raised when job posting input is structurally invalid."""
 

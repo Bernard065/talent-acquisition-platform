@@ -36,6 +36,7 @@ from app.services.job_posting_errors import (
     InvalidJobPostingCursorError,
     JobPostingAccessDeniedError,
     JobPostingNotFoundError,
+    JobPostingRequisitionNotApprovedError,
     JobPostingRequisitionNotOpenError,
     JobPostingValidationError,
     JobPostingVersionConflictError,
@@ -165,6 +166,52 @@ def _require_management_role(context: TenantContext) -> None:
         )
 
 
+def _require_posting_creation_access(
+    context: TenantContext,
+    requisition: Requisition,
+) -> None:
+    """Allow staff roles broadly and creators or managers on eligible requests."""
+    is_owner = requisition.created_by_subject == context.subject
+    has_workspace_posting_role = context.roles.intersection(
+        {Role.TENANT_ADMIN, Role.RECRUITER}
+    )
+    is_hiring_manager_for_open_requisition = (
+        Role.HIRING_MANAGER in context.roles
+        and requisition.status is RequisitionStatus.OPEN
+    )
+
+    if (
+        not has_workspace_posting_role
+        and not is_owner
+        and not is_hiring_manager_for_open_requisition
+    ):
+        raise JobPostingAccessDeniedError(
+            "Caller cannot create a posting for this requisition."
+        )
+
+    if requisition.status not in {
+        RequisitionStatus.APPROVED,
+        RequisitionStatus.OPEN,
+    }:
+        raise JobPostingRequisitionNotApprovedError(
+            "A job posting can only be created from an approved or open requisition."
+        )
+
+
+def _require_management_or_requisition_creator(
+    context: TenantContext,
+    requisition: Requisition,
+) -> None:
+    """Allow established posting roles or the owner of its requisition."""
+    if context.roles.intersection(_JOB_POSTING_WRITE_ROLES):
+        return
+    if requisition.created_by_subject == context.subject:
+        return
+    raise JobPostingAccessDeniedError(
+        "Caller lacks job posting management permission."
+    )
+
+
 def _validate_expected_version(
     *,
     actual_version: int,
@@ -181,6 +228,7 @@ def _validate_expiry(
     expires_at: datetime | None,
     *,
     require_future: bool,
+    require_future_date: bool = False,
 ) -> None:
     """Ensure expiry timestamps are timezone-aware and usable."""
     if expires_at is None:
@@ -191,10 +239,17 @@ def _validate_expiry(
             "Job posting expiry must include a UTC offset."
         )
 
-    if require_future and expires_at <= _now():
-        raise JobPostingValidationError(
-            "Job posting expiry must be in the future before publication."
-        )
+    if require_future:
+        now = _now()
+        expiry_utc = expires_at.astimezone(UTC)
+        if require_future_date and expiry_utc.date() <= now.date():
+            raise JobPostingValidationError(
+                "Job posting expiry date must be later than today."
+            )
+        if expiry_utc <= now:
+            raise JobPostingValidationError(
+                "Job posting expiry must be in the future."
+            )
 
 
 def _slug_base(title: str) -> str:
@@ -312,8 +367,11 @@ async def create_job_posting(
     command: CreateJobPostingCommand,
 ) -> JobPosting:
     """Create a draft candidate-visible snapshot from a requisition."""
-    _require_management_role(context)
-    _validate_expiry(command.expires_at, require_future=False)
+    _validate_expiry(
+        command.expires_at,
+        require_future=True,
+        require_future_date=True,
+    )
 
     async with transactional(session):
         requisition = await _load_requisition(
@@ -321,6 +379,7 @@ async def create_job_posting(
             context=context,
             requisition_id=requisition_id,
         )
+        _require_posting_creation_access(context, requisition)
         slug = await _allocate_slug(
             session,
             tenant_id=context.tenant_id,
@@ -368,8 +427,6 @@ async def publish_job_posting(
     expected_version: int,
 ) -> JobPosting:
     """Publish a draft or unpublished posting only for an open requisition."""
-    _require_management_role(context)
-
     async with transactional(session):
         posting = await _load_job_posting(
             session,
@@ -386,6 +443,7 @@ async def publish_job_posting(
             context=context,
             requisition_id=posting.requisition_id,
         )
+        _require_management_or_requisition_creator(context, requisition)
         if requisition.status is not RequisitionStatus.OPEN:
             raise JobPostingRequisitionNotOpenError(
                 "Only open requisitions can be published."
@@ -434,14 +492,18 @@ async def unpublish_job_posting(
     expected_version: int,
 ) -> JobPosting:
     """Explicitly remove a published posting from public visibility."""
-    _require_management_role(context)
-
     async with transactional(session):
         posting = await _load_job_posting(
             session,
             context=context,
             job_posting_id=job_posting_id,
         )
+        requisition = await _load_requisition(
+            session,
+            context=context,
+            requisition_id=posting.requisition_id,
+        )
+        _require_management_or_requisition_creator(context, requisition)
         _validate_expected_version(
             actual_version=posting.version,
             expected_version=expected_version,

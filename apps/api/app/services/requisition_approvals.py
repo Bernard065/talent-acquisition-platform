@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authorization import Role, TenantContext
@@ -36,6 +36,59 @@ from app.services.requisition_errors import (
 
 _POLICY_ADMIN_ROLES = frozenset({Role.TENANT_ADMIN})
 _SUBMITTER_ROLES = frozenset({Role.TENANT_ADMIN, Role.RECRUITER})
+
+
+async def get_latest_requisition_rejection_feedback(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    requisition_ids: list[UUID],
+) -> dict[UUID, tuple[str | None, datetime]]:
+    """Return the latest rejection feedback only to each requisition's requester."""
+    if not requisition_ids:
+        return {}
+
+    rows = await session.execute(
+        select(
+            RequisitionApproval.requisition_id,
+            RequisitionApproval.submitted_at,
+            RequisitionApprovalDecision.comment,
+            RequisitionApprovalDecision.decided_at,
+        )
+        .join(
+            Requisition,
+            Requisition.id == RequisitionApproval.requisition_id,
+        )
+        .join(
+            RequisitionApprovalDecision,
+            RequisitionApprovalDecision.requisition_approval_id
+            == RequisitionApproval.id,
+        )
+        .where(
+            Requisition.id.in_(requisition_ids),
+            Requisition.tenant_id == context.tenant_id,
+            RequisitionApproval.tenant_id == context.tenant_id,
+            RequisitionApproval.status == ApprovalStatus.REJECTED,
+            RequisitionApprovalDecision.status == ApprovalDecisionStatus.REJECTED,
+            or_(
+                Requisition.created_by_subject == context.subject,
+                RequisitionApproval.submitted_by_subject == context.subject,
+            ),
+        )
+        .order_by(
+            RequisitionApproval.requisition_id,
+            RequisitionApproval.submitted_at.desc(),
+            RequisitionApproval.id.desc(),
+        )
+    )
+
+    feedback: dict[UUID, tuple[str | None, datetime]] = {}
+    for requisition_id, _submitted_at, comment, decided_at in rows:
+        if requisition_id in feedback or decided_at is None:
+            continue
+        feedback[requisition_id] = (comment, decided_at)
+
+    return feedback
 
 
 @dataclass(frozen=True, slots=True)

@@ -142,6 +142,7 @@ from app.services.job_posting_errors import (
     InvalidJobPostingCursorError,
     JobPostingAccessDeniedError,
     JobPostingNotFoundError,
+    JobPostingRequisitionNotApprovedError,
     JobPostingRequisitionNotOpenError,
     JobPostingValidationError,
     JobPostingVersionConflictError,
@@ -1343,6 +1344,10 @@ def register_exception_handlers(application: FastAPI) -> None:
     )
     application.add_exception_handler(
         JobPostingRequisitionNotOpenError,
+        job_posting_conflict,
+    )
+    application.add_exception_handler(
+        JobPostingRequisitionNotApprovedError,
         job_posting_conflict,
     )
     application.add_exception_handler(
