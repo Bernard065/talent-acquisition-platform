@@ -53,7 +53,7 @@ export default function RequisitionsPage() {
       ) : requisitions.length ? (
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
           <div className="hidden grid-cols-[minmax(0,2fr)_1fr_1fr_1fr] gap-4 border-b border-gray-100 bg-gray-50 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 md:grid">
-            <span>Role</span><span>Department</span><span>Headcount</span><span>Status</span>
+            <span>Role</span><span>Department</span><span>Openings</span><span>Status</span>
           </div>
           <ul className="divide-y divide-gray-100">
             {requisitions.map((requisition) => (
