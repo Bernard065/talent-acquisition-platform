@@ -3,10 +3,11 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { createRequisition } from "@/lib/api/services/requisitions";
+import { useCreateRequisition } from "@/lib/api/hooks/requisitions";
 
 export const JobCreationWizard = () => {
   const router = useRouter();
+  const createRequisitionMutation = useCreateRequisition();
   const [title, setTitle] = useState("");
   const [department, setDepartment] = useState("");
   const [location, setLocation] = useState("");
@@ -14,12 +15,10 @@ export const JobCreationWizard = () => {
   const [description, setDescription] = useState("");
   const [requirements, setRequirements] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
-    setIsSubmitting(true);
 
     const fullDescription = [
       description.trim(),
@@ -27,18 +26,19 @@ export const JobCreationWizard = () => {
     ].filter(Boolean).join("\n\n");
 
     try {
-      await createRequisition({
-        title: title.trim(),
-        department: department.trim() || null,
-        location: location.trim() || null,
-        headcount,
-        description: fullDescription || null,
-      }, crypto.randomUUID());
+      await createRequisitionMutation.mutateAsync({
+        requisition: {
+          title: title.trim(),
+          department: department.trim() || null,
+          location: location.trim() || null,
+          headcount,
+          description: fullDescription || null,
+        },
+        idempotencyKey: crypto.randomUUID(),
+      });
       router.push("/dashboard/requisitions");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "We couldn’t create this requisition.");
-    } finally {
-      setIsSubmitting(false);
     }
   }
 
@@ -84,7 +84,7 @@ export const JobCreationWizard = () => {
             />
           </label>
           <label className="grid max-w-48 gap-1.5 text-sm font-medium text-gray-700">
-            Number of hires
+            Number of openings
             <input
               type="number"
               min={1}
@@ -121,11 +121,11 @@ export const JobCreationWizard = () => {
       </div>
 
       <div className="flex flex-col-reverse gap-3 border-t border-gray-100 bg-gray-50 p-4 sm:flex-row sm:justify-end sm:px-8">
-        <Button type="button" variant="outline" disabled={isSubmitting} onClick={() => router.push("/dashboard/requisitions")}>
+        <Button type="button" variant="outline" disabled={createRequisitionMutation.isPending} onClick={() => router.push("/dashboard/requisitions")}>
           Cancel
         </Button>
-        <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? "Creating…" : "Create requisition"}
+        <Button type="submit" disabled={createRequisitionMutation.isPending}>
+          {createRequisitionMutation.isPending ? "Creating…" : "Create requisition"}
         </Button>
       </div>
     </form>
