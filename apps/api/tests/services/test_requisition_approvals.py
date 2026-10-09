@@ -341,7 +341,7 @@ async def test_submitter_cannot_approve_own_requisition(
         session,
         context=_context(
             tenant_id,
-            "recruiter",
+            "policy-admin",
             frozenset({Role.TENANT_ADMIN}),
         ),
         command=CreateApprovalPolicyCommand(

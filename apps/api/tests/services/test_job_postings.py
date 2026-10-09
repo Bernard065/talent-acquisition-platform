@@ -282,6 +282,7 @@ async def test_hides_postings_across_tenants_and_rejects_unauthorized_roles(
             employment_type=EmploymentType.FULL_TIME,
         ),
     )
+    posting_id = posting.id
 
     with pytest.raises(JobPostingAccessDeniedError):
         await publish_job_posting(
@@ -291,7 +292,7 @@ async def test_hides_postings_across_tenants_and_rejects_unauthorized_roles(
                 subject="unrelated-user",
                 roles=frozenset({Role.INTERVIEWER}),
             ),
-            job_posting_id=posting.id,
+            job_posting_id=posting_id,
             expected_version=1,
         )
 
@@ -299,7 +300,7 @@ async def test_hides_postings_across_tenants_and_rejects_unauthorized_roles(
         await publish_job_posting(
             session,
             context=_context(uuid4()),
-            job_posting_id=posting.id,
+            job_posting_id=posting_id,
             expected_version=1,
         )
 
