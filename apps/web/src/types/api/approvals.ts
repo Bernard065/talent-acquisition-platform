@@ -1,5 +1,5 @@
 export type RequisitionApprovalStatus = "pending" | "approved" | "rejected";
-export type ApprovalDecisionStatus = "pending" | "approved" | "rejected";
+export type RequisitionDecisionStatus = "pending" | "approved" | "rejected" | "not_required";
 
 export interface RequisitionApprovalResponse {
   id: string;
@@ -24,7 +24,7 @@ export interface RequisitionApprovalReviewResponse {
   approval_status: RequisitionApprovalStatus;
   current_step: number;
   assigned_step: number;
-  assigned_decision_status: ApprovalDecisionStatus;
+  assigned_decision_status: RequisitionDecisionStatus;
   is_current_approver: boolean;
   submitted_by_subject: string;
   submitted_at: string;
@@ -53,6 +53,7 @@ export interface ApprovalApproverResponse {
   display_name: string;
   email: string;
   is_current_user: boolean;
+  is_workspace_admin: boolean;
 }
 
 export interface ApprovalPolicyConfigurationResponse {

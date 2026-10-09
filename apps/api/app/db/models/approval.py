@@ -21,7 +21,7 @@ from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
-from app.domains.approvals.enums import ApprovalDecisionStatus, ApprovalStatus
+from app.domains.approvals.enums import ApprovalStatus, RequisitionDecisionStatus
 
 
 class ApprovalPolicy(Base):
@@ -74,7 +74,7 @@ class ApprovalPolicy(Base):
 
 
 class ApprovalPolicyStep(Base):
-    """One sequential named-approver step in an approval policy."""
+    """One eligible reviewer in the policy's any-one approval pool."""
 
     __tablename__ = "approval_policy_steps"
     __table_args__ = (
@@ -174,11 +174,16 @@ class RequisitionApproval(Base):
 
 
 class RequisitionApprovalDecision(Base):
-    """The immutable assignment and eventual decision for one policy step."""
+    """One reviewer's immutable assignment and eventual decision."""
 
     __tablename__ = "requisition_approval_decisions"
     __table_args__ = (
-        UniqueConstraint("requisition_approval_id", "step_position"),
+        UniqueConstraint(
+            "requisition_approval_id",
+            "step_position",
+            "approver_user_id",
+            name="uq_requisition_approval_decisions_reviewer",
+        ),
         Index(
             "ix_requisition_approval_decisions_approver_status",
             "approver_user_id",
@@ -201,15 +206,15 @@ class RequisitionApprovalDecision(Base):
         ForeignKey("users.id", ondelete="RESTRICT"),
         nullable=False,
     )
-    status: Mapped[ApprovalDecisionStatus] = mapped_column(
+    status: Mapped[RequisitionDecisionStatus] = mapped_column(
         Enum(
-            ApprovalDecisionStatus,
-            name="approval_decision_status",
+            RequisitionDecisionStatus,
+            name="requisition_approval_decision_status",
             values_callable=lambda statuses: [status.value for status in statuses],
         ),
         nullable=False,
-        default=ApprovalDecisionStatus.PENDING,
-        server_default=ApprovalDecisionStatus.PENDING.value,
+        default=RequisitionDecisionStatus.PENDING,
+        server_default=RequisitionDecisionStatus.PENDING.value,
     )
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     decided_at: Mapped[datetime | None] = mapped_column(

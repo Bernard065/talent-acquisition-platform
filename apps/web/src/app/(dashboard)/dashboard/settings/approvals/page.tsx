@@ -11,6 +11,7 @@ import {
   useUpdateApprovalPolicyApprovers,
 } from "@/lib/api/hooks/approvals";
 import { ApiError } from "@/lib/api/errors";
+import { useCurrentIdentity } from "@/lib/api/hooks/auth";
 
 export default function ApprovalSettingsPage() {
   const [name, setName] = useState("");
@@ -18,11 +19,12 @@ export default function ApprovalSettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const configurationQuery = useApprovalPolicyConfiguration();
+  const identityQuery = useCurrentIdentity();
   const createPolicy = useCreateApprovalPolicy();
   const updateApprovers = useUpdateApprovalPolicyApprovers();
   const configuration = configurationQuery.data;
   const selectableApprovers = configuration?.available_approvers.filter(
-    (approver) => !approver.is_current_user,
+    (approver) => !approver.is_workspace_admin,
   ) ?? [];
   const defaultSelectableApproverIds = configuration?.default_approver_user_ids.filter(
     (userId) => selectableApprovers.some((approver) => approver.id === userId),
@@ -32,16 +34,14 @@ export default function ApprovalSettingsPage() {
   const isForbidden =
     configurationQuery.error instanceof ApiError &&
     configurationQuery.error.isForbidden;
+  const viewerRoles = identityQuery.data?.roles ?? [];
+  const isWorkspaceAdmin = viewerRoles.includes("tenant_admin");
+  const isRecruiter = viewerRoles.includes("recruiter");
 
   async function savePolicy(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setNotice(null);
-
-    if (selectedApproverIds.length === 0) {
-      setError("Choose at least one approver.");
-      return;
-    }
 
     try {
       if (configuration?.default_policy) {
@@ -93,7 +93,7 @@ export default function ApprovalSettingsPage() {
         </Link>
         <h1 className="mt-3 text-2xl font-bold tracking-tight text-sr-text-blue">Approval settings</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Choose who reviews requisitions submitted for approval. Reviewers act in the order selected.
+          Choose recruiters who can review requisitions. Any one selected recruiter or workspace admin can approve or reject; the requester is excluded.
         </p>
       </header>
 
@@ -104,9 +104,19 @@ export default function ApprovalSettingsPage() {
       ) : configurationQuery.isError ? (
         isForbidden ? (
           <section className="rounded-xl border border-amber-200 bg-amber-50 p-6">
-            <h2 className="font-semibold text-amber-950">Workspace admin access required</h2>
+            <h2 className="font-semibold text-amber-950">
+              {isWorkspaceAdmin
+                ? "Workspace admin access required"
+                : isRecruiter
+                  ? "Approval policy already configured"
+                  : "Approval settings access required"}
+            </h2>
             <p role="alert" className="mt-2 text-sm text-amber-900">
-              Approval settings are available to workspace admins. Contact your workspace admin if you need a change.
+              {isWorkspaceAdmin
+                ? "Approval settings are available to workspace admins. Contact your workspace admin if you need a change."
+                : isRecruiter
+                  ? "Contact your workspace admin to change the shared approval policy or its approvers. You can still submit requisitions using the current policy."
+                  : "Only workspace admins can manage approval settings. Ask a recruiter to create the first policy if none is configured."}
             </p>
           </section>
         ) : (
@@ -128,11 +138,11 @@ export default function ApprovalSettingsPage() {
                 <p className="font-medium text-gray-900">{configuration.default_policy.name}</p>
                 <p className="mt-1 text-sm text-gray-600">
                   {assignedApproverNames.length
-                    ? assignedApproverNames.join(" → ")
-                    : "No approvers are assigned."}
+                    ? assignedApproverNames.join(", ")
+                    : "No recruiters are selected; workspace admins are still eligible reviewers."}
                 </p>
                 <p className="mt-2 text-xs text-gray-500">
-                  New submissions use this policy. Existing approval requests keep their original reviewers.
+                  One eligible reviewer’s decision completes each request. Existing approval requests keep their original reviewer pool.
                 </p>
               </div>
             ) : (
@@ -148,8 +158,8 @@ export default function ApprovalSettingsPage() {
             </h2>
             <p className="mt-1 text-sm text-gray-500">
               {configuration.default_policy
-                ? "Changes apply to future submissions. Existing approval requests keep their original reviewer list."
-                : "Creating this policy makes it the default for future submissions. Choose a unique name."}
+                ? "Changes apply to future submissions. Existing approval requests keep their original reviewer pool."
+                : "This creates the workspace’s first default policy. After setup, only workspace admins can change it. Workspace admins are automatically eligible, and you can optionally select recruiters."}
             </p>
             <form onSubmit={savePolicy} className="mt-5 grid gap-5">
               {!configuration.default_policy && (
@@ -169,8 +179,7 @@ export default function ApprovalSettingsPage() {
               <fieldset className="grid gap-3">
                 <legend className="text-sm font-medium text-gray-800">Approvers</legend>
                 <p className="text-xs text-gray-500">
-                  Select up to 20 approvers. Their approval steps follow the order you select them.
-                  Your account is omitted to prevent you from approving a policy you create.
+                  Select up to 20 recruiters. Each selected recruiter and every workspace admin are alternatives; the first eligible reviewer to approve or reject completes the request. The requisition creator is excluded from their own reviewer pool.
                 </p>
                 {selectableApprovers.length ? (
                   <ul className="divide-y divide-gray-100 rounded-lg border border-gray-200">
@@ -195,19 +204,11 @@ export default function ApprovalSettingsPage() {
                   </ul>
                 ) : (
                   <p className="rounded-lg bg-amber-50 p-4 text-sm text-amber-900">
-                    No other workspace members are available. Invite a teammate and have them accept the invitation before assigning them as an approver.
+                    No recruiters are available to select. Workspace admins will still be eligible reviewers. Invite recruiters if admin-created requisitions also need an independent reviewer.
                     {" "}
                     <Link href="/dashboard/team" className="font-semibold underline">
                       Go to Team
                     </Link>
-                  </p>
-                )}
-                {selectedApproverIds.length > 0 && (
-                  <p className="text-xs text-gray-500" aria-live="polite">
-                    Approval order: {selectedApproverIds
-                      .map((userId) => configuration.available_approvers.find((member) => member.id === userId)?.display_name)
-                      .filter(Boolean)
-                      .join(" → ")}
                   </p>
                 )}
               </fieldset>
@@ -215,7 +216,7 @@ export default function ApprovalSettingsPage() {
               {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
               {notice && <p role="status" className="text-sm text-green-800">{notice}</p>}
               <div>
-                <Button type="submit" disabled={isBusy || selectableApprovers.length === 0}>
+                <Button type="submit" disabled={isBusy}>
                   {isBusy ? "Saving policy…" : configuration.default_policy ? "Update approvers" : "Save as default policy"}
                 </Button>
               </div>

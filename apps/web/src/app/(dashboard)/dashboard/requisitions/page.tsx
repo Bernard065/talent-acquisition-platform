@@ -16,6 +16,8 @@ import {
   useTransitionRequisition,
 } from "@/lib/api/hooks/requisitions";
 import { useCurrentIdentity } from "@/lib/api/hooks/auth";
+import { useApprovalPolicyConfiguration } from "@/lib/api/hooks/approvals";
+import { BriefcaseBusiness, LoaderCircle, Pencil, Send } from "@/components/icons";
 import type { EmploymentType } from "@/types/api/jobs";
 import type { RequisitionResponse, RequisitionStatus } from "@/types/api/requisitions";
 
@@ -63,9 +65,13 @@ export default function RequisitionsPage() {
   const [expiryDate, setExpiryDate] = useState("");
   const { status: sessionStatus } = useSession();
   const identityQuery = useCurrentIdentity();
+  const approvalPolicyQuery = useApprovalPolicyConfiguration();
   const currentSubject = identityQuery.data?.subject;
   const roles = identityQuery.data?.roles ?? [];
   const isWorkspaceAdmin = roles.includes("tenant_admin");
+  const canSetUpInitialApprovalPolicy = !isWorkspaceAdmin
+    && roles.includes("recruiter")
+    && approvalPolicyQuery.data?.default_policy === null;
   const canOpenRequisition = roles.some((role) => ["tenant_admin", "recruiter"].includes(role));
   const canManageJobPostings = roles.some((role) =>
     ["tenant_admin", "recruiter", "hiring_manager"].includes(role),
@@ -158,6 +164,11 @@ export default function RequisitionsPage() {
               <Link href="/dashboard/settings/approvals">Approval settings</Link>
             </Button>
           )}
+          {canSetUpInitialApprovalPolicy && (
+            <Button asChild variant="outline">
+              <Link href="/dashboard/settings/approvals">Set up approval policy</Link>
+            </Button>
+          )}
           <Button asChild>
             <Link href="/dashboard/jobs/new">Create requisition</Link>
           </Button>
@@ -180,19 +191,19 @@ export default function RequisitionsPage() {
               {actionError}
             </p>
           )}
-          <div className="hidden grid-cols-[minmax(0,2fr)_1fr_1fr_1fr_auto] gap-4 border-b border-gray-100 bg-gray-50 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 md:grid">
-            <span>Role</span><span>Department</span><span>Openings</span><span>Status</span><span>Actions</span>
+          <div className="hidden grid-cols-[minmax(0,2fr)_1fr_1fr_1fr_minmax(5.5rem,auto)] gap-4 border-b border-gray-100 bg-gray-50 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 md:grid">
+            <span>Role</span><span>Department</span><span>Openings</span><span>Status</span><span className="text-right">Actions</span>
           </div>
           <ul className="divide-y divide-gray-100">
             {requisitions.map((requisition) => {
               const existingPosting = postingsByRequisition.get(requisition.id);
               const isCreator = requisition.created_by_subject === currentSubject;
-              const canEditRequisition = canOpenRequisition || isCreator;
+              const canEditRequisition = isCreator;
               const canCreatePosting = canManageJobPostings
                 || (isCreator && ["approved", "open"].includes(requisition.status));
               const canOpenThisRequisition = canOpenRequisition || isCreator;
               return (
-              <li key={requisition.id} className="grid gap-3 px-5 py-4 md:grid-cols-[minmax(0,2fr)_1fr_1fr_1fr_auto] md:items-center md:gap-4">
+              <li key={requisition.id} className="grid gap-3 px-5 py-4 md:grid-cols-[minmax(0,2fr)_1fr_1fr_1fr_minmax(5.5rem,auto)] md:items-center md:gap-4">
                 <div className="min-w-0">
                   <h2 className="truncate font-semibold text-sr-text-blue">{requisition.title}</h2>
                   <p className="mt-1 truncate text-sm text-gray-500">
@@ -218,44 +229,52 @@ export default function RequisitionsPage() {
                     {formatStatus(requisition.status)}
                   </span>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center justify-start gap-2 md:justify-end">
                   {requisition.status === "draft" ? (
                     <>
                       {canEditRequisition && (
                         <Button
                           type="button"
-                          variant="outline"
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9 rounded-lg border border-gray-200 bg-white p-0 text-gray-600 hover:bg-gray-50 hover:text-sr-text-blue"
+                          aria-label={`Edit ${requisition.title}`}
+                          title="Edit requisition"
                           onClick={() => setEditingRequisition(requisition)}
                         >
-                          Edit
+                          <Pencil className="h-4 w-4" aria-hidden="true" />
                         </Button>
                       )}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        disabled={submitMutation.isPending}
-                        onClick={() => void submitForApproval(requisition.id)}
-                      >
-                        {submitMutation.isPending
-                          && submitMutation.variables?.requisitionId === requisition.id
-                          ? "Submitting…"
-                          : "Submit for approval"}
-                      </Button>
+                      {isCreator && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9 rounded-lg border border-gray-200 bg-white p-0 text-gray-600 hover:bg-gray-50 hover:text-sr-text-blue"
+                          aria-label={`Submit ${requisition.title} for approval`}
+                          title="Submit for approval"
+                          disabled={submitMutation.isPending}
+                          onClick={() => void submitForApproval(requisition.id)}
+                        >
+                          {submitMutation.isPending
+                            && submitMutation.variables?.requisitionId === requisition.id
+                            ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                            : <Send className="h-4 w-4" aria-hidden="true" />}
+                        </Button>
+                      )}
                     </>
                   ) : requisition.status === "pending_approval" ? (
                     <span className="text-sm text-gray-500">Awaiting approval</span>
                   ) : requisition.status === "approved" || requisition.status === "open" ? (
-                    existingPosting ? (
-                      <Button asChild variant="outline">
-                        <Link href={`/dashboard/jobs/${existingPosting.id}`}>
-                          Manage job posting
-                        </Link>
-                      </Button>
-                    ) : canCreatePosting
+                    !existingPosting && canCreatePosting
                       && (requisition.status === "open" || canOpenThisRequisition) ? (
                       <Button
                         type="button"
-                        variant="outline"
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9 rounded-lg border border-gray-200 bg-white p-0 text-gray-600 hover:bg-gray-50 hover:text-sr-text-blue"
+                        aria-label={`Create job posting from ${requisition.title}`}
+                        title="Create job posting"
                         onClick={() => {
                           setActionError(null);
                           setEmploymentType("full_time");
@@ -263,7 +282,7 @@ export default function RequisitionsPage() {
                           setSelectedRequisitionId(requisition.id);
                         }}
                       >
-                        Create job posting
+                        <BriefcaseBusiness className="h-4 w-4" aria-hidden="true" />
                       </Button>
                     ) : null
                   ) : null}

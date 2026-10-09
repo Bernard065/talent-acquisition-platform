@@ -9,6 +9,10 @@ class ApprovalPolicyInvalidError(ValueError):
     """Raised when a policy cannot be safely used."""
 
 
+class ApprovalPolicyAccessDeniedError(PermissionError):
+    """Raised when a caller cannot access or change approval policy settings."""
+
+
 class RequisitionApprovalNotFoundError(LookupError):
     """Raised when an approval instance is absent from the caller's tenant."""
 
@@ -19,7 +23,3 @@ class ApprovalDecisionForbiddenError(PermissionError):
 
 class ApprovalDecisionAlreadyMadeError(ValueError):
     """Raised when an approval decision is no longer pending."""
-
-
-class SelfApprovalNotAllowedError(PermissionError):
-    """Raised when a submitter is included in the policy approvers."""

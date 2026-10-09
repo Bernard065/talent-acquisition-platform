@@ -6,26 +6,26 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.domains.approvals.enums import ApprovalDecisionStatus, ApprovalStatus
+from app.domains.approvals.enums import ApprovalStatus, RequisitionDecisionStatus
 from app.domains.requisitions.enums import RequisitionStatus
 
 
 class ApprovalPolicyCreateRequest(BaseModel):
-    """Input for a sequential named-approver policy."""
+    """Input for a shared any-one-reviewer policy."""
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     name: str = Field(min_length=1, max_length=200)
-    approver_user_ids: Annotated[list[UUID], Field(min_length=1, max_length=20)]
+    approver_user_ids: Annotated[list[UUID], Field(max_length=20)]
     is_default: bool = False
 
 
 class ApprovalPolicyApproversUpdateRequest(BaseModel):
-    """Replacement ordered approver list for an existing policy."""
+    """Replacement alternative-reviewer list for an existing policy."""
 
     model_config = ConfigDict(extra="forbid")
 
-    approver_user_ids: Annotated[list[UUID], Field(min_length=1, max_length=20)]
+    approver_user_ids: Annotated[list[UUID], Field(max_length=20)]
 
 
 class ApprovalPolicyResponse(BaseModel):
@@ -50,6 +50,7 @@ class ApprovalApproverResponse(BaseModel):
     display_name: str
     email: str
     is_current_user: bool
+    is_workspace_admin: bool
 
 
 class ApprovalPolicyConfigurationResponse(BaseModel):
@@ -97,7 +98,7 @@ class RequisitionApprovalReviewResponse(BaseModel):
     approval_status: ApprovalStatus
     current_step: int
     assigned_step: int
-    assigned_decision_status: ApprovalDecisionStatus
+    assigned_decision_status: RequisitionDecisionStatus
     is_current_approver: bool
     submitted_by_subject: str
     submitted_at: datetime

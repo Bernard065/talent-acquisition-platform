@@ -57,8 +57,7 @@ export default function ApprovalsInboxPage() {
                     .join(" · ")}
                 </p>
                 <p className="mt-1 text-xs text-gray-500">
-                  Submitted {formatDate(approval.submitted_at)} · Step {approval.assigned_step}
-                  {approval.is_current_approver ? " · Your turn" : ` · Current step ${approval.current_step}`}
+                  Submitted {formatDate(approval.submitted_at)} · Eligible reviewer
                 </p>
               </div>
               <Button asChild variant={approval.is_current_approver ? "default" : "outline"}>
