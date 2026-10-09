@@ -1,6 +1,8 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import type { JWT } from "next-auth/jwt";
+import { Buffer } from "node:buffer";
+import type { Role } from "@/types/api/auth";
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabasePublishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
@@ -12,9 +14,47 @@ type SupabaseTokenResponse = {
   user: {
     id: string;
     email?: string;
+    app_metadata?: { roles?: unknown };
     user_metadata?: { full_name?: string; name?: string; given_name?: string };
   };
 };
+
+const workspaceRoles = [
+  "tenant_admin",
+  "recruiter",
+  "hiring_manager",
+  "interviewer",
+  "people_operations",
+  "analyst",
+] as const satisfies readonly Role[];
+
+function normalizeWorkspaceRoles(roles: unknown): Role[] {
+  if (!Array.isArray(roles)) return [];
+
+  return roles.filter((role): role is Role =>
+    workspaceRoles.includes(role as Role),
+  );
+}
+
+function getWorkspaceRoles(user: SupabaseTokenResponse["user"]): Role[] {
+  return normalizeWorkspaceRoles(user.app_metadata?.roles);
+}
+
+function getWorkspaceRolesFromAccessToken(accessToken?: string): Role[] {
+  const payload = accessToken?.split(".")[1];
+  if (!payload) return [];
+
+  try {
+    // This claim is only used to render navigation; the API verifies the token
+    // independently before authorizing protected operations.
+    const claims = JSON.parse(
+      Buffer.from(payload, "base64url").toString("utf8"),
+    ) as { app_metadata?: { roles?: unknown } };
+    return normalizeWorkspaceRoles(claims.app_metadata?.roles);
+  } catch {
+    return [];
+  }
+}
 
 function getUserDisplayName(user: SupabaseTokenResponse["user"]): string | undefined {
   const metadataName =
@@ -78,6 +118,7 @@ async function refreshSupabaseToken(token: AuthToken): Promise<AuthToken> {
       supabaseAccessToken: refreshed.access_token,
       supabaseRefreshToken: refreshed.refresh_token,
       supabaseExpiresAt: Date.now() + refreshed.expires_in * 1000,
+      roles: getWorkspaceRoles(refreshed.user),
       authError: undefined,
     };
   } catch {
@@ -116,6 +157,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           supabaseAccessToken: result.access_token,
           supabaseRefreshToken: result.refresh_token,
           supabaseExpiresAt: Date.now() + result.expires_in * 1000,
+          roles: getWorkspaceRoles(result.user),
         };
       },
     }),
@@ -126,10 +168,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (user) {
         return {
           ...authToken,
+          sub: user.id,
           supabaseAccessToken: user.supabaseAccessToken,
           supabaseRefreshToken: user.supabaseRefreshToken,
           supabaseExpiresAt: user.supabaseExpiresAt,
+          roles: user.roles,
+          authError: undefined,
         };
+      }
+
+      if (authToken.authError === "RefreshAccessTokenError") {
+        return authToken;
       }
 
       if (
@@ -137,14 +186,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         authToken.supabaseExpiresAt &&
         Date.now() < authToken.supabaseExpiresAt - 60_000
       ) {
-        return authToken;
+        return {
+          ...authToken,
+          roles: authToken.roles ?? getWorkspaceRolesFromAccessToken(authToken.supabaseAccessToken),
+        };
       }
 
       return refreshSupabaseToken(authToken);
     },
     async session({ session, token }) {
       const authToken = token as AuthToken;
+      if (session.user && authToken.sub) {
+        session.user.id = authToken.sub;
+      }
       session.supabaseAccessToken = authToken.supabaseAccessToken;
+      session.roles = authToken.roles;
       session.authError = authToken.authError;
       return session;
     },

@@ -7,6 +7,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { getUserDisplayName } from "@/lib/user-display-name";
+import type { Role } from "@/types/api/auth";
+import { dashboardRolePolicies } from "@/components/layout/dashboard-role-access";
 
 const pageTitles: Array<{ href: string; title: string }> = [
   { href: "/dashboard/jobs/new", title: "Create requisition" },
@@ -19,10 +21,19 @@ const pageTitles: Array<{ href: string; title: string }> = [
   { href: "/dashboard", title: "Dashboard" },
 ];
 
-export const Topbar = ({ onMenuClick }: { onMenuClick?: () => void }) => {
+export const Topbar = ({
+  roles,
+  onMenuClick,
+}: {
+  roles: Role[];
+  onMenuClick?: () => void;
+}) => {
   const pathname = usePathname();
   const { data: session } = useSession();
   const pageTitle = pageTitles.find(({ href }) => pathname === href || pathname.startsWith(`${href}/`))?.title ?? "Dashboard";
+  const canCreateRequisition = dashboardRolePolicies.requisitionCreate.some((role) =>
+    roles.includes(role),
+  );
   const name = getUserDisplayName(session?.user?.name, session?.user?.email) || "Workspace member";
   const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toLocaleUpperCase()).join("");
 
@@ -38,7 +49,7 @@ export const Topbar = ({ onMenuClick }: { onMenuClick?: () => void }) => {
       </div>
 
       <div className="flex shrink-0 items-center gap-3">
-        {pathname !== "/dashboard/jobs/new" && (
+        {canCreateRequisition && pathname !== "/dashboard/jobs/new" && (
           <Button variant="outline" className="hidden h-9 border-gray-200 text-sm font-medium text-sr-text-blue hover:bg-gray-50 hover:text-sr-text-blue lg:flex" asChild>
             <Link href="/dashboard/jobs/new">Create requisition</Link>
           </Button>
