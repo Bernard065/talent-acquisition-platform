@@ -29,10 +29,10 @@ from app.services.application_pipeline_errors import (
 from app.services.approval_errors import (
     ApprovalDecisionAlreadyMadeError,
     ApprovalDecisionForbiddenError,
+    ApprovalPolicyAccessDeniedError,
     ApprovalPolicyInvalidError,
     ApprovalPolicyNotFoundError,
     RequisitionApprovalNotFoundError,
-    SelfApprovalNotAllowedError,
 )
 from app.services.calendar_connection_errors import (
     CalendarConnectionAccessDeniedError,
@@ -253,6 +253,18 @@ async def approval_policy_not_found(
             "Approval policy not found or no active default policy is "
             "configured."
         ),
+    )
+
+
+async def approval_policy_access_denied(
+    request: Request,
+    error: Exception,
+) -> JSONResponse:
+    """Explain who can manage the workspace approval policy and what to do."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=str(error),
     )
 
 
@@ -1404,15 +1416,15 @@ def register_exception_handlers(application: FastAPI) -> None:
         approval_policy_not_found,
     )
     application.add_exception_handler(
+        ApprovalPolicyAccessDeniedError,
+        approval_policy_access_denied,
+    )
+    application.add_exception_handler(
         RequisitionApprovalNotFoundError,
         not_found,
     )
     application.add_exception_handler(
         ApprovalDecisionForbiddenError,
-        forbidden,
-    )
-    application.add_exception_handler(
-        SelfApprovalNotAllowedError,
         forbidden,
     )
     application.add_exception_handler(

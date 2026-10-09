@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from app.api.dependencies import get_db_session, get_tenant_context
 from app.core.authorization import Role, TenantContext
 from app.core.config import Settings
-from app.db.models.identity import Tenant, User
+from app.db.models.identity import Tenant, User, UserRoleAssignment
 from app.main import create_app
 
 
@@ -135,6 +135,13 @@ async def tenant_and_users_fixture(
         }
         session.add_all(users.values())
         await session.flush()
+        session.add(
+            UserRoleAssignment(
+                user_id=users["tenant-admin"].id,
+                role=Role.TENANT_ADMIN,
+            )
+        )
+        await session.flush()
 
         user_ids = {subject: user.id for subject, user in users.items()}
 
@@ -220,6 +227,107 @@ async def _create_tenant(database_engine: AsyncEngine, tenant_id: UUID) -> None:
 
 
 @pytest.mark.asyncio
+async def test_recruiter_can_configure_initial_default_policy_only(
+    api_app: FastAPI,
+    tenant_and_users: tuple[UUID, dict[str, UUID]],
+) -> None:
+    """Allow recruiters to bootstrap approval setup but not manage it later."""
+    tenant_id, user_ids = tenant_and_users
+    _set_context(
+        api_app,
+        tenant_id=tenant_id,
+        subject="recruiter",
+        roles=frozenset({Role.RECRUITER}),
+    )
+    transport = ASGITransport(app=api_app)
+
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        initial_configuration = await client.get(
+            "/api/v1/approval-policies/configuration"
+        )
+        create_response = await client.post(
+            "/api/v1/approval-policies",
+            json={
+                "name": "Initial recruiter setup",
+                "approver_user_ids": [str(user_ids["approver-one"])],
+                "is_default": True,
+            },
+            headers=_idempotency_headers(),
+        )
+        existing_configuration = await client.get(
+            "/api/v1/approval-policies/configuration"
+        )
+        second_create_response = await client.post(
+            "/api/v1/approval-policies",
+            json={
+                "name": "Recruiter replacement setup",
+                "approver_user_ids": [str(user_ids["approver-two"])],
+                "is_default": True,
+            },
+            headers=_idempotency_headers(),
+        )
+
+    assert initial_configuration.status_code == 200
+    assert initial_configuration.json()["default_policy"] is None
+    assert create_response.status_code == 201
+    assert create_response.json()["is_default"] is True
+    assert existing_configuration.status_code == 403
+    assert "workspace admin" in existing_configuration.json()["detail"]
+    assert second_create_response.status_code == 403
+    assert "workspace admin" in second_create_response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_submitter_is_excluded_and_workspace_admin_is_automatic_reviewer(
+    api_app: FastAPI,
+    tenant_and_users: tuple[UUID, dict[str, UUID]],
+) -> None:
+    """The requester is excluded while the workspace admin gets an inbox item."""
+    tenant_id, user_ids = tenant_and_users
+    transport = ASGITransport(app=api_app)
+
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        _set_context(
+            api_app,
+            tenant_id=tenant_id,
+            subject="tenant-admin",
+            roles=frozenset({Role.TENANT_ADMIN}),
+        )
+        await _create_default_policy(
+            client,
+            approver_user_ids=[user_ids["recruiter"]],
+        )
+
+        _set_context(
+            api_app,
+            tenant_id=tenant_id,
+            subject="recruiter",
+            roles=frozenset({Role.RECRUITER}),
+        )
+        requisition = await _create_requisition(client)
+        submission = await client.post(
+            f"/api/v1/requisitions/{requisition['id']}/approval-submissions",
+            headers=_idempotency_headers(),
+        )
+        assert submission.status_code == 201
+        approval_id = submission.json()["id"]
+
+        recruiter_inbox = await client.get("/api/v1/requisition-approvals/inbox")
+        _set_context(
+            api_app,
+            tenant_id=tenant_id,
+            subject="tenant-admin",
+            roles=frozenset({Role.TENANT_ADMIN}),
+        )
+        admin_inbox = await client.get("/api/v1/requisition-approvals/inbox")
+
+    assert recruiter_inbox.status_code == 200
+    assert recruiter_inbox.json()["items"] == []
+    assert admin_inbox.status_code == 200
+    assert [item["id"] for item in admin_inbox.json()["items"]] == [approval_id]
+
+
+@pytest.mark.asyncio
 async def test_admin_creates_policy_and_replays_same_request(
     api_app: FastAPI,
     tenant_and_users: tuple[UUID, dict[str, UUID]],
@@ -260,11 +368,11 @@ async def test_admin_creates_policy_and_replays_same_request(
 
 
 @pytest.mark.asyncio
-async def test_sequential_approvers_complete_requisition_approval(
+async def test_any_eligible_reviewer_completes_requisition_approval(
     api_app: FastAPI,
     tenant_and_users: tuple[UUID, dict[str, UUID]],
 ) -> None:
-    """Complete a multi-step approval through the public API."""
+    """A single eligible review completes the approval through the public API."""
     tenant_id, user_ids = tenant_and_users
     transport = ASGITransport(app=api_app)
 
@@ -309,13 +417,7 @@ async def test_sequential_approvers_complete_requisition_approval(
             headers=_idempotency_headers(),
         )
 
-        _set_context(
-            api_app,
-            tenant_id=tenant_id,
-            subject="approver-two",
-            roles=frozenset({Role.HIRING_MANAGER}),
-        )
-        second_decision = await client.post(
+        losing_reviewer_decision = await client.post(
             f"/api/v1/requisition-approvals/{approval_id}/approve",
             json={},
             headers=_idempotency_headers(),
@@ -333,11 +435,9 @@ async def test_sequential_approvers_complete_requisition_approval(
 
     assert submission.status_code == 201
     assert first_decision.status_code == 200
-    assert first_decision.json()["status"] == "pending"
-    assert first_decision.json()["current_step"] == 2
-
-    assert second_decision.status_code == 200
-    assert second_decision.json()["status"] == "approved"
+    assert first_decision.json()["status"] == "approved"
+    assert first_decision.json()["current_step"] == 1
+    assert losing_reviewer_decision.status_code == 409
 
     assert requisition_response.status_code == 200
     assert requisition_response.json()["status"] == "approved"

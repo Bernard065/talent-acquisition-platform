@@ -12,14 +12,14 @@ from app.db.models.approval import (
     RequisitionApprovalDecision,
 )
 from app.db.models.audit import AuditEvent
-from app.db.models.identity import Tenant, User
+from app.db.models.identity import Tenant, User, UserRoleAssignment
 from app.db.models.requisition import Requisition
-from app.domains.approvals.enums import ApprovalDecisionStatus, ApprovalStatus
+from app.domains.approvals.enums import ApprovalStatus, RequisitionDecisionStatus
 from app.domains.requisitions.enums import RequisitionStatus
 from app.services.approval_errors import (
+    ApprovalPolicyInvalidError,
     ApprovalPolicyNotFoundError,
     RequisitionApprovalNotFoundError,
-    SelfApprovalNotAllowedError,
 )
 from app.services.requisition_approvals import (
     CreateApprovalPolicyCommand,
@@ -71,6 +71,14 @@ async def _create_tenant_and_users(
         for subject in subjects
     }
     session.add_all(users.values())
+    await session.flush()
+    if "tenant-admin" in users:
+        session.add(
+            UserRoleAssignment(
+                user_id=users["tenant-admin"].id,
+                role=Role.TENANT_ADMIN,
+            )
+        )
     await session.commit()
 
     return users
@@ -130,7 +138,7 @@ async def test_policy_administration_requires_admin_and_replaces_default(
             command=CreateApprovalPolicyCommand(
                 name="Engineering",
                 approver_user_ids=(users["approver-one"].id,),
-                is_default=True,
+                is_default=False,
             ),
         )
 
@@ -165,20 +173,93 @@ async def test_policy_administration_requires_admin_and_replaces_default(
 
 
 @pytest.mark.asyncio
-async def test_ordered_approvals_approve_requisition_and_record_audit_events(
+async def test_recruiter_can_create_only_the_first_default_policy(
     session: AsyncSession,
 ) -> None:
-    """Approve sequential policy steps and record the workflow audit events."""
+    """Allow initial setup by recruiters and reserve later changes for admins."""
     tenant_id = uuid4()
     users = await _create_tenant_and_users(
         session,
         tenant_id=tenant_id,
-        subjects=("recruiter", "approver-one", "approver-two"),
+        subjects=("recruiter", "approver-one"),
+    )
+    recruiter_context = _context(
+        tenant_id,
+        "recruiter",
+        frozenset({Role.RECRUITER}),
+    )
+
+    first_policy = await create_approval_policy(
+        session,
+        context=recruiter_context,
+        command=CreateApprovalPolicyCommand(
+            name="Initial hiring approval",
+            approver_user_ids=(users["approver-one"].id,),
+            is_default=True,
+        ),
+    )
+
+    with pytest.raises(RequisitionAccessDeniedError):
+        await create_approval_policy(
+            session,
+            context=recruiter_context,
+            command=CreateApprovalPolicyCommand(
+                name="Replacement hiring approval",
+                approver_user_ids=(users["approver-one"].id,),
+                is_default=True,
+            ),
+        )
+
+    stored_policy = await session.get(ApprovalPolicy, first_policy.id)
+    assert stored_policy is not None
+    assert stored_policy.is_default is True
+
+
+@pytest.mark.asyncio
+async def test_only_requisition_creator_can_submit_for_approval(
+    session: AsyncSession,
+) -> None:
+    """Prevent another recruiter from submitting someone else's requisition."""
+    tenant_id = uuid4()
+    await _create_tenant_and_users(
+        session,
+        tenant_id=tenant_id,
+        subjects=("recruiter", "another-recruiter"),
+    )
+    requisition = await _create_requisition_for_submission(
+        session,
+        tenant_id=tenant_id,
+        subject="recruiter",
+    )
+    requisition_id = requisition.id
+
+    with pytest.raises(RequisitionAccessDeniedError):
+        await submit_requisition_for_approval(
+            session,
+            context=_context(
+                tenant_id,
+                "another-recruiter",
+                frozenset({Role.RECRUITER}),
+            ),
+            requisition_id=requisition_id,
+        )
+
+
+@pytest.mark.asyncio
+async def test_any_eligible_reviewer_approves_requisition_and_records_audit_events(
+    session: AsyncSession,
+) -> None:
+    """One selected reviewer completes approval and closes the alternatives."""
+    tenant_id = uuid4()
+    users = await _create_tenant_and_users(
+        session,
+        tenant_id=tenant_id,
+        subjects=("tenant-admin", "recruiter", "approver-one", "approver-two"),
     )
 
     admin_context = _context(
         tenant_id,
-        "recruiter",
+        "tenant-admin",
         frozenset({Role.TENANT_ADMIN}),
     )
     policy = await create_approval_policy(
@@ -209,7 +290,7 @@ async def test_ordered_approvals_approve_requisition_and_record_audit_events(
         requisition_id=requisition.id,
     )
 
-    first_step = await approve_requisition_approval(
+    completed = await approve_requisition_approval(
         session,
         context=_context(
             tenant_id,
@@ -220,20 +301,14 @@ async def test_ordered_approvals_approve_requisition_and_record_audit_events(
         comment="Approved by hiring manager.",
     )
 
-    assert first_step.status is ApprovalStatus.PENDING
-    assert first_step.current_step == 2
-
-    completed = await approve_requisition_approval(
-        session,
-        context=_context(
-            tenant_id,
-            "approver-two",
-            frozenset({Role.HIRING_MANAGER}),
-        ),
-        approval_id=approval.id,
-    )
-
     stored_requisition = await session.get(Requisition, requisition.id)
+    decisions = list(
+        await session.scalars(
+            select(RequisitionApprovalDecision).where(
+                RequisitionApprovalDecision.requisition_approval_id == approval.id
+            )
+        )
+    )
     actions = set(
         await session.scalars(
             select(AuditEvent.action).where(
@@ -249,12 +324,14 @@ async def test_ordered_approvals_approve_requisition_and_record_audit_events(
     )
 
     assert completed.status is ApprovalStatus.APPROVED
+    assert completed.current_step == 1
     assert completed.completed_at is not None
     assert stored_requisition is not None
     assert stored_requisition.status is RequisitionStatus.APPROVED
     assert "requisition.submitted_for_approval" in actions
-    assert "requisition_approval.step_approved" in actions
     assert "requisition_approval.completed" in actions
+    assert sum(d.status is RequisitionDecisionStatus.APPROVED for d in decisions) == 1
+    assert sum(d.status is RequisitionDecisionStatus.NOT_REQUIRED for d in decisions) == 2
 
 
 @pytest.mark.asyncio
@@ -321,27 +398,27 @@ async def test_rejection_returns_requisition_to_draft(
     assert stored_requisition is not None
     assert stored_requisition.status is RequisitionStatus.DRAFT
     assert decision is not None
-    assert decision.status is ApprovalDecisionStatus.REJECTED
+    assert decision.status is RequisitionDecisionStatus.REJECTED
     assert decision.comment == "Headcount is not yet approved."
 
 
 @pytest.mark.asyncio
-async def test_submitter_cannot_approve_own_requisition(
+async def test_submitter_is_excluded_and_admin_is_automatic_reviewer(
     session: AsyncSession,
 ) -> None:
-    """Prevent the requisition submitter from approving their own request."""
+    """Exclude the requester while automatically adding workspace admins."""
     tenant_id = uuid4()
     users = await _create_tenant_and_users(
         session,
         tenant_id=tenant_id,
-        subjects=("recruiter",),
+        subjects=("tenant-admin", "recruiter"),
     )
 
     await create_approval_policy(
         session,
         context=_context(
             tenant_id,
-            "policy-admin",
+            "tenant-admin",
             frozenset({Role.TENANT_ADMIN}),
         ),
         command=CreateApprovalPolicyCommand(
@@ -358,21 +435,72 @@ async def test_submitter_cannot_approve_own_requisition(
     )
     requisition_id = requisition.id
 
-    with pytest.raises(SelfApprovalNotAllowedError):
-        await submit_requisition_for_approval(
-            session,
-            context=_context(
-                tenant_id,
-                "recruiter",
-                frozenset({Role.RECRUITER}),
-            ),
-            requisition_id=requisition_id,
+    approval = await submit_requisition_for_approval(
+        session,
+        context=_context(
+            tenant_id,
+            "recruiter",
+            frozenset({Role.RECRUITER}),
+        ),
+        requisition_id=requisition_id,
+    )
+
+    decisions = list(
+        await session.scalars(
+            select(RequisitionApprovalDecision).where(
+                RequisitionApprovalDecision.requisition_approval_id == approval.id
+            )
         )
+    )
 
     stored_requisition = await session.get(Requisition, requisition_id)
 
     assert stored_requisition is not None
-    assert stored_requisition.status is RequisitionStatus.DRAFT
+    assert stored_requisition.status is RequisitionStatus.PENDING_APPROVAL
+    assert [d.approver_user_id for d in decisions] == [users["tenant-admin"].id]
+    assert all(d.approver_user_id != users["recruiter"].id for d in decisions)
+
+
+@pytest.mark.asyncio
+async def test_admin_submitter_needs_another_reviewer(
+    session: AsyncSession,
+) -> None:
+    """Block an admin's request when requester exclusion empties the pool."""
+    tenant_id = uuid4()
+    users = await _create_tenant_and_users(
+        session,
+        tenant_id=tenant_id,
+        subjects=("tenant-admin",),
+    )
+    await create_approval_policy(
+        session,
+        context=_context(
+            tenant_id,
+            "tenant-admin",
+            frozenset({Role.TENANT_ADMIN}),
+        ),
+        command=CreateApprovalPolicyCommand(
+            name="Admin-only policy",
+            approver_user_ids=(users["tenant-admin"].id,),
+            is_default=True,
+        ),
+    )
+    requisition = await _create_requisition_for_submission(
+        session,
+        tenant_id=tenant_id,
+        subject="tenant-admin",
+    )
+
+    with pytest.raises(ApprovalPolicyInvalidError, match="add another reviewer"):
+        await submit_requisition_for_approval(
+            session,
+            context=_context(
+                tenant_id,
+                "tenant-admin",
+                frozenset({Role.TENANT_ADMIN}),
+            ),
+            requisition_id=requisition.id,
+        )
 
 
 @pytest.mark.asyncio

@@ -20,10 +20,10 @@ from app.api.v1.schemas.approvals import (
     RequisitionApprovalResponse,
     RequisitionApprovalReviewResponse,
 )
-from app.core.authorization import TenantContext
+from app.core.authorization import Role, TenantContext
 from app.db.models.approval import RequisitionApproval, RequisitionApprovalDecision
 from app.db.models.requisition import Requisition
-from app.domains.approvals.enums import ApprovalDecisionStatus, ApprovalStatus
+from app.domains.approvals.enums import ApprovalStatus, RequisitionDecisionStatus
 from app.services.idempotency import execute_idempotently
 from app.services.requisition_approvals import (
     CreateApprovalPolicyCommand,
@@ -64,7 +64,7 @@ def _review_response(
         assigned_decision_status=decision.status,
         is_current_approver=(
             approval.status is ApprovalStatus.PENDING
-            and decision.status is ApprovalDecisionStatus.PENDING
+            and decision.status is RequisitionDecisionStatus.PENDING
             and decision.step_position == approval.current_step
         ),
         submitted_by_subject=approval.submitted_by_subject,
@@ -123,7 +123,7 @@ async def update_approval_policy_approvers_endpoint(
     session: DatabaseSession,
     idempotency_key: IdempotencyKey,
 ) -> JSONResponse:
-    """Replace ordered approvers used by future requisition submissions."""
+    """Replace alternative reviewers used by future requisition submissions."""
 
     async def operation() -> tuple[int, dict[str, Any]]:
         policy = await update_approval_policy_approvers(
@@ -175,6 +175,10 @@ async def get_approval_policy_configuration_endpoint(
                 display_name=member.display_name,
                 email=member.email,
                 is_current_user=member.external_subject == context.subject,
+                is_workspace_admin=any(
+                    assignment.role is Role.TENANT_ADMIN
+                    for assignment in member.role_assignments
+                ),
             )
             for member in members
         ],
@@ -193,7 +197,7 @@ async def create_approval_policy_endpoint(
     session: DatabaseSession,
     idempotency_key: IdempotencyKey,
 ) -> JSONResponse:
-    """Create a tenant approval policy with ordered named approvers."""
+    """Create a tenant approval policy with named alternative reviewers."""
 
     async def operation() -> tuple[int, dict[str, Any]]:
         policy = await create_approval_policy(

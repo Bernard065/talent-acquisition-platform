@@ -107,12 +107,6 @@ export default function RequisitionApprovalPage() {
               <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Open positions</h2>
               <p className="mt-1 text-sm text-gray-900">{approval.headcount}</p>
             </div>
-            <div>
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Approval step</h2>
-              <p className="mt-1 text-sm text-gray-900">
-                Your step {approval.assigned_step} · Current step {approval.current_step}
-              </p>
-            </div>
             {approval.description && (
               <div className="sm:col-span-2">
                 <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Description</h2>
@@ -127,10 +121,16 @@ export default function RequisitionApprovalPage() {
             </section>
           )}
 
-          {approval.approval_status === "pending" && !approval.is_current_approver && (
+          {approval.assigned_decision_status === "not_required" && (
+            <section className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+              Another eligible reviewer completed this requisition’s approval. No action is needed.
+            </section>
+          )}
+
+          {approval.approval_status === "pending" && !approval.is_current_approver && approval.assigned_decision_status !== "not_required" && (
             <section className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
               {approval.assigned_decision_status === "approved"
-                ? "You have approved your step. The requisition is waiting on another approver."
+                ? "Your approval was recorded. The requisition is waiting for another eligible reviewer."
                 : approval.assigned_step > approval.current_step
                   ? "Your approval step is coming up after the current approver finishes."
                   : "This approval is no longer on your active step."}

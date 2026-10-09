@@ -4,8 +4,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.authorization import Role, TenantContext
 from app.db.models.approval import (
@@ -14,19 +15,19 @@ from app.db.models.approval import (
     RequisitionApproval,
     RequisitionApprovalDecision,
 )
-from app.db.models.identity import User
+from app.db.models.identity import Tenant, User, UserRoleAssignment
 from app.db.models.requisition import Requisition
 from app.db.transactions import transactional
-from app.domains.approvals.enums import ApprovalDecisionStatus, ApprovalStatus
+from app.domains.approvals.enums import ApprovalStatus, RequisitionDecisionStatus
 from app.domains.requisitions.enums import RequisitionStatus
 from app.domains.requisitions.transitions import transition_requisition
 from app.services.approval_errors import (
     ApprovalDecisionAlreadyMadeError,
     ApprovalDecisionForbiddenError,
+    ApprovalPolicyAccessDeniedError,
     ApprovalPolicyInvalidError,
     ApprovalPolicyNotFoundError,
     RequisitionApprovalNotFoundError,
-    SelfApprovalNotAllowedError,
 )
 from app.services.audit import record_audit_event
 from app.services.requisition_errors import (
@@ -35,6 +36,7 @@ from app.services.requisition_errors import (
 )
 
 _POLICY_ADMIN_ROLES = frozenset({Role.TENANT_ADMIN})
+_POLICY_SETUP_ROLES = frozenset({Role.TENANT_ADMIN, Role.RECRUITER})
 _SUBMITTER_ROLES = frozenset({Role.TENANT_ADMIN, Role.RECRUITER})
 
 
@@ -69,7 +71,7 @@ async def get_latest_requisition_rejection_feedback(
             Requisition.tenant_id == context.tenant_id,
             RequisitionApproval.tenant_id == context.tenant_id,
             RequisitionApproval.status == ApprovalStatus.REJECTED,
-            RequisitionApprovalDecision.status == ApprovalDecisionStatus.REJECTED,
+            RequisitionApprovalDecision.status == RequisitionDecisionStatus.REJECTED,
             or_(
                 Requisition.created_by_subject == context.subject,
                 RequisitionApproval.submitted_by_subject == context.subject,
@@ -93,7 +95,7 @@ async def get_latest_requisition_rejection_feedback(
 
 @dataclass(frozen=True, slots=True)
 class CreateApprovalPolicyCommand:
-    """Input for a sequential named-approver policy."""
+    """Input for a named pool of alternative requisition reviewers."""
 
     name: str
     approver_user_ids: tuple[UUID, ...]
@@ -108,11 +110,6 @@ class CreateApprovalPolicyCommand:
                 "Approval policy name must not exceed 200 characters."
             )
 
-        if not self.approver_user_ids:
-            raise ApprovalPolicyInvalidError(
-                "An approval policy requires at least one approver."
-            )
-
         if len(set(self.approver_user_ids)) != len(self.approver_user_ids):
             raise ApprovalPolicyInvalidError(
                 "An approver may appear only once in a policy."
@@ -125,7 +122,7 @@ async def get_approval_policy_configuration(
     context: TenantContext,
 ) -> tuple[ApprovalPolicy | None, list[User], list[UUID]]:
     """Return the tenant's default policy and members available to assign."""
-    _require_role(context, _POLICY_ADMIN_ROLES)
+    _require_policy_role(context, _POLICY_SETUP_ROLES)
 
     policy = await session.scalar(
         select(ApprovalPolicy).where(
@@ -133,9 +130,17 @@ async def get_approval_policy_configuration(
             ApprovalPolicy.is_default.is_(True),
         )
     )
+    if Role.TENANT_ADMIN not in context.roles and policy is not None:
+        raise ApprovalPolicyAccessDeniedError(
+            "This workspace already has a default approval policy. Contact your "
+            "workspace admin to change the policy or its approvers. You can still "
+            "submit requisitions using the current policy."
+        )
+
     members = list(
         await session.scalars(
             select(User)
+            .options(selectinload(User.role_assignments))
             .where(User.tenant_id == context.tenant_id)
             .order_by(User.display_name, User.email)
         )
@@ -158,6 +163,18 @@ def _require_role(context: TenantContext, allowed_roles: frozenset[Role]) -> Non
     if context.roles.isdisjoint(allowed_roles):
         raise RequisitionAccessDeniedError(
             "Caller is not permitted to perform this approval operation."
+        )
+
+
+def _require_policy_role(
+    context: TenantContext,
+    allowed_roles: frozenset[Role],
+) -> None:
+    """Give policy-management callers guidance when they lack access."""
+    if context.roles.isdisjoint(allowed_roles):
+        raise ApprovalPolicyAccessDeniedError(
+            "Only workspace admins can manage approval settings. Contact your "
+            "workspace admin to create or update the shared approval policy."
         )
 
 
@@ -186,16 +203,62 @@ async def _tenant_users_by_id(
     return users_by_id
 
 
+async def _workspace_admin_user_ids(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+) -> tuple[UUID, ...]:
+    """Return persisted workspace-admin identities for automatic approval."""
+    return tuple(
+        await session.scalars(
+            select(User.id)
+            .join(UserRoleAssignment, UserRoleAssignment.user_id == User.id)
+            .where(
+                User.tenant_id == tenant_id,
+                UserRoleAssignment.role == Role.TENANT_ADMIN,
+            )
+            .order_by(User.display_name, User.email)
+        )
+    )
+
+
 async def create_approval_policy(
     session: AsyncSession,
     *,
     context: TenantContext,
     command: CreateApprovalPolicyCommand,
 ) -> ApprovalPolicy:
-    """Create a tenant approval policy with ordered named approvers."""
-    _require_role(context, _POLICY_ADMIN_ROLES)
+    """Create a policy; recruiters may create only the initial default policy."""
+    _require_policy_role(context, _POLICY_SETUP_ROLES)
 
     async with transactional(session):
+        # Serialize policy setup per tenant so concurrent first-time requests
+        # cannot race past the default-policy check.
+        await session.scalar(
+            select(Tenant.id)
+            .where(Tenant.id == context.tenant_id)
+            .with_for_update()
+        )
+        current_default = await session.scalar(
+            select(ApprovalPolicy)
+            .where(
+                ApprovalPolicy.tenant_id == context.tenant_id,
+                ApprovalPolicy.is_default.is_(True),
+            )
+            .with_for_update()
+        )
+        is_admin = Role.TENANT_ADMIN in context.roles
+        if not is_admin and (
+            Role.RECRUITER not in context.roles
+            or not command.is_default
+            or current_default is not None
+        ):
+            raise ApprovalPolicyAccessDeniedError(
+                "Recruiters can create the first default approval policy only. "
+                "Contact your workspace admin to change the shared approval "
+                "policy after setup."
+            )
+
         normalized_name = command.name.strip()
         existing_policy = await session.scalar(
             select(ApprovalPolicy.id).where(
@@ -209,28 +272,12 @@ async def create_approval_policy(
                 "Update the existing policy or choose a different name."
             )
 
-        approvers = await _tenant_users_by_id(
+        await _tenant_users_by_id(
             session,
             tenant_id=context.tenant_id,
             user_ids=command.approver_user_ids,
         )
-        if any(
-            approver.external_subject == context.subject
-            for approver in approvers.values()
-        ):
-            raise ApprovalPolicyInvalidError(
-                "The policy creator cannot be assigned as an approver."
-            )
-
         if command.is_default:
-            current_default = await session.scalar(
-                select(ApprovalPolicy)
-                .where(
-                    ApprovalPolicy.tenant_id == context.tenant_id,
-                    ApprovalPolicy.is_default.is_(True),
-                )
-                .with_for_update()
-            )
             if current_default is not None:
                 current_default.is_default = False
                 await session.flush()
@@ -278,15 +325,11 @@ async def update_approval_policy_approvers(
     policy_id: UUID,
     approver_user_ids: tuple[UUID, ...],
 ) -> ApprovalPolicy:
-    """Update ordered approvers on the current default policy.
+    """Update alternative reviewers on the current default policy.
 
     Submitted approvals retain their immutable reviewer snapshots.
     """
-    _require_role(context, _POLICY_ADMIN_ROLES)
-    if not approver_user_ids:
-        raise ApprovalPolicyInvalidError(
-            "An approval policy requires at least one approver."
-        )
+    _require_policy_role(context, _POLICY_ADMIN_ROLES)
     if len(approver_user_ids) > 20:
         raise ApprovalPolicyInvalidError("A policy may have at most 20 approvers.")
     if len(set(approver_user_ids)) != len(approver_user_ids):
@@ -310,18 +353,11 @@ async def update_approval_policy_approvers(
                 "The active default approval policy was not found."
             )
 
-        approvers = await _tenant_users_by_id(
+        await _tenant_users_by_id(
             session,
             tenant_id=context.tenant_id,
             user_ids=approver_user_ids,
         )
-        if any(
-            user.external_subject == context.subject for user in approvers.values()
-        ):
-            raise ApprovalPolicyInvalidError(
-                "The policy creator cannot be assigned as an approver."
-            )
-
         old_steps = list(
             await session.scalars(
                 select(ApprovalPolicyStep)
@@ -363,9 +399,14 @@ async def set_default_approval_policy(
     policy_id: UUID,
 ) -> ApprovalPolicy:
     """Set one active tenant policy as the default for future submissions."""
-    _require_role(context, _POLICY_ADMIN_ROLES)
+    _require_policy_role(context, _POLICY_ADMIN_ROLES)
 
     async with transactional(session):
+        await session.scalar(
+            select(Tenant.id)
+            .where(Tenant.id == context.tenant_id)
+            .with_for_update()
+        )
         policy = await session.scalar(
             select(ApprovalPolicy)
             .where(
@@ -434,6 +475,11 @@ async def submit_requisition_for_approval(
                 "Only draft requisitions can be submitted for approval."
             )
 
+        if requisition.created_by_subject != context.subject:
+            raise RequisitionAccessDeniedError(
+                "Only the person who created this requisition may submit it for approval."
+            )
+
         policy = await session.scalar(
             select(ApprovalPolicy)
             .where(
@@ -448,28 +494,33 @@ async def submit_requisition_for_approval(
                 "No active default approval policy is configured."
             )
 
-        steps = list(
+        policy_steps = list(
             await session.scalars(
                 select(ApprovalPolicyStep)
                 .where(ApprovalPolicyStep.approval_policy_id == policy.id)
                 .order_by(ApprovalPolicyStep.position)
             )
         )
-        if not steps:
-            raise ApprovalPolicyInvalidError(
-                "The default approval policy has no approvers."
-            )
-
-        approver_ids = tuple(step.approver_user_id for step in steps)
+        policy_approver_ids = tuple(step.approver_user_id for step in policy_steps)
+        admin_approver_ids = await _workspace_admin_user_ids(
+            session,
+            tenant_id=context.tenant_id,
+        )
+        approver_ids = tuple(dict.fromkeys((*policy_approver_ids, *admin_approver_ids)))
         approvers = await _tenant_users_by_id(
             session,
             tenant_id=context.tenant_id,
             user_ids=approver_ids,
         )
-
-        if any(user.external_subject == context.subject for user in approvers.values()):
-            raise SelfApprovalNotAllowedError(
-                "A requisition submitter cannot approve their own requisition."
+        eligible_approvers = [
+            approvers[user_id]
+            for user_id in approver_ids
+            if approvers[user_id].external_subject != context.subject
+        ]
+        if not eligible_approvers:
+            raise ApprovalPolicyInvalidError(
+                "No eligible approvers remain after excluding the requester. "
+                "Contact your workspace admin to add another reviewer."
             )
 
         policy_snapshot = {
@@ -478,12 +529,13 @@ async def submit_requisition_for_approval(
             "policy_version": policy.version,
             "steps": [
                 {
-                    "position": step.position,
-                    "approver_user_id": str(step.approver_user_id),
-                    "approver_subject": approvers[step.approver_user_id].external_subject,
+                    "position": 1,
+                    "approver_user_id": str(approver.id),
+                    "approver_subject": approver.external_subject,
                 }
-                for step in steps
+                for approver in eligible_approvers
             ],
+            "approval_rule": "any_one_reviewer",
         }
 
         approval = RequisitionApproval(
@@ -492,7 +544,7 @@ async def submit_requisition_for_approval(
             approval_policy_id=policy.id,
             policy_snapshot=policy_snapshot,
             status=ApprovalStatus.PENDING,
-            current_step=steps[0].position,
+            current_step=1,
             submitted_by_subject=context.subject,
         )
         session.add(approval)
@@ -502,11 +554,11 @@ async def submit_requisition_for_approval(
             [
                 RequisitionApprovalDecision(
                     requisition_approval_id=approval.id,
-                    step_position=step.position,
-                    approver_user_id=step.approver_user_id,
-                    status=ApprovalDecisionStatus.PENDING,
+                    step_position=1,
+                    approver_user_id=approver.id,
+                    status=RequisitionDecisionStatus.PENDING,
                 )
-                for step in steps
+                for approver in eligible_approvers
             ]
         )
 
@@ -574,7 +626,7 @@ async def list_assigned_requisition_approvals(
             Requisition.tenant_id == context.tenant_id,
             RequisitionApproval.status == ApprovalStatus.PENDING,
             RequisitionApprovalDecision.approver_user_id == actor.id,
-            RequisitionApprovalDecision.status == ApprovalDecisionStatus.PENDING,
+            RequisitionApprovalDecision.status == RequisitionDecisionStatus.PENDING,
         )
         .order_by(RequisitionApproval.submitted_at.desc())
     )
@@ -641,18 +693,16 @@ async def _load_current_approval(
         .where(
             RequisitionApprovalDecision.requisition_approval_id == approval.id,
             RequisitionApprovalDecision.step_position == approval.current_step,
+            RequisitionApprovalDecision.approver_user_id == actor.id,
         )
         .with_for_update()
     )
     if decision is None:
-        raise ApprovalPolicyInvalidError("Approval has no current decision step.")
-
-    if decision.approver_user_id != actor.id:
         raise ApprovalDecisionForbiddenError(
-            "Caller is not assigned to the current approval step."
+            "Caller is not an eligible reviewer for the current approval step."
         )
 
-    if decision.status is not ApprovalDecisionStatus.PENDING:
+    if decision.status is not RequisitionDecisionStatus.PENDING:
         raise ApprovalDecisionAlreadyMadeError("Approval decision is already complete.")
 
     requisition = await session.scalar(
@@ -667,6 +717,28 @@ async def _load_current_approval(
         raise RequisitionNotFoundError("Requisition was not found.")
 
     return approval, requisition, decision, actor
+
+
+async def _mark_alternative_reviewers_not_required(
+    session: AsyncSession,
+    *,
+    approval: RequisitionApproval,
+    decision: RequisitionApprovalDecision,
+) -> None:
+    """Close other reviewers in the winning step after its first decision."""
+    await session.execute(
+        update(RequisitionApprovalDecision)
+        .where(
+            RequisitionApprovalDecision.requisition_approval_id == approval.id,
+            RequisitionApprovalDecision.step_position == decision.step_position,
+            RequisitionApprovalDecision.approver_user_id != decision.approver_user_id,
+            RequisitionApprovalDecision.status == RequisitionDecisionStatus.PENDING,
+        )
+        .values(
+            status=RequisitionDecisionStatus.NOT_REQUIRED,
+            decided_at=datetime.now(UTC),
+        )
+    )
 
 
 async def approve_requisition_approval(
@@ -684,9 +756,14 @@ async def approve_requisition_approval(
             approval_id=approval_id,
         )
 
-        decision.status = ApprovalDecisionStatus.APPROVED
+        decision.status = RequisitionDecisionStatus.APPROVED
         decision.comment = comment
         decision.decided_at = datetime.now(UTC)
+        await _mark_alternative_reviewers_not_required(
+            session,
+            approval=approval,
+            decision=decision,
+        )
 
         next_decision = await session.scalar(
             select(RequisitionApprovalDecision)
@@ -741,9 +818,14 @@ async def reject_requisition_approval(
             approval_id=approval_id,
         )
 
-        decision.status = ApprovalDecisionStatus.REJECTED
+        decision.status = RequisitionDecisionStatus.REJECTED
         decision.comment = comment
         decision.decided_at = datetime.now(UTC)
+        await _mark_alternative_reviewers_not_required(
+            session,
+            approval=approval,
+            decision=decision,
+        )
 
         approval.status = ApprovalStatus.REJECTED
         approval.completed_at = datetime.now(UTC)
