@@ -1,59 +1,37 @@
-"use client";
-
-import React, { useState, use } from "react";
+import type { Metadata } from "next";
 import Link from "next/link";
-import { mockJobs } from "@/lib/mock-jobs";
 import { notFound } from "next/navigation";
-import { ArrowLeft, UploadCloud, CheckCircle, Briefcase } from "lucide-react";
+import { ArrowLeft, BriefcaseBusiness } from "lucide-react";
+import { ApiError } from "@/lib/api/errors";
+import { getPublicJob } from "@/lib/api/services/jobs";
 
-export default function ApplyPage({ params }: { params: Promise<{ id: string }> }) {
-  const resolvedParams = use(params);
-  const job = mockJobs.find((j) => j.id === resolvedParams.id);
+export const metadata: Metadata = {
+  title: "Applications coming soon",
+  robots: { index: false, follow: false },
+};
 
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false);
-  
-  const [formData, setFormData] = useState({
-    firstName: "",
-    lastName: "",
-    email: "",
-    phone: "",
-    linkedin: "",
-    portfolio: "",
-    coverLetter: ""
-  });
+export default async function ApplyPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  let job;
 
-  if (!job) {
-    notFound();
-  }
+  try {
+    job = await getPublicJob(id, { next: { revalidate: 60 } });
+  } catch (error) {
+    if (error instanceof ApiError && (error.isNotFound || error.isValidationError)) {
+      notFound();
+    }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    
-    // Simulate API submission
-    setTimeout(() => {
-      setIsSubmitting(false);
-      setIsSuccess(true);
-    }, 1500);
-  };
-
-  if (isSuccess) {
     return (
-      <div className="bg-gray-50 min-h-screen py-24 px-6 flex items-center justify-center">
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-lg p-10 max-w-md w-full text-center">
-          <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
-            <CheckCircle className="w-10 h-10 text-emerald-600" />
-          </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Application Submitted!</h2>
-          <p className="text-gray-600 mb-8">
-            Thank you for applying to the <strong>{job.title}</strong> role. Our team will review your application and get back to you soon.
-          </p>
-          <Link 
-            href="/careers"
-            className="inline-flex items-center justify-center w-full h-11 rounded-lg bg-sr-text-blue text-white font-bold hover:bg-sr-text-blue/90 transition-colors"
-          >
-            Back to Careers
+      <div className="min-h-screen bg-gray-50 px-6 py-20">
+        <div role="alert" className="mx-auto max-w-xl rounded-xl border border-rose-200 bg-white p-8 text-center">
+          <h1 className="text-xl font-semibold text-gray-900">We couldn’t load this job</h1>
+          <p className="mt-2 text-gray-600">Please try again in a little while.</p>
+          <Link href="/careers" className="mt-6 inline-flex font-semibold text-sr-text-blue hover:underline">
+            Browse open roles
           </Link>
         </div>
       </div>
@@ -61,98 +39,33 @@ export default function ApplyPage({ params }: { params: Promise<{ id: string }> 
   }
 
   return (
-    <div className="bg-gray-50 min-h-screen pb-24">
-      <div className="max-w-3xl mx-auto px-6 pt-12">
-        <Link href={`/careers/${job.id}`} className="inline-flex items-center gap-2 text-sm font-semibold text-gray-500 hover:text-sr-text-blue transition-colors mb-8">
-          <ArrowLeft className="w-4 h-4" /> Back to Job Description
+    <div className="min-h-screen bg-gray-50 px-6 py-14">
+      <main className="mx-auto max-w-2xl">
+        <Link
+          href={`/careers/${job.public_id}`}
+          className="inline-flex items-center gap-2 text-sm font-semibold text-gray-600 hover:text-sr-text-blue"
+        >
+          <ArrowLeft aria-hidden="true" className="h-4 w-4" />
+          Back to job details
         </Link>
-        
-        <div className="mb-10">
-          <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Apply for {job.title}</h1>
-          <p className="text-gray-500 mt-2 flex items-center gap-2">
-            <Briefcase className="w-4 h-4" /> {job.department} • {job.location}
+
+        <section className="mt-8 rounded-2xl border border-gray-200 bg-white p-8 text-center shadow-sm sm:p-10">
+          <BriefcaseBusiness aria-hidden="true" className="mx-auto h-10 w-10 text-sr-green" />
+          <p className="mt-5 text-sm font-semibold uppercase tracking-wide text-gray-500">
+            {job.title}
           </p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 sm:p-10">
-          
-          {/* Resume Upload */}
-          <div className="mb-10">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">Resume/CV *</h3>
-            <div className="border-2 border-dashed border-gray-300 rounded-xl p-10 text-center hover:bg-gray-50 hover:border-sr-mint transition-colors cursor-pointer group">
-              <UploadCloud className="w-10 h-10 text-gray-400 mx-auto mb-3 group-hover:text-sr-mint transition-colors" />
-              <p className="text-sm font-semibold text-gray-900">Click to upload or drag and drop</p>
-              <p className="text-xs text-gray-500 mt-1">PDF, DOCX, or TXT up to 5MB</p>
-            </div>
-          </div>
-
-          <div className="h-px bg-gray-100 w-full mb-10" />
-
-          {/* Personal Information */}
-          <div className="mb-10">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">Personal Information</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              <div>
-                <label className="text-sm font-medium text-gray-700 mb-1.5 block">First Name *</label>
-                <input required type="text" className="h-11 px-4 rounded-lg border border-gray-200 w-full focus:border-sr-green outline-none" value={formData.firstName} onChange={(e) => setFormData({...formData, firstName: e.target.value})} />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-700 mb-1.5 block">Last Name *</label>
-                <input required type="text" className="h-11 px-4 rounded-lg border border-gray-200 w-full focus:border-sr-green outline-none" value={formData.lastName} onChange={(e) => setFormData({...formData, lastName: e.target.value})} />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-700 mb-1.5 block">Email *</label>
-                <input required type="email" className="h-11 px-4 rounded-lg border border-gray-200 w-full focus:border-sr-green outline-none" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-700 mb-1.5 block">Phone Number *</label>
-                <input required type="tel" className="h-11 px-4 rounded-lg border border-gray-200 w-full focus:border-sr-green outline-none" value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} />
-              </div>
-            </div>
-          </div>
-
-          <div className="h-px bg-gray-100 w-full mb-10" />
-
-          {/* Links */}
-          <div className="mb-10">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">Links</h3>
-            <div className="space-y-6">
-              <div>
-                <label className="text-sm font-medium text-gray-700 mb-1.5 block">LinkedIn Profile</label>
-                <input type="url" placeholder="https://linkedin.com/in/..." className="h-11 px-4 rounded-lg border border-gray-200 w-full focus:border-sr-green outline-none" value={formData.linkedin} onChange={(e) => setFormData({...formData, linkedin: e.target.value})} />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-700 mb-1.5 block">Portfolio / Personal Website</label>
-                <input type="url" placeholder="https://..." className="h-11 px-4 rounded-lg border border-gray-200 w-full focus:border-sr-green outline-none" value={formData.portfolio} onChange={(e) => setFormData({...formData, portfolio: e.target.value})} />
-              </div>
-            </div>
-          </div>
-
-          <div className="h-px bg-gray-100 w-full mb-10" />
-
-          {/* Cover Letter */}
-          <div className="mb-10">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">Cover Letter</h3>
-            <div>
-              <label className="text-sm font-medium text-gray-700 mb-1.5 block">Message</label>
-              <textarea rows={6} placeholder="Tell us why you are a great fit for this role..." className="p-4 rounded-lg border border-gray-200 w-full focus:border-sr-green outline-none resize-none" value={formData.coverLetter} onChange={(e) => setFormData({...formData, coverLetter: e.target.value})} />
-            </div>
-          </div>
-
-          <div className="pt-6 border-t border-gray-200">
-            <button 
-              type="submit" 
-              disabled={isSubmitting}
-              className={`w-full sm:w-auto px-10 h-12 rounded-lg font-bold text-lg transition-all flex items-center justify-center gap-2 ${
-                isSubmitting ? "bg-sr-mint/70 text-sr-text-blue/70 cursor-not-allowed" : "bg-sr-mint text-sr-text-blue hover:bg-sr-green hover:text-white"
-              }`}
-            >
-              {isSubmitting ? "Submitting..." : "Submit Application"}
-            </button>
-          </div>
-
-        </form>
-      </div>
+          <h1 className="mt-2 text-2xl font-bold text-gray-900">Applications are coming soon</h1>
+          <p className="mt-3 text-gray-600">
+            We’re preparing the online application form for this role. Please check back soon.
+          </p>
+          <Link
+            href="/careers"
+            className="mt-7 inline-flex items-center justify-center rounded-lg bg-sr-text-blue px-5 py-3 font-semibold text-white transition-colors hover:bg-sr-text-blue/90"
+          >
+            Browse other roles
+          </Link>
+        </section>
+      </main>
     </div>
   );
 }

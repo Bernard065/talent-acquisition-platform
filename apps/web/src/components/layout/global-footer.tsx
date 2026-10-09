@@ -75,7 +75,7 @@ export const GlobalFooter = () => {
             <h4 className="text-white font-semibold mb-6">Company</h4>
             <ul className="space-y-4 text-sm">
               <li><Link href="#" className="hover:text-sr-mint transition-colors">About Us</Link></li>
-              <li><Link href="#" className="hover:text-sr-mint transition-colors">Careers</Link></li>
+              <li><Link href="/careers" className="hover:text-sr-mint transition-colors">Careers</Link></li>
               <li><Link href="#" className="hover:text-sr-mint transition-colors">Partner Program</Link></li>
               <li><Link href="#" className="hover:text-sr-mint transition-colors">Contact Us</Link></li>
               <li><Link href="#" className="hover:text-sr-mint transition-colors">Press</Link></li>

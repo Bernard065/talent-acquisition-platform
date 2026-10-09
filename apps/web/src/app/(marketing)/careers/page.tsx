@@ -1,73 +1,151 @@
-import React from "react";
+import type { Metadata } from "next";
 import Link from "next/link";
-import { mockJobs } from "@/lib/mock-jobs";
-import { MapPin, Briefcase, Clock, ChevronRight } from "lucide-react";
+import { BriefcaseBusiness, ChevronRight, MapPin, Search } from "lucide-react";
+import { listPublicJobs } from "@/lib/api/services/jobs";
+import type { PublicJobSummaryResponse } from "@/types/api/jobs";
 
-export const metadata = {
-  title: "Careers | Join Our Team",
-  description: "View our open positions and apply today.",
+export const metadata: Metadata = {
+  title: "Open jobs",
+  description: "Explore current job opportunities and learn more about each role.",
+  robots: { index: true, follow: true },
 };
 
-export default function CareersPage() {
-  const activeJobs = mockJobs.filter(job => job.status === "active");
+function formatEmploymentType(value: string): string {
+  return value
+    .split("_")
+    .map((word) => word[0]?.toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+export default async function CareersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ cursor?: string }>;
+}) {
+  const { cursor } = await searchParams;
+  let jobs: PublicJobSummaryResponse[] = [];
+  let nextCursor: string | null = null;
+  let failedToLoad = false;
+
+  try {
+    const page = await listPublicJobs(
+      { limit: 50, cursor },
+      { next: { revalidate: 60 } },
+    );
+    jobs = page.items;
+    nextCursor = page.next_cursor ?? null;
+  } catch {
+    failedToLoad = true;
+  }
 
   return (
-    <div className="bg-gray-50 min-h-screen pb-24">
-      {/* Hero Section */}
-      <div className="bg-sr-text-blue text-white py-24 px-6 relative overflow-hidden">
-        <div className="max-w-4xl mx-auto text-center relative z-10">
-          <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight mb-6">
-            Help us build the future of hiring
+    <div className="min-h-screen bg-gray-50 pb-24">
+      <section className="relative overflow-hidden bg-sr-text-blue px-6 py-20 text-white sm:py-24">
+        <div className="relative z-10 mx-auto max-w-4xl text-center">
+          <p className="mb-4 text-sm font-semibold uppercase tracking-[0.18em] text-sr-mint">
+            Careers
+          </p>
+          <h1 className="text-4xl font-extrabold tracking-tight sm:text-5xl md:text-6xl">
+            Find your next opportunity
           </h1>
-          <p className="text-lg sm:text-xl text-blue-100 max-w-2xl mx-auto mb-10 leading-relaxed">
-            We are a team of builders, designers, and problem solvers. Join us in our mission to connect great talent with great opportunities.
+          <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-blue-100 sm:text-xl">
+            Explore open roles and find a place to do meaningful work.
           </p>
         </div>
-        
-        {/* Decorative elements */}
-        <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
-          <div className="absolute -top-[20%] -right-[10%] w-[50%] h-[150%] bg-blue-500/10 rotate-12 blur-3xl rounded-full" />
-          <div className="absolute top-[60%] -left-[10%] w-[40%] h-[80%] bg-emerald-500/10 -rotate-12 blur-3xl rounded-full" />
-        </div>
-      </div>
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-24 -top-32 h-96 w-96 rounded-full bg-blue-400/10 blur-3xl"
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -bottom-48 -left-24 h-96 w-96 rounded-full bg-emerald-400/10 blur-3xl"
+        />
+      </section>
 
-      {/* Open Positions List */}
-      <div className="max-w-5xl mx-auto px-6 mt-16">
-        <div className="mb-10 text-center">
-          <h2 className="text-3xl font-bold text-gray-900">Open Positions</h2>
-          <p className="text-gray-500 mt-2 text-lg">Find a role that fits your skills and passions.</p>
+      <section aria-labelledby="open-roles-heading" className="mx-auto mt-14 max-w-5xl px-6 sm:mt-16">
+        <div className="mb-8">
+          <h2 id="open-roles-heading" className="text-3xl font-bold text-gray-900">
+            Open roles
+          </h2>
+          <p className="mt-2 text-gray-600">
+            Explore currently published opportunities.
+          </p>
         </div>
 
-        <div className="grid grid-cols-1 gap-4">
-          {activeJobs.map((job) => (
-            <Link 
-              key={job.id} 
-              href={`/careers/${job.id}`}
-              className="bg-white border border-gray-200 rounded-xl p-6 sm:p-8 hover:border-sr-mint hover:shadow-md transition-all group flex flex-col sm:flex-row sm:items-center justify-between gap-6"
+        {failedToLoad ? (
+          <div role="alert" className="rounded-xl border border-rose-200 bg-white p-8 text-center">
+            <h3 className="text-lg font-semibold text-gray-900">Jobs are temporarily unavailable</h3>
+            <p className="mt-2 text-sm text-gray-600">Please try again in a little while.</p>
+          </div>
+        ) : jobs.length === 0 ? (
+          <div className="rounded-xl border border-gray-200 bg-white p-10 text-center">
+            <Search aria-hidden="true" className="mx-auto h-9 w-9 text-gray-400" />
+            <h3 className="mt-4 text-lg font-semibold text-gray-900">
+              {cursor ? "No more roles to show" : "No open roles right now"}
+            </h3>
+            <p className="mt-2 text-sm text-gray-600">Please check back later for new opportunities.</p>
+            {cursor && (
+              <Link href="/careers" className="mt-5 inline-flex font-semibold text-sr-text-blue hover:underline">
+                Back to the first page
+              </Link>
+            )}
+          </div>
+        ) : (
+          <ul className="grid grid-cols-1 gap-4">
+            {jobs.map((job) => (
+              <li key={job.public_id}>
+                <Link
+                  href={`/careers/${job.public_id}`}
+                  className="group flex flex-col justify-between gap-5 rounded-xl border border-gray-200 bg-white p-6 transition hover:border-sr-mint hover:shadow-md sm:flex-row sm:items-center sm:p-8"
+                >
+                  <div>
+                    <h3 className="text-xl font-bold text-sr-text-blue transition-colors group-hover:text-sr-green">
+                      {job.title}
+                    </h3>
+                    <div className="mt-3 flex flex-wrap items-center gap-3 text-sm font-medium text-gray-600">
+                      {job.department && (
+                        <span className="inline-flex items-center gap-1.5 rounded-md bg-gray-100 px-2.5 py-1 text-gray-700">
+                          <BriefcaseBusiness aria-hidden="true" className="h-4 w-4" />
+                          {job.department}
+                        </span>
+                      )}
+                      {job.location && (
+                        <span className="inline-flex items-center gap-1.5">
+                          <MapPin aria-hidden="true" className="h-4 w-4" />
+                          {job.location}
+                        </span>
+                      )}
+                      <span>{formatEmploymentType(job.employment_type)}</span>
+                    </div>
+                  </div>
+                  <span className="inline-flex shrink-0 items-center gap-2 font-semibold text-sr-text-blue">
+                    View role
+                    <ChevronRight aria-hidden="true" className="h-5 w-5 transition-transform group-hover:translate-x-1" />
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {!failedToLoad && nextCursor && (
+          <div className="mt-8 flex justify-center">
+            <Link
+              href={`/careers?cursor=${encodeURIComponent(nextCursor)}`}
+              className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-5 py-3 font-semibold text-sr-text-blue transition-colors hover:bg-gray-50"
             >
-              <div>
-                <h3 className="text-xl font-bold text-sr-text-blue group-hover:text-sr-mint transition-colors">
-                  {job.title}
-                </h3>
-                <div className="flex flex-wrap items-center gap-4 mt-3 text-sm text-gray-600 font-medium">
-                  <span className="flex items-center gap-1.5 bg-gray-100 px-2.5 py-1 rounded-md text-gray-700">
-                    <Briefcase className="w-4 h-4" /> {job.department}
-                  </span>
-                  <span className="flex items-center gap-1.5 text-gray-500">
-                    <MapPin className="w-4 h-4" /> {job.location}
-                  </span>
-                  <span className="flex items-center gap-1.5 text-gray-500 capitalize">
-                    <Clock className="w-4 h-4" /> {job.type.replace("-", " ")}
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 text-sr-text-blue font-semibold shrink-0">
-                View Role <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-              </div>
+              Load more roles
             </Link>
-          ))}
-        </div>
-      </div>
+          </div>
+        )}
+        {!failedToLoad && cursor && jobs.length > 0 && (
+          <div className="mt-5 text-center">
+            <Link href="/careers" className="text-sm font-semibold text-gray-600 hover:text-sr-text-blue hover:underline">
+              Back to the first page
+            </Link>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

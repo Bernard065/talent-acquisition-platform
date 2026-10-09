@@ -78,9 +78,7 @@ export async function listPublicJobs(
 
 export async function getPublicJob(
   publicId: string,
-  slug: string,
   options?: RequestOptions,
 ): Promise<PublicJobDetailResponse> {
-  // Public jobs use a specific route matching the SEO canonical URL structure
-  return get<PublicJobDetailResponse>(`/jobs/${publicId}/${slug}`, options);
+  return get<PublicJobDetailResponse>(`/public/jobs/${publicId}`, options);
 }
