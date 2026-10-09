@@ -8,21 +8,37 @@ import {
 } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { setTokenAccessor } from "@/lib/api";
+import { hasAuthenticatedIdentityChanged } from "@/lib/auth/authorization-context";
 
 function ApiTokenBridge() {
   const { data: session } = useSession();
   const queryClient = useQueryClient();
-  const previousToken = useRef<string | null>(null);
+  const previousUserId = useRef<string | null>(null);
+  const token = session?.supabaseAccessToken ?? null;
+  const userId = session?.user?.id ?? null;
 
   useEffect(() => {
-    const token = session?.supabaseAccessToken ?? null;
     setTokenAccessor(() => token);
-    if (previousToken.current !== token) {
+  }, [token]);
+
+  useEffect(() => {
+    if (hasAuthenticatedIdentityChanged(previousUserId.current, userId)) {
       queryClient.clear();
-      previousToken.current = token;
+      previousUserId.current = userId;
     }
-    if (session?.authError) void signOut({ redirectTo: "/login" });
-  }, [queryClient, session?.authError, session?.supabaseAccessToken]);
+  }, [queryClient, userId]);
+
+  return null;
+}
+
+function SessionExpiryHandler() {
+  const { data: session } = useSession();
+
+  useEffect(() => {
+    if (session?.authError === "RefreshAccessTokenError") {
+      void signOut({ redirectTo: "/login" });
+    }
+  }, [session?.authError]);
 
   return null;
 }
@@ -46,6 +62,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     <SessionProvider>
       <QueryClientProvider client={queryClient}>
         <ApiTokenBridge />
+        <SessionExpiryHandler />
         {children}
       </QueryClientProvider>
     </SessionProvider>
