@@ -155,7 +155,6 @@ class OfferApprovalDecision(Base):
             ApprovalDecisionStatus,
             name="approval_decision_status",
             values_callable=lambda statuses: [status.value for status in statuses],
-            create_type=False,
         ),
         nullable=False,
         default=ApprovalDecisionStatus.PENDING,

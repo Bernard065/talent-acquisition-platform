@@ -324,7 +324,9 @@ async def test_submitter_is_excluded_and_workspace_admin_is_automatic_reviewer(
     assert recruiter_inbox.status_code == 200
     assert recruiter_inbox.json()["items"] == []
     assert admin_inbox.status_code == 200
-    assert [item["id"] for item in admin_inbox.json()["items"]] == [approval_id]
+    assert [item["approval_id"] for item in admin_inbox.json()["items"]] == [
+        approval_id
+    ]
 
 
 @pytest.mark.asyncio

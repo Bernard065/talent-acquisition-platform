@@ -17,6 +17,7 @@ from app.db.models.requisition import Requisition
 from app.domains.approvals.enums import ApprovalStatus, RequisitionDecisionStatus
 from app.domains.requisitions.enums import RequisitionStatus
 from app.services.approval_errors import (
+    ApprovalPolicyAccessDeniedError,
     ApprovalPolicyInvalidError,
     ApprovalPolicyNotFoundError,
     RequisitionApprovalNotFoundError,
@@ -119,6 +120,8 @@ async def test_policy_administration_requires_admin_and_replaces_default(
         tenant_id=tenant_id,
         subjects=("tenant-admin", "approver-one", "approver-two"),
     )
+    approver_one_id = users["approver-one"].id
+    approver_two_id = users["approver-two"].id
 
     recruiter_context = _context(
         tenant_id,
@@ -131,13 +134,13 @@ async def test_policy_administration_requires_admin_and_replaces_default(
         frozenset({Role.TENANT_ADMIN}),
     )
 
-    with pytest.raises(RequisitionAccessDeniedError):
+    with pytest.raises(ApprovalPolicyAccessDeniedError):
         await create_approval_policy(
             session,
             context=recruiter_context,
             command=CreateApprovalPolicyCommand(
                 name="Engineering",
-                approver_user_ids=(users["approver-one"].id,),
+                approver_user_ids=(approver_one_id,),
                 is_default=False,
             ),
         )
@@ -147,20 +150,22 @@ async def test_policy_administration_requires_admin_and_replaces_default(
         context=admin_context,
         command=CreateApprovalPolicyCommand(
             name="Engineering",
-            approver_user_ids=(users["approver-one"].id,),
+            approver_user_ids=(approver_one_id,),
             is_default=True,
         ),
     )
+    first_policy_id = first_policy.id
     second_policy = await create_approval_policy(
         session,
         context=admin_context,
         command=CreateApprovalPolicyCommand(
             name="Finance",
-            approver_user_ids=(users["approver-two"].id,),
+            approver_user_ids=(approver_two_id,),
             is_default=True,
         ),
     )
 
+    second_policy_id = second_policy.id
     policies = list(
         await session.scalars(
             select(ApprovalPolicy).where(ApprovalPolicy.tenant_id == tenant_id)
@@ -168,8 +173,8 @@ async def test_policy_administration_requires_admin_and_replaces_default(
     )
     default_policy_ids = {policy.id for policy in policies if policy.is_default}
 
-    assert first_policy.id != second_policy.id
-    assert default_policy_ids == {second_policy.id}
+    assert first_policy_id != second_policy_id
+    assert default_policy_ids == {second_policy_id}
 
 
 @pytest.mark.asyncio
@@ -183,6 +188,7 @@ async def test_recruiter_can_create_only_the_first_default_policy(
         tenant_id=tenant_id,
         subjects=("recruiter", "approver-one"),
     )
+    approver_one_id = users["approver-one"].id
     recruiter_context = _context(
         tenant_id,
         "recruiter",
@@ -194,23 +200,24 @@ async def test_recruiter_can_create_only_the_first_default_policy(
         context=recruiter_context,
         command=CreateApprovalPolicyCommand(
             name="Initial hiring approval",
-            approver_user_ids=(users["approver-one"].id,),
+            approver_user_ids=(approver_one_id,),
             is_default=True,
         ),
     )
+    first_policy_id = first_policy.id
 
-    with pytest.raises(RequisitionAccessDeniedError):
+    with pytest.raises(ApprovalPolicyAccessDeniedError):
         await create_approval_policy(
             session,
             context=recruiter_context,
             command=CreateApprovalPolicyCommand(
                 name="Replacement hiring approval",
-                approver_user_ids=(users["approver-one"].id,),
+                approver_user_ids=(approver_one_id,),
                 is_default=True,
             ),
         )
 
-    stored_policy = await session.get(ApprovalPolicy, first_policy.id)
+    stored_policy = await session.get(ApprovalPolicy, first_policy_id)
     assert stored_policy is not None
     assert stored_policy.is_default is True
 
