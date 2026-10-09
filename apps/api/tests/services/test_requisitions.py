@@ -109,7 +109,6 @@ async def test_gets_requisition_only_from_callers_tenant(
             headcount=1,
         ),
     )
-
     requisition = await get_requisition(
         session,
         context=context,
@@ -252,6 +251,51 @@ async def test_updates_only_draft_requisition_and_records_audit_event(
         "changed_fields": ["headcount", "location"],
         "version": 2,
     }
+
+
+@pytest.mark.asyncio
+async def test_only_requisition_creator_can_edit(
+    session: AsyncSession,
+) -> None:
+    """Prevent other recruiters and admins from editing another owner's draft."""
+    tenant_id = uuid4()
+    owner_context = _context(tenant_id)
+    await _create_tenant(session, tenant_id)
+
+    created = await create_requisition(
+        session,
+        context=owner_context,
+        command=CreateRequisitionCommand(
+            title="Backend Engineer",
+            description=None,
+            department="Engineering",
+            location=None,
+            headcount=1,
+        ),
+    )
+    created_id = created.id
+
+    other_recruiter_context = TenantContext(
+        tenant_id=tenant_id,
+        subject="another-recruiter",
+        roles=frozenset({Role.RECRUITER}),
+        request_id="test-request-id",
+    )
+    workspace_admin_context = TenantContext(
+        tenant_id=tenant_id,
+        subject="workspace-admin",
+        roles=frozenset({Role.TENANT_ADMIN}),
+        request_id="test-request-id",
+    )
+
+    for context in (other_recruiter_context, workspace_admin_context):
+        with pytest.raises(RequisitionAccessDeniedError):
+            await update_requisition(
+                session,
+                context=context,
+                requisition_id=created_id,
+                command=UpdateRequisitionCommand(changes={"title": "Changed title"}),
+            )
 
 
 @pytest.mark.asyncio
