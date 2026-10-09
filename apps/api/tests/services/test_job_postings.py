@@ -34,12 +34,13 @@ from app.services.job_postings import (
 def _context(
     tenant_id: UUID,
     *,
+    subject: str = "recruiter-subject",
     roles: frozenset[Role] = frozenset({Role.RECRUITER}),
 ) -> TenantContext:
     """Build a verified internal caller context for one tenant."""
     return TenantContext(
         tenant_id=tenant_id,
-        subject="recruiter-subject",
+        subject=subject,
         roles=roles,
         request_id="job-posting-service-test-request-id",
     )
@@ -205,7 +206,7 @@ async def test_publishes_only_open_requisition_and_uses_current_version(
     requisition = await _seed_requisition(
         session,
         tenant_id=tenant_id,
-        status=RequisitionStatus.DRAFT,
+        status=RequisitionStatus.APPROVED,
     )
     posting = await create_job_posting(
         session,
@@ -281,15 +282,17 @@ async def test_hides_postings_across_tenants_and_rejects_unauthorized_roles(
             employment_type=EmploymentType.FULL_TIME,
         ),
     )
+    posting_id = posting.id
 
     with pytest.raises(JobPostingAccessDeniedError):
         await publish_job_posting(
             session,
             context=_context(
                 owner_tenant_id,
+                subject="unrelated-user",
                 roles=frozenset({Role.INTERVIEWER}),
             ),
-            job_posting_id=posting.id,
+            job_posting_id=posting_id,
             expected_version=1,
         )
 
@@ -297,7 +300,7 @@ async def test_hides_postings_across_tenants_and_rejects_unauthorized_roles(
         await publish_job_posting(
             session,
             context=_context(uuid4()),
-            job_posting_id=posting.id,
+            job_posting_id=posting_id,
             expected_version=1,
         )
 

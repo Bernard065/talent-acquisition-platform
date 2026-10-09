@@ -21,6 +21,9 @@ from app.api.v1.schemas.requisitions import (
 )
 from app.core.authorization import TenantContext
 from app.services.idempotency import execute_idempotently
+from app.services.requisition_approvals import (
+    get_latest_requisition_rejection_feedback,
+)
 from app.services.requisition_workflow import transition_requisition_status
 from app.services.requisitions import (
     CreateRequisitionCommand,
@@ -97,11 +100,25 @@ async def list_requisitions_endpoint(
         limit=limit,
         cursor=cursor,
     )
+    feedback = await get_latest_requisition_rejection_feedback(
+        session,
+        context=context,
+        requisition_ids=[item.id for item in page.items],
+    )
+    response_items = []
+    for requisition in page.items:
+        response = RequisitionResponse.model_validate(requisition)
+        rejection = feedback.get(requisition.id)
+        if rejection is not None:
+            response = response.model_copy(
+                update={
+                    "latest_rejection_comment": rejection[0],
+                    "latest_rejection_at": rejection[1],
+                }
+            )
+        response_items.append(response)
     return RequisitionListResponse(
-        items=[
-            RequisitionResponse.model_validate(requisition)
-            for requisition in page.items
-        ],
+        items=response_items,
         next_cursor=page.next_cursor,
     )
 

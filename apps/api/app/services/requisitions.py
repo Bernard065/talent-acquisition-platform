@@ -252,8 +252,6 @@ async def update_requisition(
     command: UpdateRequisitionCommand,
 ) -> Requisition:
     """Update a draft requisition and record the change atomically."""
-    _require_any_role(context, _WRITE_ROLES)
-
     async with transactional(session):
         requisition = await session.scalar(
             select(Requisition)
@@ -266,6 +264,15 @@ async def update_requisition(
 
         if requisition is None:
             raise RequisitionNotFoundError("Requisition was not found.")
+
+        if (
+            context.roles.isdisjoint(_WRITE_ROLES)
+            and requisition.created_by_subject != context.subject
+        ):
+            raise RequisitionAccessDeniedError(
+                "Only workspace admins, recruiters, or the requisition owner "
+                "may edit this requisition."
+            )
 
         if requisition.status is not RequisitionStatus.DRAFT:
             raise RequisitionNotEditableError(
