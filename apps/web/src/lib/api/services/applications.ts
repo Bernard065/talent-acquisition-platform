@@ -10,9 +10,12 @@ import type {
 } from "@/types/api";
 
 export interface ApplicationSearchParams extends PaginationParams {
+  query?: string;
   requisition_id?: string;
   candidate_id?: string;
   status?: ApplicationStatus;
+  applied_after?: string;
+  applied_before?: string;
 }
 
 export async function listApplications(

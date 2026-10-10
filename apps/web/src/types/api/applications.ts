@@ -51,4 +51,5 @@ export interface ApplicationPipelineItem {
 export interface ApplicationPipelineListResponse {
   items: ApplicationPipelineItem[];
   next_cursor?: string | null;
+  stage_counts: Record<ApplicationStatus, number>;
 }

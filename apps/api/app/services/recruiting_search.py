@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import Select, and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authorization import Role, TenantContext
@@ -49,6 +49,7 @@ class ApplicationSearchFilters:
 
     requisition_id: UUID | None = None
     candidate_id: UUID | None = None
+    query: str | None = None
     status: ApplicationStatus | None = None
     applied_after: datetime | None = None
     applied_before: datetime | None = None
@@ -94,6 +95,7 @@ class ApplicationPipelinePage:
 
     items: list[ApplicationPipelineRecord]
     next_cursor: str | None
+    stage_counts: dict[ApplicationStatus, int]
 
 
 def _require_recruiting_read_role(context: TenantContext) -> None:
@@ -310,40 +312,7 @@ async def search_applications(
     ):
         raise ValueError("applied_after must not be later than applied_before.")
 
-    statement = select(Application).where(
-        Application.tenant_id == context.tenant_id
-    )
-
-    if filters.requisition_id is not None:
-        statement = statement.where(
-            Application.requisition_id == filters.requisition_id
-        )
-
-    if filters.candidate_id is not None:
-        statement = statement.where(
-            Application.candidate_id == filters.candidate_id
-        )
-
-    if filters.status is not None:
-        statement = statement.where(Application.status == filters.status)
-
-    if filters.applied_after is not None:
-        statement = statement.where(
-            Application.applied_at
-            >= _normalize_aware_datetime(
-                filters.applied_after,
-                field_name="applied_after",
-            )
-        )
-
-    if filters.applied_before is not None:
-        statement = statement.where(
-            Application.applied_at
-            <= _normalize_aware_datetime(
-                filters.applied_before,
-                field_name="applied_before",
-            )
-        )
+    statement = _application_search_statement(context=context, filters=filters)
 
     if cursor is not None:
         cursor_applied_at, cursor_id = decode_search_cursor(cursor)
@@ -382,6 +351,75 @@ async def search_applications(
     )
 
 
+def _application_search_statement(
+    *,
+    context: TenantContext,
+    filters: ApplicationSearchFilters,
+) -> Select[tuple[Application]]:
+    """Build the tenant-scoped application query shared by list and count reads."""
+    statement = select(Application).where(Application.tenant_id == context.tenant_id)
+
+    if filters.query is not None and filters.query.strip():
+        pattern = _contains_pattern(filters.query)
+        statement = (
+            statement.join(
+                Candidate,
+                and_(
+                    Candidate.id == Application.candidate_id,
+                    Candidate.tenant_id == context.tenant_id,
+                ),
+            )
+            .join(
+                Requisition,
+                and_(
+                    Requisition.id == Application.requisition_id,
+                    Requisition.tenant_id == context.tenant_id,
+                ),
+            )
+            .where(
+                Candidate.privacy_status == CandidatePrivacyStatus.ACTIVE,
+                or_(
+                    Candidate.full_name.ilike(pattern, escape="\\"),
+                    Candidate.email.ilike(pattern, escape="\\"),
+                    Requisition.title.ilike(pattern, escape="\\"),
+                ),
+            )
+        )
+
+    if filters.requisition_id is not None:
+        statement = statement.where(
+            Application.requisition_id == filters.requisition_id
+        )
+
+    if filters.candidate_id is not None:
+        statement = statement.where(
+            Application.candidate_id == filters.candidate_id
+        )
+
+    if filters.status is not None:
+        statement = statement.where(Application.status == filters.status)
+
+    if filters.applied_after is not None:
+        statement = statement.where(
+            Application.applied_at
+            >= _normalize_aware_datetime(
+                filters.applied_after,
+                field_name="applied_after",
+            )
+        )
+
+    if filters.applied_before is not None:
+        statement = statement.where(
+            Application.applied_at
+            <= _normalize_aware_datetime(
+                filters.applied_before,
+                field_name="applied_before",
+            )
+        )
+
+    return statement
+
+
 async def search_application_pipeline(
     session: AsyncSession,
     *,
@@ -399,8 +437,24 @@ async def search_application_pipeline(
         limit=limit,
         cursor=cursor,
     )
+    if filters is None:
+        filters = ApplicationSearchFilters()
+    filtered_applications = _application_search_statement(
+        context=context,
+        filters=filters,
+    ).with_only_columns(Application.id, Application.status).order_by(None).subquery()
+    count_rows = await session.execute(
+        select(filtered_applications.c.status, func.count())
+        .group_by(filtered_applications.c.status)
+    )
+    stage_counts = {application_status: 0 for application_status in ApplicationStatus}
+    stage_counts.update({status: count for status, count in count_rows})
     if not page.items:
-        return ApplicationPipelinePage(items=[], next_cursor=page.next_cursor)
+        return ApplicationPipelinePage(
+            items=[],
+            next_cursor=page.next_cursor,
+            stage_counts=stage_counts,
+        )
 
     candidate_ids = {application.candidate_id for application in page.items}
     requisition_ids = {application.requisition_id for application in page.items}
@@ -450,4 +504,8 @@ async def search_application_pipeline(
             )
         )
 
-    return ApplicationPipelinePage(items=records, next_cursor=page.next_cursor)
+    return ApplicationPipelinePage(
+        items=records,
+        next_cursor=page.next_cursor,
+        stage_counts=stage_counts,
+    )
