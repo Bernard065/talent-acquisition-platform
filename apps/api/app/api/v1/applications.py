@@ -150,6 +150,7 @@ async def search_application_pipeline_endpoint(
     response: Response,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: Annotated[str | None, Query(max_length=512)] = None,
+    query: Annotated[str | None, Query(max_length=200)] = None,
     requisition_id: UUID | None = None,
     candidate_id: UUID | None = None,
     application_status: Annotated[
@@ -167,6 +168,7 @@ async def search_application_pipeline_endpoint(
         filters=ApplicationSearchFilters(
             requisition_id=requisition_id,
             candidate_id=candidate_id,
+            query=query,
             status=application_status,
             applied_after=applied_after,
             applied_before=applied_before,
@@ -191,6 +193,7 @@ async def search_application_pipeline_endpoint(
             for record in page.items
         ],
         next_cursor=page.next_cursor,
+        stage_counts=page.stage_counts,
     )
 
 
@@ -205,6 +208,7 @@ async def search_applications_endpoint(
     response: Response,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: Annotated[str | None, Query(max_length=512)] = None,
+    query: Annotated[str | None, Query(max_length=200)] = None,
     requisition_id: UUID | None = None,
     candidate_id: UUID | None = None,
     application_status: Annotated[
@@ -221,6 +225,7 @@ async def search_applications_endpoint(
         filters=ApplicationSearchFilters(
             requisition_id=requisition_id,
             candidate_id=candidate_id,
+            query=query,
             status=application_status,
             applied_after=applied_after,
             applied_before=applied_before,

@@ -60,3 +60,4 @@ class ApplicationPipelineListResponse(BaseModel):
 
     items: list[ApplicationPipelineItemResponse]
     next_cursor: str | None = None
+    stage_counts: dict[ApplicationStatus, int]
