@@ -178,6 +178,9 @@ from app.services.outbox_inspection_errors import (
 )
 from app.services.public_application_errors import (
     PublicApplicationJobNotFoundError,
+    PublicApplicationResumeRejectedError,
+    PublicApplicationResumeScanProofError,
+    PublicApplicationScanUnavailableError,
 )
 from app.services.public_job_errors import (
     InvalidPublicJobCursorError,
@@ -993,6 +996,49 @@ async def public_application_rejected(
     return response
 
 
+async def public_application_resume_rejected(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Reject an unsafe résumé without creating an application or exposing a signature."""
+    response = _error_response(
+        request,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail="The résumé did not pass the security scan. Upload a different file.",
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+async def public_application_resume_scan_proof_invalid(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Ask applicants to re-scan expired, altered, or consumed résumés."""
+    response = _error_response(
+        request,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail="The résumé scan expired or no longer matches the file. Scan it again.",
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+async def public_application_scan_unavailable(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Fail closed when a résumé cannot be scanned before application submission."""
+    response = _error_response(
+        request,
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Résumé security scanning is temporarily unavailable. Please try again shortly.",
+    )
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Retry-After"] = "5"
+    return response
+
+
 async def public_application_abuse_unavailable(
     request: Request,
     _: Exception,
@@ -1377,6 +1423,18 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         PublicApplicationJobNotFoundError,
         public_application_job_not_found,
+    )
+    application.add_exception_handler(
+        PublicApplicationResumeRejectedError,
+        public_application_resume_rejected,
+    )
+    application.add_exception_handler(
+        PublicApplicationResumeScanProofError,
+        public_application_resume_scan_proof_invalid,
+    )
+    application.add_exception_handler(
+        PublicApplicationScanUnavailableError,
+        public_application_scan_unavailable,
     )
     application.add_exception_handler(
         AbuseControlRejectedError,

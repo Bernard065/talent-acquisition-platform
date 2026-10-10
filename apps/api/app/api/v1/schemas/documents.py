@@ -97,3 +97,10 @@ class CandidateDocumentUploadAuthorizationResponse(BaseModel):
     upload_url: str = Field(min_length=1)
     required_headers: dict[str, str]
     expires_at: datetime
+
+
+class CandidateDocumentDownloadAuthorizationResponse(BaseModel):
+    """Short-lived authorization to download a scanned candidate document."""
+
+    url: str = Field(min_length=1)
+    expires_at: datetime

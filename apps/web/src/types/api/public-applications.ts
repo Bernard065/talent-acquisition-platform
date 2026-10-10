@@ -10,3 +10,8 @@ export interface SubmitPublicApplicationRequest {
 export interface PublicApplicationAcceptedResponse {
   message: "Application received.";
 }
+
+export interface PublicApplicationResumeScanResponse {
+  scan_token: string;
+  expires_at: string;
+}

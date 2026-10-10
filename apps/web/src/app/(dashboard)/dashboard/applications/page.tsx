@@ -180,21 +180,28 @@ export default function ApplicationsPage() {
                     </header>
                     <div className="flex flex-col gap-2">
                       {stageApplications.map((application) => (
-                        <article key={application.id} className="rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
-                          <h3 className="text-sm font-semibold text-sr-text-blue">
-                            <Link className="rounded-sm hover:text-sr-green focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sr-green" href={`/dashboard/applications/${application.id}`}>
-                              {application.candidate_name}
-                            </Link>
-                          </h3>
-                          {application.candidate_email && <p className="mt-1 break-all text-xs text-gray-500">{application.candidate_email}</p>}
-                          <p className="mt-3 text-xs font-medium text-gray-700">{application.requisition_title}</p>
-                          <p className="mt-1 text-xs text-gray-500">Applied {formatAppliedDate(application.applied_at)}</p>
+                        <article
+                          key={application.id}
+                          className="relative rounded-lg border border-gray-200 bg-white p-3 shadow-sm transition hover:border-sr-green/50 hover:shadow has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-sr-green"
+                        >
+                          <Link
+                            aria-label={`Open ${application.candidate_name} application for ${application.requisition_title}`}
+                            href={`/dashboard/applications/${application.id}`}
+                            className="absolute inset-0 z-0 rounded-lg focus-visible:outline-none"
+                          />
+                          <div className="pointer-events-none relative z-10">
+                            <h3 className="text-sm font-semibold text-sr-text-blue">{application.candidate_name}</h3>
+                            {application.candidate_email && <p className="mt-1 break-all text-xs text-gray-500">{application.candidate_email}</p>}
+                            <p className="mt-3 text-xs font-medium text-gray-700">{application.requisition_title}</p>
+                            <p className="mt-1 text-xs text-gray-500">Applied {formatAppliedDate(application.applied_at)}</p>
                           {!!ALLOWED_NEXT_STAGES[application.status]?.length && (
-                            <label className="mt-3 block">
+                            <label className="pointer-events-auto mt-3 block">
                               <span className="sr-only">Move {application.candidate_name} to another stage</span>
                               <select
                                 value=""
                                 disabled={isTransitioning}
+                                onClick={(event) => event.stopPropagation()}
+                                onKeyDown={(event) => event.stopPropagation()}
                                 onChange={(event) => {
                                   const targetStatus = event.target.value as ApplicationStatus;
                                   if (!targetStatus) return;
@@ -218,6 +225,7 @@ export default function ApplicationsPage() {
                               </select>
                             </label>
                           )}
+                          </div>
                         </article>
                       ))}
                       {stageApplications.length === 0 && <p className="px-1 py-3 text-xs text-gray-500">No candidates</p>}

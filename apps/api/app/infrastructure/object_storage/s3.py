@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import NoReturn, Protocol, cast
+from urllib.parse import quote
 
 import boto3
 from botocore.config import Config
@@ -18,6 +19,7 @@ from app.services.object_storage import (
     ObjectStorage,
     ObjectStorageError,
     ObjectStorageReader,
+    PresignedDownload,
     PresignedUpload,
     StoredObjectMetadata,
 )
@@ -47,6 +49,9 @@ class _S3Client(Protocol):
 
     def head_object(self, **kwargs: object) -> dict[str, object]:
         """Read object metadata."""
+
+    def put_object(self, **kwargs: object) -> dict[str, object]:
+        """Store an object using server-side credentials."""
 
     def get_object(self, **kwargs: object) -> dict[str, object]:
         """Read an object body."""
@@ -205,6 +210,78 @@ class S3ObjectStorage(ObjectStorage, ObjectStorageReader):
             expires_at=datetime.now(UTC) + expires_in,
         )
 
+    async def create_presigned_download(
+        self,
+        *,
+        object_key: str,
+        filename: str,
+        content_type: str,
+        expires_in: timedelta,
+    ) -> PresignedDownload:
+        """Create a short-lived URL that downloads the private object as an attachment."""
+        return await self._create_presigned_object_access(
+            object_key=object_key,
+            filename=filename,
+            content_type=content_type,
+            expires_in=expires_in,
+            disposition_type="attachment",
+        )
+
+    async def create_presigned_preview(
+        self,
+        *,
+        object_key: str,
+        filename: str,
+        content_type: str,
+        expires_in: timedelta,
+    ) -> PresignedDownload:
+        """Create a short-lived URL that displays a private object inline."""
+        return await self._create_presigned_object_access(
+            object_key=object_key,
+            filename=filename,
+            content_type=content_type,
+            expires_in=expires_in,
+            disposition_type="inline",
+        )
+
+    async def _create_presigned_object_access(
+        self,
+        *,
+        object_key: str,
+        filename: str,
+        content_type: str,
+        expires_in: timedelta,
+        disposition_type: str,
+    ) -> PresignedDownload:
+        """Create an expiring object URL with a safe response disposition."""
+        expiry_seconds = int(expires_in.total_seconds())
+        if expiry_seconds <= 0:
+            raise ValueError("Document URL expiry must be positive.")
+
+        disposition = f"{disposition_type}; filename*=UTF-8''{quote(filename, safe='')}"
+        try:
+            url = await asyncio.to_thread(
+                self._presigning_client.generate_presigned_url,
+                "get_object",
+                Params={
+                    "Bucket": self.config.bucket,
+                    "Key": object_key,
+                    "ResponseContentDisposition": disposition,
+                    "ResponseContentType": content_type,
+                },
+                ExpiresIn=expiry_seconds,
+                HttpMethod="GET",
+            )
+        except (ClientError, BotoCoreError) as error:
+            raise ObjectStorageProviderError(
+                "Unable to create a document access authorization."
+            ) from error
+
+        return PresignedDownload(
+            url=url,
+            expires_at=datetime.now(UTC) + expires_in,
+        )
+
     async def get_object_metadata(
         self,
         *,
@@ -247,6 +324,35 @@ class S3ObjectStorage(ObjectStorage, ObjectStorageReader):
             byte_size=byte_size,
             checksum_sha256=checksum_sha256,
         )
+
+    async def put_object(
+        self,
+        *,
+        object_key: str,
+        content_type: str,
+        checksum_sha256: str,
+        content: bytes,
+    ) -> None:
+        """Store bounded public upload bytes in the private document bucket."""
+        try:
+            checksum_base64 = base64.b64encode(
+                bytes.fromhex(checksum_sha256),
+            ).decode("ascii")
+            await asyncio.to_thread(
+                self._client.put_object,
+                Bucket=self.config.bucket,
+                Key=object_key,
+                Body=content,
+                ContentType=content_type,
+                ChecksumAlgorithm="SHA256",
+                ChecksumSHA256=checksum_base64,
+            )
+        except ValueError as error:
+            raise ValueError("checksum_sha256 must be hexadecimal.") from error
+        except (ClientError, BotoCoreError) as error:
+            raise ObjectStorageProviderError(
+                "Object storage could not store the uploaded document."
+            ) from error
 
     def iter_object_chunks(
         self,
