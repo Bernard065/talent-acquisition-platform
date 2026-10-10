@@ -16,6 +16,7 @@ import {
   type ApplicationSearchParams,
 } from "../services/applications";
 import type {
+  ApplicationResponse,
   ApplicationCreateRequest,
   ApplicationRejectionReason,
   ApplicationStatus,
@@ -113,6 +114,76 @@ export function useTransitionApplicationStage() {
           applicationQueryKeys.detail(application.id),
           application,
         ),
+      ]);
+    },
+  });
+}
+
+export interface BulkApplicationStageTransition {
+  id: string;
+  expectedVersion: number;
+  idempotencyKey: string;
+}
+
+export interface BulkApplicationStageTransitionResult {
+  id: string;
+  application?: ApplicationResponse;
+  error?: unknown;
+}
+
+export function useBulkTransitionApplicationStage() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      transitions,
+      targetStatus,
+      rejectionReason,
+    }: {
+      transitions: BulkApplicationStageTransition[];
+      targetStatus: ApplicationStatus;
+      rejectionReason?: ApplicationRejectionReason;
+    }): Promise<BulkApplicationStageTransitionResult[]> => {
+      const results: BulkApplicationStageTransitionResult[] = new Array(transitions.length);
+      let nextIndex = 0;
+      const workerCount = Math.min(5, transitions.length);
+
+      await Promise.all(Array.from({ length: workerCount }, async () => {
+        while (nextIndex < transitions.length) {
+          const index = nextIndex++;
+          const transition = transitions[index];
+          try {
+            const application = await transitionApplicationStage(
+              transition.id,
+              {
+                target_status: targetStatus,
+                expected_version: transition.expectedVersion,
+                ...(rejectionReason ? { rejection_reason: rejectionReason } : {}),
+              },
+              transition.idempotencyKey,
+            );
+            results[index] = { id: transition.id, application };
+          } catch (error) {
+            results[index] = { id: transition.id, error };
+          }
+        }
+      }));
+
+      return results;
+    },
+    onSuccess: async (results) => {
+      for (const result of results) {
+        if (result.application) {
+          queryClient.setQueryData(
+            applicationQueryKeys.detail(result.application.id),
+            result.application,
+          );
+        }
+      }
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: applicationQueryKeys.lists() }),
+        queryClient.invalidateQueries({ queryKey: applicationQueryKeys.pipelines() }),
       ]);
     },
   });
