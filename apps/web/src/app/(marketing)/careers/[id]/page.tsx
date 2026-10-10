@@ -115,15 +115,15 @@ export default async function JobDetailsPage({ params }: JobPageProps) {
         </article>
 
         <aside className="h-fit rounded-xl border border-gray-200 bg-gray-50 p-6">
-          <h2 className="text-lg font-bold text-gray-900">Interested in this role?</h2>
+          <h2 className="text-lg font-bold text-gray-900">Ready to apply?</h2>
           <p className="mt-2 text-sm leading-6 text-gray-600">
-            Online applications are coming soon. Please check back to apply.
+            Share your contact information with the hiring team for review.
           </p>
           <Link
-            href="/careers"
+            href={`/careers/${job.public_id}/apply`}
             className="mt-6 inline-flex w-full items-center justify-center rounded-lg bg-sr-text-blue px-4 py-3 font-semibold text-white transition-colors hover:bg-sr-text-blue/90"
           >
-            Browse other roles
+            Apply for this role
           </Link>
         </aside>
       </main>
