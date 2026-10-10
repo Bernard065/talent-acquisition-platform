@@ -16,6 +16,7 @@ dependencies = [
   "fastapi>=0.115,<1.0",
   "infisicalsdk>=1.0.3,<2.0",
   "prometheus-client>=0.22,<1.0",
+  "python-multipart>=0.0.20,<1.0",
   "pydantic-settings>=2.7,<3.0",
   "pyjwt[crypto]>=2.15.1",
   "redis>=5.2,<6.0",

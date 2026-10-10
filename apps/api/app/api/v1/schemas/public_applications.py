@@ -1,5 +1,6 @@
 """Strict anonymous request contracts for public job applications."""
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -25,3 +26,10 @@ class PublicApplicationAcceptedResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     message: Literal["Application received."] = "Application received."
+
+
+class PublicApplicationResumeScanResponse(BaseModel):
+    """Short-lived proof that one exact résumé file passed scanning."""
+
+    scan_token: str = Field(min_length=1, max_length=255)
+    expires_at: datetime

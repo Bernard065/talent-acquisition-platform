@@ -4,6 +4,7 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from http.server import HTTPServer
 from threading import Thread
+from typing import cast
 from uuid import uuid4
 
 import httpx
@@ -73,12 +74,17 @@ from app.infrastructure.calendar.infisical_vault import InfisicalCredentialVault
 from app.infrastructure.hris.infisical_vault import (
     InfisicalHrisCredentialVault,
 )
+from app.infrastructure.malware_scanning.clamav import (
+    ClamAvConfig,
+    ClamAvMalwareScanner,
+)
 from app.infrastructure.object_storage.s3 import S3ObjectStorage
 from app.infrastructure.rate_limiting.redis import RedisRateLimiter
 from app.infrastructure.signatures.local_callback_verifier import (
     LocalOfferSignatureCallbackVerifier,
 )
 from app.observability.tracing import build_tracing_runtime
+from app.services.object_storage import ObjectStorageReader
 from app.services.public_application_abuse_control import (
     build_public_application_abuse_guard,
 )
@@ -128,6 +134,22 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     application.state.object_storage = (
         S3ObjectStorage.from_settings(settings)
         if storage_configuration_present
+        else None
+    )
+    if settings.app_env == "local" and application.state.object_storage is not None:
+        await application.state.object_storage.ensure_bucket()
+
+    application.state.malware_scanner = (
+        ClamAvMalwareScanner(
+            storage=cast(ObjectStorageReader, application.state.object_storage),
+            config=ClamAvConfig(
+                host=settings.clamav_host,
+                port=settings.clamav_port,
+                timeout_seconds=settings.clamav_timeout_seconds,
+                max_stream_bytes=settings.clamav_max_stream_bytes,
+            ),
+        )
+        if application.state.object_storage is not None
         else None
     )
 

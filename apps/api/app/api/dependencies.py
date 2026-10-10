@@ -21,6 +21,7 @@ from app.services.calendar_oauth import (
     CalendarOAuthStateStore,
 )
 from app.services.hris_credentials import HrisCredentialVault
+from app.services.malware_scanner import MalwareScanner
 from app.services.object_storage import ObjectStorage
 from app.services.offer_signature_callback_provider import (
     OfferSignatureCallbackVerifier,
@@ -164,7 +165,23 @@ async def get_object_storage(request: Request) -> ObjectStorage:
     return cast(ObjectStorage, storage)
 
 
-_PUBLIC_APPLICATION_MAX_BODY_BYTES = 16 * 1024
+async def get_malware_scanner(request: Request) -> MalwareScanner:
+    """Return the configured private malware scanner or fail closed."""
+    scanner = getattr(request.app.state, "malware_scanner", None)
+    if scanner is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Résumé security scanning is unavailable.",
+            headers={
+                "Retry-After": "5",
+                "Cache-Control": "no-store",
+            },
+        )
+    return cast(MalwareScanner, scanner)
+
+
+_PUBLIC_APPLICATION_MAX_BODY_BYTES = 11 * 1024 * 1024
+_PUBLIC_APPLICATION_MAX_JSON_BODY_BYTES = 16 * 1024
 
 
 async def get_public_application_abuse_guard(
@@ -187,11 +204,16 @@ async def get_public_application_abuse_guard(
 
 async def enforce_public_application_body_limit(request: Request) -> None:
     """Reject oversized anonymous submissions before application processing."""
+    maximum_bytes = (
+        _PUBLIC_APPLICATION_MAX_BODY_BYTES
+        if request.headers.get("content-type", "").startswith("multipart/form-data")
+        else _PUBLIC_APPLICATION_MAX_JSON_BODY_BYTES
+    )
     content_length = request.headers.get("Content-Length")
 
     if content_length is not None:
         try:
-            if int(content_length) > _PUBLIC_APPLICATION_MAX_BODY_BYTES:
+            if int(content_length) > maximum_bytes:
                 raise HTTPException(
                     status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                     detail="Application submission is too large.",
@@ -203,7 +225,7 @@ async def enforce_public_application_body_limit(request: Request) -> None:
             ) from None
 
     body = await request.body()
-    if len(body) > _PUBLIC_APPLICATION_MAX_BODY_BYTES:
+    if len(body) > maximum_bytes:
         raise HTTPException(
             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail="Application submission is too large.",

@@ -124,11 +124,20 @@ export async function apiRequest<T>(
 ): Promise<T> {
   const url = buildUrl(path, options.params);
   const headers = buildHeaders(method, options.idempotencyKey);
+  const isFormData =
+    typeof FormData !== "undefined" && body instanceof FormData;
+  if (isFormData) {
+    delete headers["Content-Type"];
+  }
 
   const response = await fetch(url, {
     method,
     headers,
-    body: body ? JSON.stringify(body) : undefined,
+    body: body
+      ? isFormData
+        ? body
+        : JSON.stringify(body)
+      : undefined,
     signal: options.signal,
     next: options.next,
   });

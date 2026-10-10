@@ -37,8 +37,8 @@ class IdempotencyResult:
     replayed: bool
 
 
-def _hash_key(key: str) -> str:
-    """Create a non-reversible digest of the caller-supplied key."""
+def hash_idempotency_key(key: str) -> str:
+    """Create the canonical non-reversible digest of a caller-supplied key."""
     return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
 
@@ -111,7 +111,7 @@ async def execute_idempotently(
     client to retry safely with the same key.
     """
     normalized_key = _normalize_key(key)
-    key_hash = _hash_key(normalized_key)
+    key_hash = hash_idempotency_key(normalized_key)
     request_fingerprint = _fingerprint_request(operation_name, payload)
     now = datetime.now(UTC)
     expires_at = now + ttl
@@ -182,3 +182,43 @@ async def execute_idempotently(
             body=record.response_body,
             replayed=True,
         )
+
+
+async def get_idempotent_replay(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    key: str,
+    operation_name: str,
+    payload: Mapping[str, Any],
+) -> IdempotencyResult | None:
+    """Return an existing committed response without opening a write workflow.
+
+    This lets endpoints perform expensive external preflight work only for new
+    requests. The final write must still use ``execute_idempotently`` to handle
+    concurrent requests safely.
+    """
+    normalized_key = _normalize_key(key)
+    record = await session.scalar(
+        select(IdempotencyRecord).where(
+            IdempotencyRecord.tenant_id == context.tenant_id,
+            IdempotencyRecord.key_hash == hash_idempotency_key(normalized_key),
+        )
+    )
+    if record is None or record.expires_at <= datetime.now(UTC):
+        return None
+
+    request_fingerprint = _fingerprint_request(operation_name, payload)
+    if (
+        record.operation != operation_name
+        or record.request_fingerprint != request_fingerprint
+    ):
+        raise IdempotencyKeyReuseError(
+            "Idempotency-Key was already used for a different request."
+        )
+
+    return IdempotencyResult(
+        status_code=record.response_status,
+        body=record.response_body,
+        replayed=True,
+    )

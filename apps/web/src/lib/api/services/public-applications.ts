@@ -1,12 +1,25 @@
 import { post, type RequestOptions } from "../client";
 import type {
   PublicApplicationAcceptedResponse,
-  SubmitPublicApplicationRequest,
+  PublicApplicationResumeScanResponse,
 } from "@/types/api/public-applications";
+
+export function scanPublicJobApplicationResume(
+  publicJobId: string,
+  body: FormData,
+  idempotencyKey: string,
+  options?: RequestOptions,
+): Promise<PublicApplicationResumeScanResponse> {
+  return post<PublicApplicationResumeScanResponse>(
+    `/public/jobs/${publicJobId}/resume-scans`,
+    body,
+    { ...options, idempotencyKey },
+  );
+}
 
 export function submitPublicJobApplication(
   publicJobId: string,
-  body: SubmitPublicApplicationRequest,
+  body: FormData,
   idempotencyKey: string,
   options?: RequestOptions,
 ): Promise<PublicApplicationAcceptedResponse> {

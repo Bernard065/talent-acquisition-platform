@@ -8,10 +8,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authorization import Role, TenantContext
 from app.db.models.candidate_document import CandidateDocument
+from app.db.models.idempotency import IdempotencyRecord
 from app.db.transactions import transactional
 from app.domains.documents.enums import CandidateDocumentStatus
 from app.services.candidate_privacy import complete_candidate_erasure_if_no_documents_remain
-from app.services.object_storage import ObjectStorage, ObjectStorageError
+from app.services.object_storage import (
+    ObjectNotFoundError,
+    ObjectStorage,
+    ObjectStorageError,
+    public_application_resume_scan_object_key,
+)
 from app.services.outbox_worker import (
     DEFAULT_OUTBOX_WORKER_POLICY,
     OutboxWorkerPolicy,
@@ -22,6 +28,7 @@ from app.services.outbox_worker import (
 )
 
 _PRIVACY_DELETE_EVENT = "candidate_document.privacy_delete_requested"
+_PUBLIC_RESUME_CLEANUP_EVENT = "public_application_resume.cleanup_requested"
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,25 +84,43 @@ async def process_candidate_document_erasure_events(
         session,
         worker_id=worker_id,
         policy=policy,
-        event_types=frozenset({_PRIVACY_DELETE_EVENT}),
+        event_types=frozenset({_PRIVACY_DELETE_EVENT, _PUBLIC_RESUME_CLEANUP_EVENT}),
     )
     processed = retried = dead_lettered = 0
 
     event_snapshots = [
-        (event.id, event.tenant_id, event.aggregate_type, dict(event.payload))
+        (
+            event.id,
+            event.tenant_id,
+            event.event_type,
+            event.aggregate_type,
+            dict(event.payload),
+        )
         for event in events
     ]
-    for event_id, tenant_id, aggregate_type, payload in event_snapshots:
-        outcome = await _process_event(
-            session,
-            event_id=event_id,
-            tenant_id=tenant_id,
-            aggregate_type=aggregate_type,
-            payload=payload,
-            worker_id=worker_id,
-            storage=storage,
-            policy=policy,
-        )
+    for event_id, tenant_id, event_type, aggregate_type, payload in event_snapshots:
+        if event_type == _PUBLIC_RESUME_CLEANUP_EVENT:
+            outcome = await _process_public_resume_cleanup_event(
+                session,
+                event_id=event_id,
+                tenant_id=tenant_id,
+                aggregate_type=aggregate_type,
+                payload=payload,
+                worker_id=worker_id,
+                storage=storage,
+                policy=policy,
+            )
+        else:
+            outcome = await _process_event(
+                session,
+                event_id=event_id,
+                tenant_id=tenant_id,
+                aggregate_type=aggregate_type,
+                payload=payload,
+                worker_id=worker_id,
+                storage=storage,
+                policy=policy,
+            )
         if outcome == "processed":
             processed += 1
         elif outcome == "retried":
@@ -203,4 +228,80 @@ async def _process_event(
             worker_id=worker_id,
         )
 
+    return "processed"
+
+
+async def _process_public_resume_cleanup_event(
+    session: AsyncSession,
+    *,
+    event_id: UUID,
+    tenant_id: UUID,
+    aggregate_type: str,
+    payload: dict[str, object],
+    worker_id: str,
+    storage: ObjectStorage,
+    policy: OutboxWorkerPolicy,
+) -> str:
+    """Delete abandoned scan-key objects without touching attached résumés."""
+    scan_id_value = payload.get("scan_id")
+    proof_key_hash = payload.get("scan_token_hash")
+    try:
+        if aggregate_type != "public_application_resume_scan" or not isinstance(
+            scan_id_value, str
+        ) or not isinstance(proof_key_hash, str) or len(proof_key_hash) != 64:
+            raise ValueError
+        scan_id = UUID(scan_id_value)
+    except ValueError:
+        await dead_letter_outbox_event(
+            session,
+            event_id=event_id,
+            worker_id=worker_id,
+            failure_code="invalid_public_resume_cleanup_event",
+        )
+        return "dead_lettered"
+
+    object_key = public_application_resume_scan_object_key(
+        tenant_id=tenant_id,
+        scan_id=scan_id,
+    )
+    proof = await session.scalar(
+        select(IdempotencyRecord)
+        .where(
+            IdempotencyRecord.tenant_id == tenant_id,
+            IdempotencyRecord.key_hash == proof_key_hash,
+        )
+        .with_for_update()
+    )
+    # A successful application atomically consumes the proof and creates a
+    # CandidateDocument using this same storage key. Keep that attached object.
+    attached_document = await session.scalar(
+        select(CandidateDocument.id).where(
+            CandidateDocument.tenant_id == tenant_id,
+            CandidateDocument.storage_key == object_key,
+            CandidateDocument.status != CandidateDocumentStatus.DELETED,
+        )
+    )
+    if attached_document is None:
+        try:
+            await storage.delete_object(object_key=object_key)
+        except ObjectNotFoundError:
+            pass
+        except ObjectStorageError:
+            await schedule_outbox_event_retry(
+                session,
+                event_id=event_id,
+                worker_id=worker_id,
+                failure_code="public_resume_delete_unavailable",
+                policy=policy,
+            )
+            return "retried"
+
+    async with transactional(session):
+        if proof is not None:
+            await session.delete(proof)
+        await mark_outbox_event_processed(
+            session,
+            event_id=event_id,
+            worker_id=worker_id,
+        )
     return "processed"
