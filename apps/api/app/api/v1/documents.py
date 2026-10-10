@@ -17,6 +17,7 @@ from app.api.idempotency import IdempotencyKey, idempotency_response
 from app.api.v1.schemas.documents import (
     CandidateDocumentConfirmUploadRequest,
     CandidateDocumentCreateRequest,
+    CandidateDocumentDownloadAuthorizationResponse,
     CandidateDocumentResponse,
     CandidateDocumentUploadAuthorizationRequest,
     CandidateDocumentUploadAuthorizationResponse,
@@ -27,17 +28,96 @@ from app.services.candidate_documents import (
     CreateCandidateDocumentUploadIntentCommand,
     confirm_candidate_document_upload,
     create_candidate_document_upload_intent,
+    create_document_download_authorization,
+    create_document_preview_authorization,
     create_upload_authorization,
     get_candidate_document,
+    list_candidate_documents,
 )
 from app.services.idempotency import IdempotencyResult, execute_idempotently
 from app.services.object_storage import ObjectStorage
 
 router = APIRouter(prefix="/candidate-documents", tags=["Candidate Documents"])
+_DOWNLOAD_AUTHORIZATION_LIFETIME = timedelta(minutes=5)
 
 CallerContext = Annotated[TenantContext, Depends(get_tenant_context)]
 DatabaseSession = Annotated[AsyncSession, Depends(get_db_session)]
 DocumentStorage = Annotated[ObjectStorage, Depends(get_object_storage)]
+
+
+@router.get(
+    "",
+    response_model=list[CandidateDocumentResponse],
+    summary="List documents for a candidate",
+)
+async def list_candidate_documents_endpoint(
+    candidate_id: UUID,
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+) -> list[CandidateDocumentResponse]:
+    """Return safe document metadata for an active tenant-owned candidate."""
+    documents = await list_candidate_documents(
+        session,
+        context=context,
+        candidate_id=candidate_id,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return [CandidateDocumentResponse.model_validate(document) for document in documents]
+
+
+@router.get(
+    "/{document_id}/download-authorizations",
+    response_model=CandidateDocumentDownloadAuthorizationResponse,
+    summary="Create a short-lived document download authorization",
+)
+async def create_document_download_authorization_endpoint(
+    document_id: UUID,
+    context: CallerContext,
+    session: DatabaseSession,
+    storage: DocumentStorage,
+    response: Response,
+) -> CandidateDocumentDownloadAuthorizationResponse:
+    """Issue a short-lived private download URL for a clean scanned document."""
+    download = await create_document_download_authorization(
+        session,
+        context=context,
+        document_id=document_id,
+        storage=storage,
+        expires_in=_DOWNLOAD_AUTHORIZATION_LIFETIME,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return CandidateDocumentDownloadAuthorizationResponse(
+        url=download.url,
+        expires_at=download.expires_at,
+    )
+
+
+@router.get(
+    "/{document_id}/preview-authorizations",
+    response_model=CandidateDocumentDownloadAuthorizationResponse,
+    summary="Create a short-lived document preview authorization",
+)
+async def create_document_preview_authorization_endpoint(
+    document_id: UUID,
+    context: CallerContext,
+    session: DatabaseSession,
+    storage: DocumentStorage,
+    response: Response,
+) -> CandidateDocumentDownloadAuthorizationResponse:
+    """Issue an inline preview URL for a clean, tenant-owned PDF document."""
+    preview = await create_document_preview_authorization(
+        session,
+        context=context,
+        document_id=document_id,
+        storage=storage,
+        expires_in=_DOWNLOAD_AUTHORIZATION_LIFETIME,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return CandidateDocumentDownloadAuthorizationResponse(
+        url=preview.url,
+        expires_at=preview.expires_at,
+    )
 
 
 def _private_idempotency_response(result: IdempotencyResult) -> JSONResponse:

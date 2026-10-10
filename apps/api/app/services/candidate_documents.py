@@ -25,6 +25,7 @@ from app.services.candidate_errors import CandidateNotFoundError
 from app.services.object_storage import (
     ObjectStorage,
     ObjectStorageError,
+    PresignedDownload,
     PresignedUpload,
     StoredObjectMetadata,
     candidate_document_object_key,
@@ -117,6 +118,128 @@ async def get_candidate_document(
         raise CandidateDocumentNotFoundError("Candidate document was not found.")
 
     return document
+
+
+async def list_candidate_documents(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    candidate_id: UUID,
+) -> list[CandidateDocument]:
+    """List non-deleted documents for one active tenant candidate."""
+    _require_document_access(context, _DOCUMENT_READ_ROLES)
+
+    candidate_exists = await session.scalar(
+        select(Candidate.id).where(
+            Candidate.id == candidate_id,
+            Candidate.tenant_id == context.tenant_id,
+            Candidate.privacy_status == CandidatePrivacyStatus.ACTIVE,
+        )
+    )
+    if candidate_exists is None:
+        raise CandidateNotFoundError("Candidate was not found.")
+
+    return list(
+        await session.scalars(
+            select(CandidateDocument)
+            .where(
+                CandidateDocument.candidate_id == candidate_id,
+                CandidateDocument.tenant_id == context.tenant_id,
+                CandidateDocument.status != CandidateDocumentStatus.DELETED,
+            )
+            .order_by(CandidateDocument.created_at.desc(), CandidateDocument.id.desc())
+        )
+    )
+
+
+async def create_document_download_authorization(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    document_id: UUID,
+    storage: ObjectStorage,
+    expires_in: timedelta,
+) -> PresignedDownload:
+    """Authorize a private download only after the document passes malware scanning."""
+    return await _create_document_access_authorization(
+        session,
+        context=context,
+        document_id=document_id,
+        storage=storage,
+        expires_in=expires_in,
+        preview=False,
+    )
+
+
+async def create_document_preview_authorization(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    document_id: UUID,
+    storage: ObjectStorage,
+    expires_in: timedelta,
+) -> PresignedDownload:
+    """Authorize an inline preview only for a clean, active candidate document."""
+    return await _create_document_access_authorization(
+        session,
+        context=context,
+        document_id=document_id,
+        storage=storage,
+        expires_in=expires_in,
+        preview=True,
+    )
+
+
+async def _create_document_access_authorization(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    document_id: UUID,
+    storage: ObjectStorage,
+    expires_in: timedelta,
+    preview: bool,
+) -> PresignedDownload:
+    """Authorize short-lived access only to an available document."""
+    document = await get_candidate_document(
+        session,
+        context=context,
+        document_id=document_id,
+    )
+    if document.status is not CandidateDocumentStatus.AVAILABLE:
+        raise CandidateDocumentNotUploadableError(
+            "This document is not available for access yet."
+        )
+    if preview and document.declared_content_type != "application/pdf":
+        raise CandidateDocumentNotUploadableError(
+            "Only PDF documents can be previewed in the browser."
+        )
+
+    candidate_exists = await session.scalar(
+        select(Candidate.id).where(
+            Candidate.id == document.candidate_id,
+            Candidate.tenant_id == context.tenant_id,
+            Candidate.privacy_status == CandidatePrivacyStatus.ACTIVE,
+        )
+    )
+    if candidate_exists is None:
+        raise CandidateDocumentNotFoundError("Candidate document was not found.")
+
+    try:
+        create_authorization = (
+            storage.create_presigned_preview
+            if preview
+            else storage.create_presigned_download
+        )
+        return await create_authorization(
+            object_key=document.storage_key,
+            filename=document.original_filename,
+            content_type=document.declared_content_type,
+            expires_in=expires_in,
+        )
+    except ObjectStorageError as error:
+        raise CandidateDocumentVerificationError(
+            "Document access authorization could not be created."
+        ) from error
 
 
 async def create_candidate_document_upload_intent(
