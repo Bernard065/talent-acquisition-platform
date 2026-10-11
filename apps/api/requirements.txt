@@ -295,9 +295,9 @@ opentelemetry-instrumentation-httpx==0.66b0 \
     --hash=sha256:2735d1868749ca04ce47a3802b0b809e3a00c05a65140e05bac5700e74410539 \
     --hash=sha256:c89297975f54d67692d3c29e9e33a1bdac47710031cc3ed0d83a0c9765336981
     # via tap-api
-opentelemetry-instrumentation-sqlalchemy==0.66b0 \
-    --hash=sha256:178968856b63b85d11d96de156fe81d4fa8de395741c6f2f5629de897e610cc8 \
-    --hash=sha256:f7083407966f794c79c4643e97814e476c90f4fc5161f436c1b74f4d74551e94
+opentelemetry-instrumentation-sqlalchemy==0.66b1 \
+    --hash=sha256:a10043953fcba71911bf29a024f8cc337260c1ef0b4fc844b96cae0de0947baa \
+    --hash=sha256:aa30b10d880d7e91cf94b23a92ac85cec09ffddd8f0d40256d7c510e3dd33971
     # via tap-api
 opentelemetry-proto==1.45.0 \
     --hash=sha256:96ee414f24bc3f61ea8e17dc56b4348d4049d73db3eb17c6b3edf75b5b403300 \
