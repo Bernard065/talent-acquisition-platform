@@ -7,6 +7,7 @@ import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { ApplicationDebriefSection } from "@/components/applications/application-debrief-section";
+import { ApplicationOfferSection } from "@/components/applications/application-offer-section";
 import { ApplicationInterviewFeedbackSection } from "@/components/applications/application-interview-feedback-section";
 import {
   useApplication,
@@ -661,6 +662,13 @@ export default function ApplicationDetailsPage() {
             application={application}
             canReview={canReviewInterviewFeedback}
           />
+
+          {canReviewInterviewFeedback && (
+            <ApplicationOfferSection
+              applicationId={application.id}
+              applicationStatus={application.status}
+            />
+          )}
 
           <section aria-labelledby="application-documents-heading" className="rounded-xl border border-gray-200 bg-white p-6">
             <h2 id="application-documents-heading" className="text-base font-semibold text-sr-text-blue">Resume and documents</h2>

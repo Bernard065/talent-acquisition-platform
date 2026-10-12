@@ -259,6 +259,36 @@ async def create_offer(
     return offer
 
 
+async def list_application_offers(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    application_id: UUID,
+) -> list[Offer]:
+    """Return offers for one application to authorized recruiting members."""
+    _require_offer_write_access(context)
+
+    application = await session.scalar(
+        select(Application.id).where(
+            Application.id == application_id,
+            Application.tenant_id == context.tenant_id,
+        )
+    )
+    if application is None:
+        raise ApplicationNotFoundError("Application was not found.")
+
+    return list(
+        await session.scalars(
+            select(Offer)
+            .where(
+                Offer.tenant_id == context.tenant_id,
+                Offer.application_id == application_id,
+            )
+            .order_by(Offer.created_at.desc(), Offer.id.desc())
+        )
+    )
+
+
 async def submit_offer_for_approval(
     session: AsyncSession,
     *,
