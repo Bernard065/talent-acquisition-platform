@@ -13,6 +13,7 @@ import {
 } from "@/lib/api/hooks/applications";
 import type { ApplicationFilterParams } from "@/lib/api/services/applications";
 import { useRequisitions } from "@/lib/api/hooks/requisitions";
+import { ALLOWED_NEXT_APPLICATION_STAGES, APPLICATION_REJECTION_REASONS } from "@/lib/applications/stages";
 import type {
   ApplicationPipelineItem,
   ApplicationPipelineJobSummary,
@@ -28,22 +29,6 @@ const STAGES: { status: ApplicationStatus; label: string }[] = [
   { status: "hired", label: "Hired" },
   { status: "rejected", label: "Rejected" },
   { status: "withdrawn", label: "Withdrawn" },
-];
-
-const ALLOWED_NEXT_STAGES: Partial<Record<ApplicationStatus, ApplicationStatus[]>> = {
-  applied: ["screening", "rejected"],
-  screening: ["interview", "rejected"],
-  interview: ["offer", "rejected"],
-  offer: ["hired", "rejected"],
-};
-
-const REJECTION_REASONS: { value: ApplicationRejectionReason; label: string }[] = [
-  { value: "not_qualified", label: "Does not meet role requirements" },
-  { value: "better_matched_candidate", label: "Another candidate is a stronger match" },
-  { value: "failed_assessment", label: "Did not pass an assessment" },
-  { value: "compensation_mismatch", label: "Compensation mismatch" },
-  { value: "role_closed", label: "Role is closed" },
-  { value: "other", label: "Other" },
 ];
 
 const APPLICATION_CARD_HEIGHT = 200;
@@ -354,9 +339,9 @@ export default function ApplicationsPage() {
   const selectedApplications = Array.from(selectedApplicationById.values());
   const selectedApplicationIds = new Set(selectedApplicationById.keys());
   const bulkStageOptions = selectedApplications.length
-    ? (ALLOWED_NEXT_STAGES[selectedApplications[0].status] ?? []).filter((targetStatus) =>
+    ? (ALLOWED_NEXT_APPLICATION_STAGES[selectedApplications[0].status] ?? []).filter((targetStatus) =>
       selectedApplications.every((application) =>
-        ALLOWED_NEXT_STAGES[application.status]?.includes(targetStatus),
+        ALLOWED_NEXT_APPLICATION_STAGES[application.status]?.includes(targetStatus),
       ),
     )
     : [];
@@ -457,7 +442,7 @@ export default function ApplicationsPage() {
   }
 
   function renderStageActions(application: ApplicationPipelineItem) {
-    const nextStages = ALLOWED_NEXT_STAGES[application.status] ?? [];
+    const nextStages = ALLOWED_NEXT_APPLICATION_STAGES[application.status] ?? [];
     if (!nextStages.length) return null;
     return (
       <label className="block">
@@ -881,7 +866,7 @@ export default function ApplicationsPage() {
               onChange={(event) => setRejectionReason(event.target.value as ApplicationRejectionReason)}
               className="mt-2 h-10 w-full rounded-md border border-gray-200 bg-white px-3 text-sm outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
             >
-              {REJECTION_REASONS.map((reason) => (
+              {APPLICATION_REJECTION_REASONS.map((reason) => (
                 <option key={reason.value} value={reason.value}>{reason.label}</option>
               ))}
             </select>

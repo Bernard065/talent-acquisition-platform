@@ -7,6 +7,7 @@ import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { ApplicationDebriefSection } from "@/components/applications/application-debrief-section";
+import { ApplicationStageControl } from "@/components/applications/application-stage-control";
 import { ApplicationOfferSection } from "@/components/applications/application-offer-section";
 import { ApplicationInterviewFeedbackSection } from "@/components/applications/application-interview-feedback-section";
 import {
@@ -569,9 +570,11 @@ export default function ApplicationDetailsPage() {
                 {requisition?.department ? ` · ${requisition.department}` : ""}
               </p>
             </div>
-            <span className="w-fit rounded-full bg-sr-mint/60 px-3 py-1 text-sm font-semibold text-sr-text-blue">
-              {STATUS_LABELS[application.status]}
-            </span>
+            <ApplicationStageControl
+              applicationId={application.id}
+              status={application.status}
+              version={application.version}
+            />
           </header>
 
           <div className="grid gap-6 lg:grid-cols-2">
