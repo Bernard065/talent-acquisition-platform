@@ -28,7 +28,7 @@ class ApplicationResponse(BaseModel):
     id: UUID
     candidate_id: UUID
     requisition_id: UUID
-    assigned_to_user_id: UUID | None
+    assigned_to_user_id: UUID | None = None
     status: ApplicationStatus
     applied_at: datetime
     created_at: datetime
