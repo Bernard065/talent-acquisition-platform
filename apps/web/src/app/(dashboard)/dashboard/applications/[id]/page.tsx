@@ -5,7 +5,11 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
-import { useApplication } from "@/lib/api/hooks/applications";
+import {
+  useApplication,
+  useApplicationActivity,
+  useAssignApplication,
+} from "@/lib/api/hooks/applications";
 import { useCandidate } from "@/lib/api/hooks/candidates";
 import {
   useCandidateDocumentDownload,
@@ -13,11 +17,11 @@ import {
   useCandidateDocuments,
 } from "@/lib/api/hooks/documents";
 import { useRequisition } from "@/lib/api/hooks/requisitions";
+import { useTeamMembers } from "@/lib/api/hooks/team";
 import type {
   ApplicationRejectionReason,
   ApplicationStatus,
 } from "@/types/api/applications";
-import { useApplicationActivity } from "@/lib/api/hooks/applications";
 
 const STATUS_LABELS: Record<ApplicationStatus, string> = {
   applied: "New",
@@ -78,6 +82,8 @@ export default function ApplicationDetailsPage() {
   const { id } = useParams<{ id: string }>();
   const applicationQuery = useApplication(id);
   const activityQuery = useApplicationActivity(id);
+  const teamMembersQuery = useTeamMembers();
+  const assignmentMutation = useAssignApplication();
   const application = applicationQuery.data;
   const candidateQuery = useCandidate(application?.candidate_id ?? "");
   const documentsQuery = useCandidateDocuments(application?.candidate_id ?? "");
@@ -86,6 +92,9 @@ export default function ApplicationDetailsPage() {
   const requisitionQuery = useRequisition(application?.requisition_id ?? "");
   const candidate = candidateQuery.data;
   const requisition = requisitionQuery.data;
+  const assignedMember = teamMembersQuery.data?.items.find(
+    (member) => member.id === application?.assigned_to_user_id,
+  );
   const isLoading = sessionStatus !== "authenticated" || applicationQuery.isLoading;
   const error = applicationQuery.isError
     ? "We couldn’t load this application. It may have been removed or you may not have access."
@@ -153,6 +162,51 @@ export default function ApplicationDetailsPage() {
               </dl>
             </section>
           </div>
+
+          <section aria-labelledby="application-owner-heading" className="rounded-xl border border-gray-200 bg-white p-6">
+            <h2 id="application-owner-heading" className="text-base font-semibold text-sr-text-blue">Application owner</h2>
+            <p className="mt-1 text-sm text-gray-600">Assign a teammate to take responsibility for this application.</p>
+            <label className="mt-4 block max-w-md">
+              <span className="mb-1 block text-sm font-medium text-gray-700">Assigned recruiter</span>
+              <select
+                value={application.assigned_to_user_id ?? ""}
+                disabled={teamMembersQuery.isLoading || teamMembersQuery.isError || assignmentMutation.isPending}
+                onChange={(event) => assignmentMutation.mutate({
+                  id: application.id,
+                  assignment: {
+                    assigned_to_user_id: event.target.value || null,
+                    expected_version: application.version,
+                  },
+                  idempotencyKey: crypto.randomUUID(),
+                })}
+                className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20 disabled:cursor-not-allowed disabled:bg-gray-50"
+              >
+                <option value="">Unassigned</option>
+                {teamMembersQuery.data?.items.map((member) => (
+                  <option key={member.id} value={member.id}>{member.display_name} · {member.email}</option>
+                ))}
+                {application.assigned_to_user_id && !assignedMember && (
+                  <option value={application.assigned_to_user_id}>Current assignee (not eligible for new assignments)</option>
+                )}
+              </select>
+            </label>
+            {teamMembersQuery.isError && (
+              <div role="alert" className="mt-2 flex flex-wrap items-center gap-3">
+                <p className="text-sm text-red-800">We couldn’t load workspace teammates.</p>
+                <Button type="button" variant="outline" onClick={() => void teamMembersQuery.refetch()}>
+                  Try again
+                </Button>
+              </div>
+            )}
+            {assignmentMutation.isError && (
+              <p role="alert" className="mt-2 text-sm text-red-800">
+                We couldn’t update the application owner. The application may have changed; reload and try again.
+              </p>
+            )}
+            {assignmentMutation.isSuccess && (
+              <p role="status" className="mt-2 text-sm text-green-800">Application owner updated.</p>
+            )}
+          </section>
 
           <section aria-labelledby="application-documents-heading" className="rounded-xl border border-gray-200 bg-white p-6">
             <h2 id="application-documents-heading" className="text-base font-semibold text-sr-text-blue">Resume and documents</h2>

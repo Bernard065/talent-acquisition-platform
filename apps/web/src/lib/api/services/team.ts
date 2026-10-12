@@ -1,8 +1,15 @@
 import { del, get, post, type RequestOptions } from "../client";
 import type {
   CreateTeamInvitationRequest,
+  TeamMemberListResponse,
   TeamInvitation,
 } from "@/types/api/team";
+
+export async function listTeamMembers(
+  options?: RequestOptions,
+): Promise<TeamMemberListResponse> {
+  return get<TeamMemberListResponse>("/team/members", options);
+}
 
 export async function listTeamInvitations(
   options?: RequestOptions,

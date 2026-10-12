@@ -9,6 +9,7 @@ import {
 import { useSession } from "next-auth/react";
 import {
   createApplication,
+  assignApplication,
   getApplicationActivity,
   getApplication,
   getApplicationPipelineSummary,
@@ -20,6 +21,7 @@ import {
 } from "../services/applications";
 import type {
   ApplicationResponse,
+  ApplicationAssignmentRequest,
   ApplicationCreateRequest,
   ApplicationRejectionReason,
   ApplicationStatus,
@@ -100,6 +102,29 @@ export function useApplicationActivity(id: string) {
     queryKey: applicationQueryKeys.activity(id),
     queryFn: ({ signal }) => getApplicationActivity(id, { signal }),
     enabled: status === "authenticated" && Boolean(id),
+  });
+}
+
+export function useAssignApplication() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, assignment, idempotencyKey }: {
+      id: string;
+      assignment: ApplicationAssignmentRequest;
+      idempotencyKey: string;
+    }) => assignApplication(id, assignment, idempotencyKey),
+    onSuccess: async (application) => {
+      queryClient.setQueryData(
+        applicationQueryKeys.detail(application.id),
+        application,
+      );
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: applicationQueryKeys.lists() }),
+        queryClient.invalidateQueries({ queryKey: applicationQueryKeys.pipelines() }),
+        queryClient.invalidateQueries({ queryKey: applicationQueryKeys.pipelineSummaries() }),
+      ]);
+    },
   });
 }
 
