@@ -117,6 +117,12 @@ class OfferResponse(BaseModel):
     version: int
 
 
+class ApplicationOffersResponse(BaseModel):
+    """Tenant-scoped offers associated with one application."""
+
+    items: list[OfferResponse]
+
+
 class OfferSignatureRequestResponse(BaseModel):
     """Private state of a single offer signature request."""
 

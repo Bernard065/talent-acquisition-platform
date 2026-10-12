@@ -3,13 +3,14 @@
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_db_session, get_tenant_context
 from app.api.idempotency import IdempotencyKey, idempotency_response
 from app.api.v1.schemas.offers import (
+    ApplicationOffersResponse,
     CreateOfferRequest,
     CreateOfferSignatureRequestRequest,
     ExpectedOfferVersionRequest,
@@ -38,6 +39,7 @@ from app.services.offers import (
     send_offer,
     submit_offer_for_approval,
 )
+from app.services.offers import list_application_offers as get_application_offers
 
 router = APIRouter(tags=["Offers"])
 
@@ -50,6 +52,29 @@ def _private_response(result: IdempotencyResult) -> JSONResponse:
     response = idempotency_response(result)
     response.headers["Cache-Control"] = "private, no-store"
     return response
+
+
+@router.get(
+    "/applications/{application_id}/offers",
+    response_model=ApplicationOffersResponse,
+    summary="List offers for an application",
+)
+async def list_application_offers_endpoint(
+    application_id: UUID,
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+) -> ApplicationOffersResponse:
+    """Return private offer terms to authorized recruiting roles."""
+    offers = await get_application_offers(
+        session,
+        context=context,
+        application_id=application_id,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return ApplicationOffersResponse(
+        items=[OfferResponse.model_validate(offer) for offer in offers]
+    )
 
 
 @router.post(

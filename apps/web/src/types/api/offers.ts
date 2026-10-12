@@ -45,3 +45,7 @@ export interface OfferResponse {
   updated_at: string;
   version: number;
 }
+
+export interface ApplicationOffersResponse {
+  items: OfferResponse[];
+}

@@ -1,23 +1,28 @@
 import { get, post, type RequestOptions } from "../client";
 import type {
+  ApplicationOffersResponse,
   OfferResponse,
   CreateOfferRequest,
   ExpectedOfferVersionRequest,
 } from "@/types/api";
 
-export async function getOffer(
-  id: string,
+export async function listApplicationOffers(
+  applicationId: string,
   options?: RequestOptions,
-): Promise<OfferResponse> {
-  return get<OfferResponse>(`/offers/${id}`, options);
+): Promise<ApplicationOffersResponse> {
+  return get<ApplicationOffersResponse>(
+    `/applications/${applicationId}/offers`,
+    options,
+  );
 }
 
 export async function createOffer(
+  applicationId: string,
   body: CreateOfferRequest,
   idempotencyKey: string,
   options?: RequestOptions,
 ): Promise<OfferResponse> {
-  return post<OfferResponse>("/offers", body, {
+  return post<OfferResponse>(`/applications/${applicationId}/offers`, body, {
     ...options,
     idempotencyKey,
   });
