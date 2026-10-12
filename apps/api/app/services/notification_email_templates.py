@@ -128,6 +128,13 @@ _TEMPLATES: dict[tuple[NotificationEventType, str], NotificationEmailTemplate] =
         subject="Interview cancelled",
         text_body="An interview has been cancelled.",
     ),
+    (
+        NotificationEventType.INTERVIEW_REMINDER,
+        "interview_reminder",
+    ): NotificationEmailTemplate(
+        subject="Interview reminder",
+        text_body="Your interview is coming up.",
+    ),
 }
 
 

@@ -1,6 +1,7 @@
 """Transaction-safe publishing of privacy-safe notification requests."""
 
 from collections.abc import Iterable
+from datetime import datetime
 from hashlib import sha256
 from uuid import UUID
 
@@ -49,6 +50,7 @@ def enqueue_notification_request(
     entity_id: UUID,
     template_key: str,
     occurrence_key: int | None = None,
+    scheduled_at: datetime | None = None,
 ) -> None:
     """Queue one recipient-specific notification request in this transaction."""
     if (recipient_user_id is None) == (recipient_candidate_id is None):
@@ -84,6 +86,8 @@ def enqueue_notification_request(
         payload["recipient_candidate_id"] = str(recipient_candidate_id)
     if occurrence_key is not None:
         payload["occurrence_key"] = str(occurrence_key)
+    if scheduled_at is not None:
+        payload["scheduled_at"] = scheduled_at.isoformat()
 
     enqueue_outbox_event(
         session,

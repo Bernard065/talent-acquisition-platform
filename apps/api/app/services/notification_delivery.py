@@ -362,8 +362,14 @@ async def _interview_notification_details(
     if notification_event_type in {
         NotificationEventType.INTERVIEW_SCHEDULED,
         NotificationEventType.INTERVIEW_RESCHEDULED,
+        NotificationEventType.INTERVIEW_REMINDER,
     } and (
         interview.status is not InterviewSessionStatus.SCHEDULED or not is_current_event
+    ):
+        raise StaleInterviewNotificationError
+    if (
+        notification_event_type is NotificationEventType.INTERVIEW_REMINDER
+        and interview.scheduled_start_at <= _now()
     ):
         raise StaleInterviewNotificationError
     if notification_event_type is NotificationEventType.INTERVIEW_CANCELLED and (
@@ -427,6 +433,7 @@ async def _render_delivery_message(
         NotificationEventType.INTERVIEW_SCHEDULED,
         NotificationEventType.INTERVIEW_RESCHEDULED,
         NotificationEventType.INTERVIEW_CANCELLED,
+        NotificationEventType.INTERVIEW_REMINDER,
     }:
         return _render_message(notification, recipient_email)
 

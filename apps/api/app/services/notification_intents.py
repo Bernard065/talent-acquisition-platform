@@ -54,6 +54,7 @@ class NotificationRequest:
     template_key: str
     deduplication_key: str
     event_version: int | None
+    scheduled_at: datetime | None
 
 
 def _now() -> datetime:
@@ -82,6 +83,14 @@ def _request_from_event(event: OutboxEvent) -> NotificationRequest:
     deduplication_key = str(payload["notification_deduplication_key"]).strip()
     occurrence_key = payload.get("occurrence_key")
     event_version = int(str(occurrence_key)) if occurrence_key is not None else None
+    scheduled_at_value = payload.get("scheduled_at")
+    scheduled_at = (
+        datetime.fromisoformat(str(scheduled_at_value).replace("Z", "+00:00"))
+        if scheduled_at_value is not None
+        else None
+    )
+    if scheduled_at is not None and scheduled_at.tzinfo is None:
+        raise ValueError("Notification schedule time must include a timezone.")
 
     if not entity_type or not template_key:
         raise ValueError("Notification entity type and template key are required.")
@@ -93,6 +102,7 @@ def _request_from_event(event: OutboxEvent) -> NotificationRequest:
             NotificationEventType.INTERVIEW_SCHEDULED,
             NotificationEventType.INTERVIEW_RESCHEDULED,
             NotificationEventType.INTERVIEW_CANCELLED,
+            NotificationEventType.INTERVIEW_REMINDER,
         }
         or entity_type != "interview_session"
     ):
@@ -118,6 +128,7 @@ def _request_from_event(event: OutboxEvent) -> NotificationRequest:
         template_key=template_key,
         deduplication_key=deduplication_key,
         event_version=event_version,
+        scheduled_at=scheduled_at,
     )
 
 
@@ -159,6 +170,7 @@ async def create_notification_intent(
         preference = None
 
     enabled = preference is None or preference.enabled
+    delivery_at = request.scheduled_at or _now()
     notification = Notification(
         tenant_id=event.tenant_id,
         recipient_user_id=request.recipient_user_id,
@@ -171,8 +183,8 @@ async def create_notification_intent(
         template_key=request.template_key,
         deduplication_key=request.deduplication_key,
         event_version=request.event_version,
-        scheduled_at=_now(),
-        next_attempt_at=_now(),
+        scheduled_at=delivery_at,
+        next_attempt_at=delivery_at,
         cancelled_at=None if enabled else _now(),
     )
 
