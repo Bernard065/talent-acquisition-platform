@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
+import { ApplicationDebriefSection } from "@/components/applications/application-debrief-section";
 import {
   useApplication,
   useApplicationActivity,
@@ -27,7 +28,8 @@ import { useInterviews, useScheduleInterview } from "@/lib/api/hooks/interviews"
 import type {
   ApplicationRejectionReason,
   ApplicationStatus,
-} from "@/types/api/applications";
+  InterviewFormat,
+} from "@/types/api";
 
 const STATUS_LABELS: Record<ApplicationStatus, string> = {
   applied: "New",
@@ -239,6 +241,9 @@ function ApplicationInterviewsSection({
 }) {
   const [scheduledStart, setScheduledStart] = useState("");
   const [scheduledEnd, setScheduledEnd] = useState("");
+  const [interviewFormat, setInterviewFormat] = useState<InterviewFormat>("online");
+  const [meetingUrl, setMeetingUrl] = useState("");
+  const [interviewLocation, setInterviewLocation] = useState("");
   const [selectedInterviewers, setSelectedInterviewers] = useState<string[]>([]);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const interviewsQuery = useInterviews({ application_id: applicationId, limit: 25 });
@@ -250,9 +255,13 @@ function ApplicationInterviewsSection({
   );
   const startMillis = scheduledStart ? new Date(scheduledStart).getTime() : NaN;
   const endMillis = scheduledEnd ? new Date(scheduledEnd).getTime() : NaN;
+  const validFormatDetails = interviewFormat === "online"
+    ? Boolean(meetingUrl.trim())
+    : Boolean(interviewLocation.trim());
   const validSchedule = Number.isFinite(startMillis) &&
     Number.isFinite(endMillis) &&
     endMillis > startMillis &&
+    validFormatDetails &&
     selectedInterviewers.length > 0;
 
   function schedule(event: FormEvent<HTMLFormElement>) {
@@ -268,6 +277,9 @@ function ApplicationInterviewsSection({
       interview: {
         scheduled_start_at: new Date(scheduledStart).toISOString(),
         scheduled_end_at: new Date(scheduledEnd).toISOString(),
+        format: interviewFormat,
+        meeting_url: interviewFormat === "online" ? meetingUrl.trim() : null,
+        location: interviewFormat === "in_person" ? interviewLocation.trim() : null,
         participants: selectedInterviewers.map((user_id) => ({ user_id, role: "interviewer" })),
       },
       idempotencyKey: crypto.randomUUID(),
@@ -275,6 +287,9 @@ function ApplicationInterviewsSection({
       onSuccess: () => {
         setScheduledStart("");
         setScheduledEnd("");
+        setInterviewFormat("online");
+        setMeetingUrl("");
+        setInterviewLocation("");
         setSelectedInterviewers([]);
       },
     });
@@ -310,6 +325,23 @@ function ApplicationInterviewsSection({
                       ? interview.participants.map((participant) => interviewerNames.get(participant.user_id) ?? "Workspace interviewer").join(", ")
                       : "No interviewer details available"}
                   </p>
+                  <p className="mt-1 text-sm text-gray-600">
+                    {interview.format === "online"
+                      ? "Online"
+                      : interview.format === "in_person"
+                        ? `In person${interview.location ? ` · ${interview.location}` : ""}`
+                        : "Format not specified"}
+                  </p>
+                  {interview.meeting_url && (
+                    <a
+                      className="mt-2 inline-flex text-sm font-medium text-sr-text-blue underline"
+                      href={interview.meeting_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Join interview
+                    </a>
+                  )}
                 </div>
                 <span className={`w-fit rounded-full px-2.5 py-1 text-xs font-medium ${interview.status === "scheduled" ? "bg-blue-50 text-blue-800" : interview.status === "completed" ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-700"}`}>
                   {interview.status.replaceAll("_", " ")}
@@ -375,6 +407,52 @@ function ApplicationInterviewsSection({
                   className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
                 />
               </label>
+              <label className="sm:col-span-2">
+                <span className="mb-1 block text-sm font-medium text-gray-700">Interview format</span>
+                <select
+                  value={interviewFormat}
+                  onChange={(event) => {
+                    setInterviewFormat(event.target.value as InterviewFormat);
+                    setScheduleError(null);
+                  }}
+                  className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
+                >
+                  <option value="online">Online</option>
+                  <option value="in_person">In person</option>
+                </select>
+              </label>
+              {interviewFormat === "online" ? (
+                <label className="sm:col-span-2">
+                  <span className="mb-1 block text-sm font-medium text-gray-700">Online meeting link</span>
+                  <input
+                    type="url"
+                    required
+                    value={meetingUrl}
+                    onChange={(event) => {
+                      setMeetingUrl(event.target.value);
+                      setScheduleError(null);
+                    }}
+                    placeholder="https://…"
+                    maxLength={2048}
+                    className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
+                  />
+                </label>
+              ) : (
+                <label className="sm:col-span-2">
+                  <span className="mb-1 block text-sm font-medium text-gray-700">Interview location</span>
+                  <input
+                    required
+                    value={interviewLocation}
+                    onChange={(event) => {
+                      setInterviewLocation(event.target.value);
+                      setScheduleError(null);
+                    }}
+                    maxLength={500}
+                    placeholder="Office address or meeting room"
+                    className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
+                  />
+                </label>
+              )}
               <fieldset className="sm:col-span-2">
                 <legend className="mb-2 text-sm font-medium text-gray-700">Interviewers</legend>
                 <div className="grid gap-2 sm:grid-cols-2">
@@ -433,13 +511,16 @@ function documentStatusLabel(status: string): string {
 
 export default function ApplicationDetailsPage() {
   const [previewPopupBlocked, setPreviewPopupBlocked] = useState(false);
-  const { status: sessionStatus } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const { id } = useParams<{ id: string }>();
   const applicationQuery = useApplication(id);
   const activityQuery = useApplicationActivity(id);
   const teamMembersQuery = useTeamMembers();
   const assignmentMutation = useAssignApplication();
   const application = applicationQuery.data;
+  const canReviewInterviewFeedback = session?.roles?.some((role) =>
+    role === "tenant_admin" || role === "recruiter" || role === "people_operations",
+  ) ?? false;
   const candidateQuery = useCandidate(application?.candidate_id ?? "");
   const documentsQuery = useCandidateDocuments(application?.candidate_id ?? "");
   const downloadMutation = useCandidateDocumentDownload();
@@ -569,6 +650,11 @@ export default function ApplicationDetailsPage() {
             key={application.id}
             applicationId={application.id}
             applicationStatus={application.status}
+          />
+
+          <ApplicationDebriefSection
+            application={application}
+            canReview={canReviewInterviewFeedback}
           />
 
           <section aria-labelledby="application-documents-heading" className="rounded-xl border border-gray-200 bg-white p-6">

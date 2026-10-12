@@ -1,6 +1,7 @@
 import { get, post, type RequestOptions } from "../client";
 import type { PaginationParams } from "../types";
 import type {
+  CompleteInterviewSessionRequest,
   InterviewSessionResponse,
   InterviewSearchListResponse,
   ScheduleInterviewRequest,
@@ -55,6 +56,18 @@ export async function cancelInterview(
   options?: RequestOptions,
 ): Promise<InterviewSessionResponse> {
   return post<InterviewSessionResponse>(`/interview-sessions/${id}/cancel`, body, {
+    ...options,
+    idempotencyKey,
+  });
+}
+
+export async function completeInterview(
+  id: string,
+  body: CompleteInterviewSessionRequest,
+  idempotencyKey: string,
+  options?: RequestOptions,
+): Promise<InterviewSessionResponse> {
+  return post<InterviewSessionResponse>(`/interview-sessions/${id}/complete`, body, {
     ...options,
     idempotencyKey,
   });

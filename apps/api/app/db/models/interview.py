@@ -27,6 +27,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.domains.interviews.enums import (
     InterviewCancellationReason,
+    InterviewFormat,
     InterviewParticipantRole,
     InterviewSessionStatus,
 )
@@ -36,8 +37,8 @@ class InterviewSession(Base):
     """
     A scheduled interview for one tenant-owned application.
 
-    External video and calendar-provider details intentionally do not belong
-    here. They will be introduced later through an integration boundary.
+    A meeting URL may point to an external video provider. Calendar-provider
+    integration details remain outside this model.
     """
 
     __tablename__ = "interview_sessions"
@@ -99,6 +100,18 @@ class InterviewSession(Base):
         DateTime(timezone=True),
         nullable=False,
     )
+    format: Mapped[InterviewFormat | None] = mapped_column(
+        Enum(
+            InterviewFormat,
+            name="interview_format",
+            values_callable=lambda formats: [
+                interview_format.value for interview_format in formats
+            ],
+        ),
+        nullable=True,
+    )
+    meeting_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    location: Mapped[str | None] = mapped_column(String(500), nullable=True)
     status: Mapped[InterviewSessionStatus] = mapped_column(
         Enum(
             InterviewSessionStatus,

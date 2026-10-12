@@ -144,6 +144,26 @@ export default function InterviewsPage() {
                         </Link>
                       </dd>
                     </div>
+                    <div>
+                      <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">Format</dt>
+                      <dd className="mt-1 text-sm text-gray-900">
+                        {interview.format === "online"
+                          ? "Online"
+                          : interview.format === "in_person"
+                            ? `In person${interview.location ? ` · ${interview.location}` : ""}`
+                            : "Not specified"}
+                        {interview.meeting_url && (
+                          <a
+                            className="mt-1 block font-medium text-sr-text-blue underline underline-offset-2"
+                            href={interview.meeting_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            Join interview
+                          </a>
+                        )}
+                      </dd>
+                    </div>
                     {interview.cancellation_reason && (
                       <div>
                         <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">Cancellation reason</dt>

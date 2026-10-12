@@ -61,6 +61,9 @@ async def schedule_interview_endpoint(
             command=ScheduleInterviewCommand(
                 scheduled_start_at=payload.scheduled_start_at,
                 scheduled_end_at=payload.scheduled_end_at,
+                format=payload.format,
+                meeting_url=(str(payload.meeting_url) if payload.meeting_url else None),
+                location=payload.location,
                 participants=tuple(
                     InterviewParticipantCommand(
                         user_id=participant.user_id,

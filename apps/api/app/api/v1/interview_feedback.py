@@ -10,10 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import get_db_session, get_tenant_context
 from app.api.idempotency import IdempotencyKey, idempotency_response
 from app.api.v1.schemas.interview_feedback import (
+    ApplicationInterviewFeedbackItemResponse,
+    ApplicationInterviewFeedbackListResponse,
     InterviewFeedbackDraftRequest,
     InterviewFeedbackDraftUpdateRequest,
     InterviewFeedbackResponse,
     InterviewFeedbackSubmitRequest,
+    MyInterviewFeedbackResponse,
 )
 from app.core.authorization import TenantContext
 from app.services.idempotency import IdempotencyResult, execute_idempotently
@@ -22,7 +25,9 @@ from app.services.interview_feedback import (
     SubmitInterviewFeedbackCommand,
     UpdateInterviewFeedbackDraftCommand,
     create_interview_feedback_draft,
+    get_interview_session_feedback,
     get_owned_interview_feedback,
+    list_submitted_application_feedback,
     submit_interview_feedback,
     update_interview_feedback_draft,
 )
@@ -38,6 +43,78 @@ def _private_idempotency_response(result: IdempotencyResult) -> JSONResponse:
     response = idempotency_response(result)
     response.headers["Cache-Control"] = "private, no-store"
     return response
+
+
+@router.get(
+    "/interview-sessions/{interview_session_id}/my-feedback",
+    response_model=MyInterviewFeedbackResponse,
+    summary="Get the caller's feedback for an assigned session",
+)
+async def get_session_feedback_endpoint(
+    interview_session_id: UUID,
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+) -> MyInterviewFeedbackResponse:
+    """Return only the caller's own draft or submitted feedback."""
+    feedback = await get_interview_session_feedback(
+        session,
+        context=context,
+        interview_session_id=interview_session_id,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return MyInterviewFeedbackResponse(
+        feedback=(
+            InterviewFeedbackResponse.model_validate(feedback)
+            if feedback is not None
+            else None
+        )
+    )
+
+
+@router.get(
+    "/applications/{application_id}/interview-feedback",
+    response_model=ApplicationInterviewFeedbackListResponse,
+    summary="List submitted interview feedback for recruiting reviewers",
+)
+async def list_application_feedback_endpoint(
+    application_id: UUID,
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+) -> ApplicationInterviewFeedbackListResponse:
+    """Return submitted assessments only to authorized recruiting roles."""
+    rows = await list_submitted_application_feedback(
+        session,
+        context=context,
+        application_id=application_id,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    items: list[ApplicationInterviewFeedbackItemResponse] = []
+    for feedback, scheduled_start_at, display_name in rows:
+        if (
+            feedback.overall_rating is None
+            or feedback.recommendation is None
+            or feedback.submitted_at is None
+        ):
+            continue
+        items.append(
+            ApplicationInterviewFeedbackItemResponse(
+                id=feedback.id,
+                interview_session_id=feedback.interview_session_id,
+                scheduled_start_at=scheduled_start_at,
+                interviewer_display_name=display_name,
+                status=feedback.status,
+                overall_rating=feedback.overall_rating,
+                recommendation=feedback.recommendation,
+                strengths=feedback.strengths,
+                concerns=feedback.concerns,
+                submitted_at=feedback.submitted_at,
+            )
+        )
+    return ApplicationInterviewFeedbackListResponse(
+        items=items
+    )
 
 
 @router.post(

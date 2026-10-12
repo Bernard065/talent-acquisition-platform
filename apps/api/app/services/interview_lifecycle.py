@@ -11,12 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authorization import Role, TenantContext
 from app.db.models.interview import InterviewParticipant, InterviewSession
+from app.db.models.interview_feedback import InterviewFeedback
 from app.db.models.interview_session_lifecycle import (
     InterviewSessionLifecycleHistory,
 )
 from app.db.transactions import transactional
 from app.domains.interviews.enums import (
     InterviewCancellationReason,
+    InterviewFeedbackStatus,
     InterviewLifecycleEventType,
     InterviewSessionStatus,
 )
@@ -213,6 +215,24 @@ async def complete_interview_session(
 
         previous_status = interview_session.status
         validate_interview_completion(previous_status)
+
+        has_submitted_feedback = await session.scalar(
+            select(InterviewFeedback.id)
+            .where(
+                InterviewFeedback.tenant_id == context.tenant_id,
+                InterviewFeedback.interview_session_id == interview_session.id,
+                InterviewFeedback.status == InterviewFeedbackStatus.SUBMITTED,
+            )
+            .limit(1)
+        )
+        if (
+            datetime.now(UTC) < interview_session.scheduled_end_at
+            and has_submitted_feedback is None
+        ):
+            raise InterviewLifecycleValidationError(
+                "An interview can only be completed after its scheduled end time "
+                "or after an interviewer submits feedback."
+            )
 
         interview_session.status = InterviewSessionStatus.COMPLETED
         interview_session.completed_at = datetime.now(UTC)

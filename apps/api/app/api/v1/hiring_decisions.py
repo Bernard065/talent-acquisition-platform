@@ -3,7 +3,7 @@
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,11 +11,13 @@ from app.api.dependencies import get_db_session, get_tenant_context
 from app.api.idempotency import IdempotencyKey, idempotency_response
 from app.api.v1.schemas.hiring_decisions import (
     HiringDecisionResponse,
+    HiringDecisionStateResponse,
     RecordHiringDecisionRequest,
 )
 from app.core.authorization import TenantContext
 from app.services.hiring_decisions import (
     RecordHiringDecisionCommand,
+    get_application_hiring_decision,
     record_hiring_decision,
 )
 from app.services.idempotency import IdempotencyResult, execute_idempotently
@@ -36,6 +38,31 @@ def _private_idempotency_response(
     response = idempotency_response(result)
     response.headers["Cache-Control"] = "private, no-store"
     return response
+
+
+@router.get(
+    "/{application_id}/debrief-decision",
+    response_model=HiringDecisionStateResponse,
+    summary="Get the recorded hiring decision for an application",
+)
+async def get_hiring_decision_endpoint(
+    application_id: UUID,
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+) -> HiringDecisionStateResponse:
+    """Return decision state without exposing it to interview-only roles."""
+    decision = await get_application_hiring_decision(
+        session,
+        context=context,
+        application_id=application_id,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return HiringDecisionStateResponse(
+        decision=HiringDecisionResponse.model_validate(decision)
+        if decision is not None
+        else None
+    )
 
 
 @router.post(

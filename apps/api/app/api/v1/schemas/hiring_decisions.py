@@ -50,3 +50,9 @@ class HiringDecisionResponse(BaseModel):
     decided_at: datetime
     created_at: datetime
     version: int
+
+
+class HiringDecisionStateResponse(BaseModel):
+    """Current final decision, when one has been recorded for the application."""
+
+    decision: HiringDecisionResponse | None
