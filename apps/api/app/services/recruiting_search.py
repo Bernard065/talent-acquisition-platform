@@ -14,6 +14,7 @@ from sqlalchemy.sql.functions import count
 from app.core.authorization import Role, TenantContext
 from app.db.models.application import Application
 from app.db.models.candidate import Candidate
+from app.db.models.identity import User
 from app.db.models.requisition import Requisition
 from app.domains.candidates.enums import (
     ApplicationStatus,
@@ -54,6 +55,7 @@ class ApplicationSearchFilters:
     status: ApplicationStatus | None = None
     applied_after: datetime | None = None
     applied_before: datetime | None = None
+    assigned_to_subject: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,6 +90,7 @@ class ApplicationPipelineRecord:
     candidate_name: str
     candidate_email: str | None
     requisition_title: str
+    assigned_to_display_name: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -485,6 +488,19 @@ def _application_search_statement(
             Application.candidate_id == filters.candidate_id
         )
 
+    if filters.assigned_to_subject is not None:
+        assigned_user_id = (
+            select(User.id)
+            .where(
+                User.tenant_id == context.tenant_id,
+                User.external_subject == filters.assigned_to_subject,
+            )
+            .scalar_subquery()
+        )
+        statement = statement.where(
+            Application.assigned_to_user_id == assigned_user_id
+        )
+
     if filters.status is not None:
         statement = statement.where(Application.status == filters.status)
 
@@ -574,6 +590,23 @@ async def search_application_pipeline(
         requisition_id: title for requisition_id, title in requisition_rows
     }
 
+    assigned_user_ids = {
+        application.assigned_to_user_id
+        for application in page.items
+        if application.assigned_to_user_id is not None
+    }
+    assigned_users: dict[UUID, str] = {}
+    if assigned_user_ids:
+        assigned_user_rows = await session.execute(
+            select(User.id, User.display_name).where(
+                User.tenant_id == context.tenant_id,
+                User.id.in_(assigned_user_ids),
+            )
+        )
+        assigned_users = {
+            user_id: display_name for user_id, display_name in assigned_user_rows
+        }
+
     records: list[ApplicationPipelineRecord] = []
     for application in page.items:
         candidate = candidates.get(application.candidate_id)
@@ -590,6 +623,11 @@ async def search_application_pipeline(
                 candidate_name=candidate_name,
                 candidate_email=candidate_email,
                 requisition_title=requisition_title or "Job unavailable",
+                assigned_to_display_name=assigned_users.get(
+                    application.assigned_to_user_id
+                )
+                if application.assigned_to_user_id is not None
+                else None,
             )
         )
 

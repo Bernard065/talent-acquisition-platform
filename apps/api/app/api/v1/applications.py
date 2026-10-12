@@ -16,6 +16,7 @@ from app.api.v1.schemas.application_pipeline import (
 from app.api.v1.schemas.applications import (
     ApplicationActivityItemResponse,
     ApplicationActivityResponse,
+    ApplicationAssignmentRequest,
     ApplicationCreateRequest,
     ApplicationListResponse,
     ApplicationPipelineItemResponse,
@@ -27,6 +28,10 @@ from app.api.v1.schemas.applications import (
 from app.core.authorization import TenantContext
 from app.domains.candidates.enums import ApplicationStatus
 from app.services.application_activity import list_application_activity
+from app.services.application_assignments import (
+    AssignApplicationCommand,
+    assign_application,
+)
 from app.services.application_pipeline import (
     TransitionApplicationStageCommand,
     transition_application_stage,
@@ -90,6 +95,46 @@ async def get_application_activity_endpoint(
             for item in items
         ]
     )
+
+
+@router.post(
+    "/{application_id}/assignment",
+    response_model=ApplicationResponse,
+    summary="Assign an application",
+)
+async def assign_application_endpoint(
+    application_id: UUID,
+    payload: ApplicationAssignmentRequest,
+    context: CallerContext,
+    session: DatabaseSession,
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Assign or unassign an application with optimistic concurrency."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        application = await assign_application(
+            session,
+            context=context,
+            application_id=application_id,
+            command=AssignApplicationCommand(
+                assigned_to_user_id=payload.assigned_to_user_id,
+                expected_version=payload.expected_version,
+            ),
+        )
+        return (
+            status.HTTP_200_OK,
+            ApplicationResponse.model_validate(application).model_dump(mode="json"),
+        )
+
+    result = await execute_idempotently(
+        session,
+        context=context,
+        key=idempotency_key,
+        operation_name="application.assign",
+        payload={"application_id": str(application_id), **payload.model_dump(mode="json")},
+        operation=operation,
+    )
+    return _private_idempotency_response(result)
 
 
 @router.post(
@@ -196,6 +241,7 @@ async def summarize_application_pipeline_endpoint(
     ] = None,
     applied_after: datetime | None = None,
     applied_before: datetime | None = None,
+    mine: bool = False,
 ) -> ApplicationPipelineSummaryResponse:
     """Return filtered counts per job without returning candidate records."""
     summary = await summarize_application_pipeline(
@@ -208,6 +254,7 @@ async def summarize_application_pipeline_endpoint(
             status=application_status,
             applied_after=applied_after,
             applied_before=applied_before,
+            assigned_to_subject=context.subject if mine else None,
         ),
     )
     response.headers["Cache-Control"] = "private, no-store"
@@ -246,6 +293,7 @@ async def search_application_pipeline_endpoint(
     ] = None,
     applied_after: datetime | None = None,
     applied_before: datetime | None = None,
+    mine: bool = False,
 ) -> ApplicationPipelineListResponse:
     """Return application cards with tenant-scoped candidate and job labels."""
 
@@ -259,6 +307,7 @@ async def search_application_pipeline_endpoint(
             status=application_status,
             applied_after=applied_after,
             applied_before=applied_before,
+            assigned_to_subject=context.subject if mine else None,
         ),
         limit=limit,
         cursor=cursor,
@@ -273,6 +322,8 @@ async def search_application_pipeline_endpoint(
                 candidate_email=record.candidate_email,
                 requisition_id=record.application.requisition_id,
                 requisition_title=record.requisition_title,
+                assigned_to_user_id=record.application.assigned_to_user_id,
+                assigned_to_display_name=record.assigned_to_display_name,
                 status=record.application.status,
                 applied_at=record.application.applied_at,
                 version=record.application.version,
@@ -304,6 +355,7 @@ async def search_applications_endpoint(
     ] = None,
     applied_after: datetime | None = None,
     applied_before: datetime | None = None,
+    mine: bool = False,
 ) -> ApplicationListResponse:
     """Search tenant applications using safe filters and keyset pagination."""
     page = await search_applications(
@@ -316,6 +368,7 @@ async def search_applications_endpoint(
             status=application_status,
             applied_after=applied_after,
             applied_before=applied_before,
+            assigned_to_subject=context.subject if mine else None,
         ),
         limit=limit,
         cursor=cursor,

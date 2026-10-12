@@ -17,6 +17,16 @@ export interface TeamInvitation {
   expires_at: string;
 }
 
+export interface TeamMember {
+  id: string;
+  display_name: string;
+  email: string;
+}
+
+export interface TeamMemberListResponse {
+  items: TeamMember[];
+}
+
 export interface CreateTeamInvitationRequest {
   email: string;
   role: Exclude<TeamRole, "tenant_admin">;

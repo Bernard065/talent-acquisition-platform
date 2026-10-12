@@ -226,6 +226,7 @@ function JobApplicationGroup({
                         <span className="rounded-full bg-gray-100 px-2.5 py-1">{STAGES.find((stage) => stage.status === application.status)?.label ?? application.status}</span>
                         <span>Applied {formatAppliedDate(application.applied_at)}</span>
                       </div>
+                      <p className="mt-1 text-xs text-gray-500">Owner: {application.assigned_to_display_name ?? "Unassigned"}</p>
                       <div className="mt-3">{renderStageActions(application)}</div>
                     </div>
                   </div>
@@ -235,7 +236,7 @@ function JobApplicationGroup({
             <div className="hidden overflow-x-auto sm:block">
               <table className="w-full min-w-190 text-left text-sm">
                 <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-                  <tr><th className="w-12 px-4 py-3">Select</th><th className="px-4 py-3">Candidate</th><th className="px-4 py-3">Applied</th><th className="px-4 py-3">Stage</th><th className="w-48 px-4 py-3">Actions</th></tr>
+                  <tr><th className="w-12 px-4 py-3">Select</th><th className="px-4 py-3">Candidate</th><th className="px-4 py-3">Owner</th><th className="px-4 py-3">Applied</th><th className="px-4 py-3">Stage</th><th className="w-48 px-4 py-3">Actions</th></tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {applications.map((application) => (
@@ -254,6 +255,7 @@ function JobApplicationGroup({
                         <Link href={`/dashboard/applications/${application.id}`} className="font-medium text-sr-text-blue hover:text-sr-green">{application.candidate_name}</Link>
                         {application.candidate_email && <p className="mt-0.5 text-xs text-gray-500">{application.candidate_email}</p>}
                       </td>
+                      <td className="px-4 py-3 text-gray-700">{application.assigned_to_display_name ?? "Unassigned"}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-gray-600">{formatAppliedDate(application.applied_at)}</td>
                       <td className="px-4 py-3"><span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">{STAGES.find((stage) => stage.status === application.status)?.label ?? application.status}</span></td>
                       <td className="px-4 py-3">{renderStageActions(application)}</td>
@@ -275,6 +277,7 @@ export default function ApplicationsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<ApplicationStatus | "">("");
+  const [myApplicationsOnly, setMyApplicationsOnly] = useState(false);
   const [appliedAfter, setAppliedAfter] = useState("");
   const [appliedBefore, setAppliedBefore] = useState("");
   const [view, setView] = useState<"jobs" | "board" | "table">("jobs");
@@ -294,6 +297,7 @@ export default function ApplicationsPage() {
     ...(debouncedSearchQuery ? { query: debouncedSearchQuery } : {}),
     ...(selectedRequisition ? { requisition_id: selectedRequisition } : {}),
     ...(selectedStatus ? { status: selectedStatus } : {}),
+    ...(myApplicationsOnly ? { mine: true } : {}),
     ...(!invalidDateRange && appliedAfter ? { applied_after: `${appliedAfter}T00:00:00Z` } : {}),
     ...(!invalidDateRange && appliedBefore ? { applied_before: `${appliedBefore}T23:59:59.999999Z` } : {}),
   };
@@ -489,6 +493,20 @@ export default function ApplicationsPage() {
             </select>
           </label>
           <label className="flex flex-col gap-1 text-xs font-medium text-gray-600">
+            Assignment
+            <select
+              value={myApplicationsOnly ? "mine" : "all"}
+              onChange={(event) => {
+                clearPipelineSelection();
+                setMyApplicationsOnly(event.target.value === "mine");
+              }}
+              className="h-10 min-w-40 rounded-lg border border-gray-200 bg-white px-3 text-sm font-normal text-gray-700 outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
+            >
+              <option value="all">All applications</option>
+              <option value="mine">My applications</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600">
             Applied from
             <input type="date" value={appliedAfter} onChange={(event) => { clearPipelineSelection(); setAppliedAfter(event.target.value); }} className="h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm font-normal text-gray-700" />
           </label>
@@ -595,9 +613,11 @@ export default function ApplicationsPage() {
         <div className="rounded-xl border border-gray-200 bg-white p-8 text-sm text-gray-500" aria-live="polite">
           Loading applications…
         </div>
-      ) : error && applications.length === 0 ? null : totalMatchingApplications === 0 && (debouncedSearchQuery || selectedRequisition || selectedStatus || appliedAfter || appliedBefore) ? (
+      ) : error && applications.length === 0 ? null : totalMatchingApplications === 0 && (debouncedSearchQuery || selectedRequisition || selectedStatus || appliedAfter || appliedBefore || myApplicationsOnly) ? (
         <div className="rounded-xl border border-dashed border-gray-300 bg-white p-12 text-center text-sm text-gray-600">
-          No applications match these filters. Try changing the search or filter values.
+          {myApplicationsOnly && !debouncedSearchQuery && !selectedRequisition && !selectedStatus && !appliedAfter && !appliedBefore
+            ? "No applications are assigned to you yet. Ask a teammate to assign one to you."
+            : "No applications match these filters. Try changing the search or filter values."}
         </div>
       ) : totalMatchingApplications === 0 ? (
         <div className="rounded-xl border border-dashed border-gray-300 bg-white px-6 py-16 text-center">
@@ -646,6 +666,7 @@ export default function ApplicationsPage() {
                           <span className="rounded-full bg-gray-100 px-2.5 py-1">{STAGES.find((stage) => stage.status === application.status)?.label ?? application.status}</span>
                           <span>Applied {formatAppliedDate(application.applied_at)}</span>
                         </div>
+                        <p className="mt-1 text-xs text-gray-500">Owner: {application.assigned_to_display_name ?? "Unassigned"}</p>
                         <div className="mt-3">{renderStageActions(application)}</div>
                       </div>
                     </div>
@@ -668,6 +689,7 @@ export default function ApplicationsPage() {
                     </th>
                     <th className="px-4 py-3">Candidate</th>
                     <th className="px-4 py-3">Job</th>
+                    <th className="px-4 py-3">Owner</th>
                     <th className="px-4 py-3">Applied</th>
                     <th className="px-4 py-3">Stage</th>
                     <th className="px-4 py-3">Actions</th>
@@ -691,6 +713,7 @@ export default function ApplicationsPage() {
                         {application.candidate_email && <p className="mt-0.5 text-xs text-gray-500">{application.candidate_email}</p>}
                       </td>
                       <td className="px-4 py-3 text-gray-700">{application.requisition_title}</td>
+                      <td className="px-4 py-3 text-gray-700">{application.assigned_to_display_name ?? "Unassigned"}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-gray-600">{formatAppliedDate(application.applied_at)}</td>
                       <td className="px-4 py-3"><span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">{STAGES.find((stage) => stage.status === application.status)?.label ?? application.status}</span></td>
                       <td className="w-44 px-4 py-3">{renderStageActions(application)}</td>
@@ -742,6 +765,7 @@ export default function ApplicationsPage() {
                               {application.candidate_email && <p className="mt-1 truncate text-xs text-gray-500">{application.candidate_email}</p>}
                               <p className="mt-2 truncate text-xs font-medium text-gray-700">{application.requisition_title}</p>
                               <p className="mt-1 text-xs text-gray-500">Applied {formatAppliedDate(application.applied_at)}</p>
+                              <p className="mt-1 truncate text-xs text-gray-500">Owner: {application.assigned_to_display_name ?? "Unassigned"}</p>
                               <div className="pointer-events-auto mt-2">{renderStageActions(application)}</div>
                             </div>
                           </article>

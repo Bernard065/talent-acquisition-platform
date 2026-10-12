@@ -11,3 +11,7 @@ class ApplicationVersionConflictError(RuntimeError):
 
 class ApplicationRejectionReasonError(ValueError):
     """Raised when rejection reason requirements are not satisfied."""
+
+
+class ApplicationAssigneeInvalidError(ValueError):
+    """Raised when an assignee is not an eligible member of the tenant."""

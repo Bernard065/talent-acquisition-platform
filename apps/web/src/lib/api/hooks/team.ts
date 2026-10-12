@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import {
   createTeamInvitation,
   listTeamInvitations,
+  listTeamMembers,
   revokeTeamInvitation,
 } from "../services/team";
 import type { CreateTeamInvitationRequest } from "@/types/api/team";
@@ -12,7 +13,18 @@ import type { CreateTeamInvitationRequest } from "@/types/api/team";
 export const teamQueryKeys = {
   all: ["team"] as const,
   invitations: () => [...teamQueryKeys.all, "invitations"] as const,
+  members: () => [...teamQueryKeys.all, "members"] as const,
 };
+
+export function useTeamMembers() {
+  const { status } = useSession();
+
+  return useQuery({
+    queryKey: teamQueryKeys.members(),
+    queryFn: ({ signal }) => listTeamMembers({ signal }),
+    enabled: status === "authenticated",
+  });
+}
 
 export function useTeamInvitations() {
   const { status } = useSession();

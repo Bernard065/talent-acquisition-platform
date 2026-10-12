@@ -2,6 +2,7 @@ import { get, post, type RequestOptions } from "../client";
 import type { PaginationParams } from "../types";
 import type {
   ApplicationResponse,
+  ApplicationAssignmentRequest,
   ApplicationActivityResponse,
   ApplicationListResponse,
   ApplicationCreateRequest,
@@ -18,6 +19,7 @@ export interface ApplicationSearchParams extends PaginationParams {
   status?: ApplicationStatus;
   applied_after?: string;
   applied_before?: string;
+  mine?: boolean;
 }
 
 export type ApplicationFilterParams = Omit<ApplicationSearchParams, "cursor" | "limit">;
@@ -64,6 +66,18 @@ export async function getApplicationActivity(
   options?: RequestOptions,
 ): Promise<ApplicationActivityResponse> {
   return get<ApplicationActivityResponse>(`/applications/${id}/activity`, options);
+}
+
+export async function assignApplication(
+  id: string,
+  body: ApplicationAssignmentRequest,
+  idempotencyKey: string,
+  options?: RequestOptions,
+): Promise<ApplicationResponse> {
+  return post<ApplicationResponse>(`/applications/${id}/assignment`, body, {
+    ...options,
+    idempotencyKey,
+  });
 }
 
 export async function createApplication(

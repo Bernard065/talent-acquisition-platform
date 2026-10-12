@@ -49,6 +49,13 @@ class Application(Base):
             "applied_at",
             "id",
         ),
+        Index(
+            "ix_applications_tenant_assignee_applied_at",
+            "tenant_id",
+            "assigned_to_user_id",
+            "applied_at",
+            "id",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -68,6 +75,10 @@ class Application(Base):
     requisition_id: Mapped[UUID] = mapped_column(
         ForeignKey("requisitions.id", ondelete="RESTRICT"),
         nullable=False,
+    )
+    assigned_to_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
     )
 
     status: Mapped[ApplicationStatus] = mapped_column(
