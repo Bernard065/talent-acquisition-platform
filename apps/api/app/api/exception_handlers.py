@@ -21,6 +21,13 @@ from app.services.abuse_control import (
     AbuseControlRejectedError,
     AbuseControlUnavailableError,
 )
+from app.services.application_follow_up_errors import (
+    ActiveApplicationFollowUpExistsError,
+    ApplicationFollowUpAccessDeniedError,
+    ApplicationFollowUpNotFoundError,
+    ApplicationFollowUpValidationError,
+    ApplicationFollowUpVersionConflictError,
+)
 from app.services.application_pipeline_errors import (
     ApplicationAssigneeInvalidError,
     ApplicationPipelineAccessDeniedError,
@@ -485,6 +492,18 @@ async def invalid_application_assignment_request(
         request,
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         detail="The selected assignee is not an eligible member of this workspace.",
+    )
+
+
+async def invalid_application_follow_up_request(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Handle invalid action text or timezone-free due dates."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail="Follow-up action and due date are invalid.",
     )
 
 
@@ -1362,6 +1381,23 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         ApplicationAssigneeInvalidError,
         invalid_application_assignment_request,
+    )
+    application.add_exception_handler(
+        ApplicationFollowUpAccessDeniedError,
+        forbidden,
+    )
+    application.add_exception_handler(ApplicationFollowUpNotFoundError, not_found)
+    application.add_exception_handler(
+        ActiveApplicationFollowUpExistsError,
+        conflict,
+    )
+    application.add_exception_handler(
+        ApplicationFollowUpVersionConflictError,
+        conflict,
+    )
+    application.add_exception_handler(
+        ApplicationFollowUpValidationError,
+        invalid_application_follow_up_request,
     )
     application.add_exception_handler(StaleDataError, conflict)
     application.add_exception_handler(InvalidRequisitionCursorError, invalid_cursor)

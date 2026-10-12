@@ -1,8 +1,13 @@
-import { get, post, type RequestOptions } from "../client";
+import { get, post, put, type RequestOptions } from "../client";
 import type { PaginationParams } from "../types";
 import type {
   ApplicationResponse,
   ApplicationAssignmentRequest,
+  ApplicationFollowUp,
+  ApplicationFollowUpCompleteRequest,
+  ApplicationFollowUpListResponse,
+  ApplicationFollowUpRequest,
+  ApplicationFollowUpUpdateRequest,
   ApplicationActivityResponse,
   ApplicationListResponse,
   ApplicationCreateRequest,
@@ -20,6 +25,7 @@ export interface ApplicationSearchParams extends PaginationParams {
   applied_after?: string;
   applied_before?: string;
   mine?: boolean;
+  follow_up?: "due";
 }
 
 export type ApplicationFilterParams = Omit<ApplicationSearchParams, "cursor" | "limit">;
@@ -78,6 +84,53 @@ export async function assignApplication(
     ...options,
     idempotencyKey,
   });
+}
+
+export async function listApplicationFollowUps(
+  id: string,
+  options?: RequestOptions,
+): Promise<ApplicationFollowUpListResponse> {
+  return get<ApplicationFollowUpListResponse>(`/applications/${id}/follow-ups`, options);
+}
+
+export async function createApplicationFollowUp(
+  id: string,
+  body: ApplicationFollowUpRequest,
+  idempotencyKey: string,
+  options?: RequestOptions,
+): Promise<ApplicationFollowUp> {
+  return post<ApplicationFollowUp>(`/applications/${id}/follow-ups`, body, {
+    ...options,
+    idempotencyKey,
+  });
+}
+
+export async function updateApplicationFollowUp(
+  applicationId: string,
+  followUpId: string,
+  body: ApplicationFollowUpUpdateRequest,
+  idempotencyKey: string,
+  options?: RequestOptions,
+): Promise<ApplicationFollowUp> {
+  return put<ApplicationFollowUp>(
+    `/applications/${applicationId}/follow-ups/${followUpId}`,
+    body,
+    { ...options, idempotencyKey },
+  );
+}
+
+export async function completeApplicationFollowUp(
+  applicationId: string,
+  followUpId: string,
+  body: ApplicationFollowUpCompleteRequest,
+  idempotencyKey: string,
+  options?: RequestOptions,
+): Promise<ApplicationFollowUp> {
+  return post<ApplicationFollowUp>(
+    `/applications/${applicationId}/follow-ups/${followUpId}/complete`,
+    body,
+    { ...options, idempotencyKey },
+  );
 }
 
 export async function createApplication(

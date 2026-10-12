@@ -73,6 +73,8 @@ class ApplicationPipelineItemResponse(BaseModel):
     requisition_title: str
     assigned_to_user_id: UUID | None
     assigned_to_display_name: str | None
+    follow_up_action: str | None
+    follow_up_due_at: datetime | None
     status: ApplicationStatus
     applied_at: datetime
     version: int
@@ -93,6 +95,8 @@ class ApplicationPipelineJobSummaryResponse(BaseModel):
     requisition_title: str
     total_count: int
     stage_counts: dict[ApplicationStatus, int]
+    follow_up_count: int
+    overdue_follow_up_count: int
 
 
 class ApplicationPipelineSummaryResponse(BaseModel):
@@ -110,3 +114,46 @@ class ApplicationAssignmentRequest(BaseModel):
 
     assigned_to_user_id: UUID | None
     expected_version: int = Field(ge=1)
+
+
+class ApplicationFollowUpCreateRequest(BaseModel):
+    """Create a next action and due date for an application."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    action: str = Field(min_length=1, max_length=500)
+    due_at: datetime
+
+
+class ApplicationFollowUpUpdateRequest(ApplicationFollowUpCreateRequest):
+    """Update a pending follow-up using optimistic concurrency."""
+
+    expected_version: int = Field(ge=1)
+
+
+class ApplicationFollowUpCompleteRequest(BaseModel):
+    """Complete a pending follow-up using optimistic concurrency."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+
+
+class ApplicationFollowUpResponse(BaseModel):
+    """Follow-up history item for an application profile."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    action: str
+    due_at: datetime
+    created_at: datetime
+    completed_at: datetime | None
+    version: int
+
+
+class ApplicationFollowUpListResponse(BaseModel):
+    """Follow-up history with the active action identified explicitly."""
+
+    items: list[ApplicationFollowUpResponse]
+    active_follow_up_id: UUID | None

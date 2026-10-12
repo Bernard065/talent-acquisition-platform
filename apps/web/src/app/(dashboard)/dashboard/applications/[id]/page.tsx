@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { FormEvent } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -9,6 +10,10 @@ import {
   useApplication,
   useApplicationActivity,
   useAssignApplication,
+  useApplicationFollowUps,
+  useCompleteApplicationFollowUp,
+  useCreateApplicationFollowUp,
+  useUpdateApplicationFollowUp,
 } from "@/lib/api/hooks/applications";
 import { useCandidate } from "@/lib/api/hooks/candidates";
 import {
@@ -55,6 +60,172 @@ function Detail({ label, value }: { label: string; value: string | null | undefi
       <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</dt>
       <dd className="mt-1 wrap-break-word text-sm text-gray-900">{value || "Not provided"}</dd>
     </div>
+  );
+}
+
+function toDateTimeLocalValue(value: string | undefined): string {
+  if (!value) return "";
+  const date = new Date(value);
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return localDate.toISOString().slice(0, 16);
+}
+
+function followUpTiming(dueAt: string): { label: string; className: string } {
+  const dueDate = new Date(dueAt);
+  const now = new Date();
+  if (dueDate < now) {
+    return { label: "Overdue", className: "bg-red-100 text-red-800" };
+  }
+  if (dueDate.toDateString() === now.toDateString()) {
+    return { label: "Due today", className: "bg-amber-100 text-amber-900" };
+  }
+  return { label: "Upcoming", className: "bg-blue-50 text-blue-800" };
+}
+
+function ApplicationFollowUpsSection({ applicationId }: { applicationId: string }) {
+  const followUpsQuery = useApplicationFollowUps(applicationId);
+  const activeFollowUp = followUpsQuery.data?.items.find(
+    (item) => item.id === followUpsQuery.data?.active_follow_up_id,
+  );
+
+  return (
+    <section aria-labelledby="application-follow-ups-heading" className="rounded-xl border border-gray-200 bg-white p-6">
+      <div>
+        <h2 id="application-follow-ups-heading" className="text-base font-semibold text-sr-text-blue">Next action</h2>
+        <p className="mt-1 text-sm text-gray-600">Record the next candidate touchpoint and when it should happen.</p>
+      </div>
+      {followUpsQuery.isLoading ? (
+        <p className="mt-4 text-sm text-gray-500" role="status">Loading follow-ups…</p>
+      ) : followUpsQuery.isError ? (
+        <div className="mt-4 flex flex-wrap items-center gap-3" role="alert">
+          <p className="text-sm text-red-800">We couldn’t load follow-ups for this application.</p>
+          <Button type="button" variant="outline" onClick={() => void followUpsQuery.refetch()}>Try again</Button>
+        </div>
+      ) : (
+        <>
+          <ApplicationFollowUpEditor
+            key={activeFollowUp?.id ?? "new-follow-up"}
+            applicationId={applicationId}
+            activeFollowUp={activeFollowUp}
+          />
+          <div className="mt-6 border-t border-gray-100 pt-5">
+            <h3 className="text-sm font-semibold text-gray-800">Follow-up history</h3>
+            {!followUpsQuery.data?.items.length ? (
+              <p className="mt-3 text-sm text-gray-600">No follow-ups have been recorded.</p>
+            ) : (
+              <ol className="mt-3 space-y-3">
+                {followUpsQuery.data.items.map((item) => {
+                  const timing = followUpTiming(item.due_at);
+                  return (
+                    <li key={item.id} className="rounded-lg border border-gray-100 p-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="min-w-0 flex-1 text-sm font-medium text-gray-900">{item.action}</p>
+                        <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${item.completed_at ? "bg-green-100 text-green-800" : timing.className}`}>
+                          {item.completed_at ? "Completed" : timing.label}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-gray-600">
+                        Due {formatDate(item.due_at)} · Added {formatDate(item.created_at)}
+                        {item.completed_at ? ` · Completed ${formatDate(item.completed_at)}` : ""}
+                      </p>
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function ApplicationFollowUpEditor({
+  applicationId,
+  activeFollowUp,
+}: {
+  applicationId: string;
+  activeFollowUp?: { id: string; action: string; due_at: string; version: number };
+}) {
+  const [action, setAction] = useState(activeFollowUp?.action ?? "");
+  const [dueAt, setDueAt] = useState(toDateTimeLocalValue(activeFollowUp?.due_at));
+  const createMutation = useCreateApplicationFollowUp();
+  const updateMutation = useUpdateApplicationFollowUp();
+  const completeMutation = useCompleteApplicationFollowUp();
+  const isPending = createMutation.isPending || updateMutation.isPending || completeMutation.isPending;
+  const hasError = createMutation.isError || updateMutation.isError || completeMutation.isError;
+
+  function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!action.trim() || !dueAt) return;
+    const request = { action: action.trim(), due_at: new Date(dueAt).toISOString() };
+    if (activeFollowUp) {
+      updateMutation.mutate({
+        id: applicationId,
+        followUpId: activeFollowUp.id,
+        followUp: { ...request, expected_version: activeFollowUp.version },
+        idempotencyKey: crypto.randomUUID(),
+      });
+    } else {
+      createMutation.mutate({
+        id: applicationId,
+        followUp: request,
+        idempotencyKey: crypto.randomUUID(),
+      });
+    }
+  }
+
+  return (
+    <>
+      <form className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]" onSubmit={save}>
+        <label className="block sm:col-span-2">
+          <span className="mb-1 block text-sm font-medium text-gray-700">Action</span>
+          <input
+            value={action}
+            onChange={(event) => setAction(event.target.value)}
+            required
+            maxLength={500}
+            placeholder="e.g. Call candidate with interview feedback"
+            className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium text-gray-700">Due date and time</span>
+          <input
+            type="datetime-local"
+            value={dueAt}
+            onChange={(event) => setDueAt(event.target.value)}
+            required
+            className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
+          />
+        </label>
+        <div className="flex items-end gap-2">
+          <Button type="submit" disabled={isPending || !action.trim() || !dueAt}>
+            {isPending ? "Saving…" : activeFollowUp ? "Update follow-up" : "Add follow-up"}
+          </Button>
+          {activeFollowUp && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isPending}
+              onClick={() => completeMutation.mutate({
+                id: applicationId,
+                followUpId: activeFollowUp.id,
+                followUp: { expected_version: activeFollowUp.version },
+                idempotencyKey: crypto.randomUUID(),
+              })}
+            >
+              Mark complete
+            </Button>
+          )}
+        </div>
+      </form>
+      {hasError && (
+        <p role="alert" className="mt-3 text-sm text-red-800">
+          We couldn’t save that follow-up. It may have changed; refresh the application and try again.
+        </p>
+      )}
+    </>
   );
 }
 
@@ -207,6 +378,8 @@ export default function ApplicationDetailsPage() {
               <p role="status" className="mt-2 text-sm text-green-800">Application owner updated.</p>
             )}
           </section>
+
+          <ApplicationFollowUpsSection applicationId={application.id} />
 
           <section aria-labelledby="application-documents-heading" className="rounded-xl border border-gray-200 bg-white p-6">
             <h2 id="application-documents-heading" className="text-base font-semibold text-sr-text-blue">Resume and documents</h2>
