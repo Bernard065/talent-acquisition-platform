@@ -7,6 +7,7 @@ import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { ApplicationDebriefSection } from "@/components/applications/application-debrief-section";
+import { ApplicationInterviewFeedbackSection } from "@/components/applications/application-interview-feedback-section";
 import {
   useApplication,
   useApplicationActivity,
@@ -651,6 +652,10 @@ export default function ApplicationDetailsPage() {
             applicationId={application.id}
             applicationStatus={application.status}
           />
+
+          {canReviewInterviewFeedback && (
+            <ApplicationInterviewFeedbackSection applicationId={application.id} />
+          )}
 
           <ApplicationDebriefSection
             application={application}
