@@ -10,9 +10,11 @@ import { useSession } from "next-auth/react";
 import {
   createApplication,
   getApplication,
+  getApplicationPipelineSummary,
   listApplicationPipeline,
   listApplications,
   transitionApplicationStage,
+  type ApplicationFilterParams,
   type ApplicationSearchParams,
 } from "../services/applications";
 import type {
@@ -20,6 +22,7 @@ import type {
   ApplicationCreateRequest,
   ApplicationRejectionReason,
   ApplicationStatus,
+  ApplicationPipelineSummaryResponse,
 } from "@/types/api/applications";
 
 export const applicationQueryKeys = {
@@ -30,6 +33,9 @@ export const applicationQueryKeys = {
   pipelines: () => [...applicationQueryKeys.all, "pipeline"] as const,
   pipeline: (params: ApplicationSearchParams = {}) =>
     [...applicationQueryKeys.pipelines(), params] as const,
+  pipelineSummaries: () => [...applicationQueryKeys.all, "pipeline-summary"] as const,
+  pipelineSummary: (params: ApplicationFilterParams = {}) =>
+    [...applicationQueryKeys.pipelineSummaries(), params] as const,
   detail: (id: string) => [...applicationQueryKeys.all, "detail", id] as const,
 };
 
@@ -46,7 +52,10 @@ export function useApplications(params: ApplicationSearchParams = {}) {
   });
 }
 
-export function useApplicationPipeline(params: ApplicationSearchParams = {}) {
+export function useApplicationPipeline(
+  params: ApplicationSearchParams = {},
+  enabled = true,
+) {
   const { status } = useSession();
 
   return useInfiniteQuery({
@@ -55,7 +64,20 @@ export function useApplicationPipeline(params: ApplicationSearchParams = {}) {
       listApplicationPipeline({ ...params, cursor: pageParam }, { signal }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
-    enabled: status === "authenticated",
+    enabled: status === "authenticated" && enabled,
+  });
+}
+
+export function useApplicationPipelineSummary(
+  params: ApplicationFilterParams = {},
+  enabled = true,
+) {
+  const { status } = useSession();
+
+  return useQuery<ApplicationPipelineSummaryResponse>({
+    queryKey: applicationQueryKeys.pipelineSummary(params),
+    queryFn: ({ signal }) => getApplicationPipelineSummary(params, { signal }),
+    enabled: status === "authenticated" && enabled,
   });
 }
 
@@ -81,6 +103,7 @@ export function useCreateApplication() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: applicationQueryKeys.lists() }),
         queryClient.invalidateQueries({ queryKey: applicationQueryKeys.pipelines() }),
+        queryClient.invalidateQueries({ queryKey: applicationQueryKeys.pipelineSummaries() }),
       ]);
     },
   });
@@ -110,6 +133,7 @@ export function useTransitionApplicationStage() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: applicationQueryKeys.lists() }),
         queryClient.invalidateQueries({ queryKey: applicationQueryKeys.pipelines() }),
+        queryClient.invalidateQueries({ queryKey: applicationQueryKeys.pipelineSummaries() }),
         queryClient.setQueryData(
           applicationQueryKeys.detail(application.id),
           application,
@@ -184,6 +208,7 @@ export function useBulkTransitionApplicationStage() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: applicationQueryKeys.lists() }),
         queryClient.invalidateQueries({ queryKey: applicationQueryKeys.pipelines() }),
+        queryClient.invalidateQueries({ queryKey: applicationQueryKeys.pipelineSummaries() }),
       ]);
     },
   });

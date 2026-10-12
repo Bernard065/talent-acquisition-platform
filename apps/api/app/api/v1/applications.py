@@ -17,7 +17,9 @@ from app.api.v1.schemas.applications import (
     ApplicationCreateRequest,
     ApplicationListResponse,
     ApplicationPipelineItemResponse,
+    ApplicationPipelineJobSummaryResponse,
     ApplicationPipelineListResponse,
+    ApplicationPipelineSummaryResponse,
     ApplicationResponse,
 )
 from app.core.authorization import TenantContext
@@ -36,6 +38,7 @@ from app.services.recruiting_search import (
     ApplicationSearchFilters,
     search_application_pipeline,
     search_applications,
+    summarize_application_pipeline,
 )
 
 router = APIRouter(prefix="/applications", tags=["Applications"])
@@ -137,6 +140,54 @@ async def transition_application_stage_endpoint(
     )
 
     return _private_idempotency_response(result)
+
+
+@router.get(
+    "/pipeline/summary",
+    response_model=ApplicationPipelineSummaryResponse,
+    summary="Summarize applications by job and stage",
+)
+async def summarize_application_pipeline_endpoint(
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+    query: Annotated[str | None, Query(max_length=200)] = None,
+    requisition_id: UUID | None = None,
+    candidate_id: UUID | None = None,
+    application_status: Annotated[
+        ApplicationStatus | None,
+        Query(alias="status"),
+    ] = None,
+    applied_after: datetime | None = None,
+    applied_before: datetime | None = None,
+) -> ApplicationPipelineSummaryResponse:
+    """Return filtered counts per job without returning candidate records."""
+    summary = await summarize_application_pipeline(
+        session,
+        context=context,
+        filters=ApplicationSearchFilters(
+            requisition_id=requisition_id,
+            candidate_id=candidate_id,
+            query=query,
+            status=application_status,
+            applied_after=applied_after,
+            applied_before=applied_before,
+        ),
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return ApplicationPipelineSummaryResponse(
+        total_count=summary.total_count,
+        stage_counts=summary.stage_counts,
+        jobs=[
+            ApplicationPipelineJobSummaryResponse(
+                requisition_id=job.requisition_id,
+                requisition_title=job.requisition_title,
+                total_count=job.total_count,
+                stage_counts=job.stage_counts,
+            )
+            for job in summary.jobs
+        ],
+    )
 
 
 @router.get(
