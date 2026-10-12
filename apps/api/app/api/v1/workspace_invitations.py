@@ -259,6 +259,67 @@ async def revoke_invitation(invitation_id: UUID, session: SessionDep, context: C
     if invitation is None:
         raise HTTPException(status_code=404, detail="Pending invitation not found.")
     invitation.status = "revoked"
+
+
+@router.put("/team/members/{member_id}/roles/interviewer", status_code=204)
+async def grant_interviewer_role(
+    member_id: UUID,
+    request: Request,
+    session: SessionDep,
+    context: ContextDep,
+) -> None:
+    """Add interviewer access to an existing member in the current workspace."""
+    _require_admin(context)
+    settings = _settings(request)
+    member = await session.scalar(
+        select(User).where(
+            User.id == member_id,
+            User.tenant_id == context.tenant_id,
+        ).with_for_update()
+    )
+    if member is None:
+        raise HTTPException(status_code=404, detail="Workspace member was not found.")
+
+    metadata_response = await _supabase_request(
+        settings,
+        "GET",
+        f"admin/users/{member.external_subject}",
+    )
+    auth_user = _as_dict(metadata_response.get("user")) or metadata_response
+    app_metadata = _as_dict(auth_user.get("app_metadata"))
+    current_roles = app_metadata.get("roles")
+    roles = (
+        {role for role in current_roles if isinstance(role, str)}
+        if isinstance(current_roles, list)
+        else set()
+    )
+    roles.add(Role.INTERVIEWER.value)
+    app_metadata["organization_id"] = (
+        app_metadata.get("organization_id")
+        or await session.scalar(
+            select(Tenant.identity_provider_organization_id).where(
+                Tenant.id == context.tenant_id
+            )
+        )
+    )
+    if not app_metadata["organization_id"]:
+        raise HTTPException(status_code=409, detail="Workspace identity is not configured.")
+    app_metadata["roles"] = sorted(roles)
+    await _supabase_request(
+        settings,
+        "PUT",
+        f"admin/users/{member.external_subject}",
+        json={"app_metadata": app_metadata},
+    )
+
+    existing_assignment = await session.scalar(
+        select(UserRoleAssignment.id).where(
+            UserRoleAssignment.user_id == member_id,
+            UserRoleAssignment.role == Role.INTERVIEWER,
+        )
+    )
+    if existing_assignment is None:
+        session.add(UserRoleAssignment(user_id=member_id, role=Role.INTERVIEWER))
     await session.commit()
 
 
