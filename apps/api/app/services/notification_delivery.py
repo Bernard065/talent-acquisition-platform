@@ -1,19 +1,36 @@
-"""Leased, idempotent delivery of internal email notification intents."""
+"""Leased, idempotent delivery of transactional email notification intents."""
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import cast
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models.application import Application
+from app.db.models.candidate import Candidate
 from app.db.models.identity import User
+from app.db.models.interview import InterviewParticipant, InterviewSession
+from app.db.models.job_posting import JobPosting
 from app.db.models.notification import Notification
+from app.db.models.requisition import Requisition
 from app.db.transactions import transactional
-from app.domains.notifications.enums import NotificationStatus
+from app.domains.candidates.enums import CandidatePrivacyStatus
+from app.domains.interviews.enums import (
+    InterviewParticipantRole,
+    InterviewSessionStatus,
+)
+from app.domains.job_postings.enums import JobPostingStatus
+from app.domains.notifications.enums import (
+    NotificationEventType,
+    NotificationStatus,
+)
 from app.services.email_sender import EmailDeliveryError, EmailMessage, EmailSender
 from app.services.notification_email_templates import (
+    InterviewNotificationDetails,
     UnsupportedNotificationTemplateError,
+    render_interview_notification_email,
     render_notification_email,
 )
 
@@ -30,6 +47,10 @@ class NotificationDeliveryPolicy:
 
 
 DEFAULT_NOTIFICATION_DELIVERY_POLICY = NotificationDeliveryPolicy()
+
+
+class StaleInterviewNotificationError(Exception):
+    """An interview change superseded a notification before delivery."""
 
 
 def _now() -> datetime:
@@ -214,6 +235,27 @@ async def retry_or_fail_notification(
         await session.flush()
 
 
+async def cancel_stale_notification(
+    session: AsyncSession,
+    *,
+    notification_id: UUID,
+    worker_id: str,
+) -> None:
+    """Cancel a leased message whose interview state has since changed."""
+    async with transactional(session):
+        notification = await _get_leased_notification(
+            session,
+            notification_id=notification_id,
+            worker_id=worker_id,
+        )
+        notification.status = NotificationStatus.CANCELLED
+        notification.cancelled_at = _now()
+        notification.locked_at = None
+        notification.locked_by = None
+        notification.last_error_code = "interview_event_superseded"
+        await session.flush()
+
+
 def _render_message(notification: Notification, recipient_email: str) -> EmailMessage:
     """Render approved static copy without including workflow-sensitive values."""
     return render_notification_email(
@@ -225,12 +267,196 @@ def _render_message(notification: Notification, recipient_email: str) -> EmailMe
     )
 
 
+async def _recipient_email(
+    session: AsyncSession,
+    notification: Notification,
+) -> str | None:
+    """Resolve an internal or candidate email at delivery time."""
+    if notification.recipient_user_id is not None:
+        return cast(
+            str | None,
+            await session.scalar(
+                select(User.email).where(
+                    User.id == notification.recipient_user_id,
+                    User.tenant_id == notification.tenant_id,
+                )
+            )
+        )
+
+    if notification.recipient_candidate_id is not None:
+        return cast(
+            str | None,
+            await session.scalar(
+                select(Candidate.email).where(
+                    Candidate.id == notification.recipient_candidate_id,
+                    Candidate.tenant_id == notification.tenant_id,
+                    Candidate.privacy_status == CandidatePrivacyStatus.ACTIVE,
+                )
+            )
+        )
+
+    return None
+
+
+async def _interview_notification_details(
+    session: AsyncSession,
+    *,
+    notification: Notification,
+    web_app_base_url: str,
+) -> InterviewNotificationDetails | None:
+    """Resolve current interview data and verify the notification recipient."""
+    if notification.entity_type != "interview_session":
+        return None
+
+    public_job_id = (
+        select(JobPosting.public_id)
+        .where(
+            JobPosting.requisition_id == Requisition.id,
+            JobPosting.tenant_id == Requisition.tenant_id,
+            JobPosting.status == JobPostingStatus.PUBLISHED,
+        )
+        .order_by(JobPosting.created_at.desc())
+        .limit(1)
+        .scalar_subquery()
+    )
+    row = await session.execute(
+        select(
+            InterviewSession,
+            Application.candidate_id,
+            Requisition.title,
+            public_job_id,
+        )
+        .join(
+            Application,
+            and_(
+                Application.id == InterviewSession.application_id,
+                Application.tenant_id == InterviewSession.tenant_id,
+            ),
+        )
+        .join(
+            Requisition,
+            and_(
+                Requisition.id == Application.requisition_id,
+                Requisition.tenant_id == Application.tenant_id,
+            ),
+        )
+        .where(
+            InterviewSession.id == notification.entity_id,
+            InterviewSession.tenant_id == notification.tenant_id,
+        )
+        .limit(1)
+    )
+    resolved = row.first()
+    if resolved is None:
+        return None
+
+    interview, candidate_id, role_title, public_job_id = resolved
+    try:
+        notification_event_type = NotificationEventType(notification.event_type)
+    except ValueError:
+        return None
+    is_current_event = (
+        notification.event_version is None
+        or notification.event_version == interview.version
+    )
+    if notification_event_type in {
+        NotificationEventType.INTERVIEW_SCHEDULED,
+        NotificationEventType.INTERVIEW_RESCHEDULED,
+    } and (
+        interview.status is not InterviewSessionStatus.SCHEDULED or not is_current_event
+    ):
+        raise StaleInterviewNotificationError
+    if notification_event_type is NotificationEventType.INTERVIEW_CANCELLED and (
+        interview.status is not InterviewSessionStatus.CANCELLED or not is_current_event
+    ):
+        raise StaleInterviewNotificationError
+
+    is_candidate = notification.recipient_candidate_id is not None
+    if is_candidate:
+        if notification.recipient_candidate_id != candidate_id:
+            return None
+    elif notification.recipient_user_id is not None:
+        assigned = await session.scalar(
+            select(InterviewParticipant.id).where(
+                InterviewParticipant.tenant_id == notification.tenant_id,
+                InterviewParticipant.interview_session_id == interview.id,
+                InterviewParticipant.user_id == notification.recipient_user_id,
+                InterviewParticipant.role == InterviewParticipantRole.INTERVIEWER,
+            )
+        )
+        if assigned is None:
+            return None
+    else:
+        return None
+
+    base_url = web_app_base_url.rstrip("/")
+    role_url = (
+        f"{base_url}/careers/{public_job_id}" if public_job_id is not None else None
+    )
+    return InterviewNotificationDetails(
+        role_title=role_title,
+        scheduled_start_at=interview.scheduled_start_at,
+        scheduled_end_at=interview.scheduled_end_at,
+        interview_format=(
+            interview.format.value.replace("_", " ").title()
+            if interview.format is not None
+            else None
+        ),
+        location=interview.location,
+        meeting_url=interview.meeting_url,
+        interview_url=f"{base_url}/dashboard/interviews/{interview.id}",
+        role_url=role_url,
+        is_candidate=is_candidate,
+    )
+
+
+async def _render_delivery_message(
+    session: AsyncSession,
+    *,
+    notification: Notification,
+    recipient_email: str,
+    web_app_base_url: str,
+) -> EmailMessage:
+    """Render static notices or authorized, current interview schedule details."""
+    try:
+        event_type = NotificationEventType(notification.event_type)
+    except ValueError:
+        return _render_message(notification, recipient_email)
+
+    if event_type not in {
+        NotificationEventType.INTERVIEW_SCHEDULED,
+        NotificationEventType.INTERVIEW_RESCHEDULED,
+        NotificationEventType.INTERVIEW_CANCELLED,
+    }:
+        return _render_message(notification, recipient_email)
+
+    details = await _interview_notification_details(
+        session,
+        notification=notification,
+        web_app_base_url=web_app_base_url,
+    )
+    if details is None:
+        raise UnsupportedNotificationTemplateError(
+            "Interview notification recipient or session is no longer available."
+        )
+
+    return render_interview_notification_email(
+        notification_id=notification.id,
+        idempotency_key=notification.deduplication_key,
+        recipient_email=recipient_email,
+        event_type=notification.event_type,
+        template_key=notification.template_key,
+        details=details,
+    )
+
+
 async def process_pending_notifications(
     session: AsyncSession,
     *,
     worker_id: str,
     sender: EmailSender,
     policy: NotificationDeliveryPolicy = DEFAULT_NOTIFICATION_DELIVERY_POLICY,
+    web_app_base_url: str = "http://localhost:3000",
 ) -> int:
     """Deliver one bounded batch of notification intents."""
     notifications = await claim_notifications(
@@ -243,12 +469,7 @@ async def process_pending_notifications(
     delivered = 0
 
     for notification in notifications:
-        recipient_email = await session.scalar(
-            select(User.email).where(
-                User.id == notification.recipient_user_id,
-                User.tenant_id == notification.tenant_id,
-            )
-        )
+        recipient_email = await _recipient_email(session, notification)
         if session.in_transaction():
             await session.commit()
 
@@ -264,8 +485,17 @@ async def process_pending_notifications(
             continue
 
         try:
-            message = _render_message(notification, recipient_email)
+            message = await _render_delivery_message(
+                session,
+                notification=notification,
+                recipient_email=recipient_email,
+                web_app_base_url=web_app_base_url,
+            )
+            if session.in_transaction():
+                await session.commit()
         except UnsupportedNotificationTemplateError:
+            if session.in_transaction():
+                await session.commit()
             await retry_or_fail_notification(
                 session,
                 notification_id=notification.id,
@@ -273,6 +503,15 @@ async def process_pending_notifications(
                 failure_code="unsupported_notification_template",
                 policy=policy,
                 retryable=False,
+            )
+            continue
+        except StaleInterviewNotificationError:
+            if session.in_transaction():
+                await session.commit()
+            await cancel_stale_notification(
+                session,
+                notification_id=notification.id,
+                worker_id=worker_id,
             )
             continue
 

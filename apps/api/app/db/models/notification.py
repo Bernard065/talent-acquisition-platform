@@ -95,7 +95,7 @@ class NotificationPreference(Base):
 
 class Notification(Base):
     """
-    A durable delivery intent for one internal recipient.
+    A durable delivery intent for one internal user or candidate recipient.
 
     It stores only event and entity references—not rendered email content,
     candidate PII, compensation, or private feedback. The delivery worker will
@@ -107,6 +107,11 @@ class Notification(Base):
         CheckConstraint(
             "attempts >= 0",
             name="ck_notifications_attempts_non_negative",
+        ),
+        CheckConstraint(
+            "(recipient_user_id IS NOT NULL AND recipient_candidate_id IS NULL) OR "
+            "(recipient_user_id IS NULL AND recipient_candidate_id IS NOT NULL)",
+            name="ck_notifications_exactly_one_recipient",
         ),
         CheckConstraint(
             "(status != 'sent') OR sent_at IS NOT NULL",
@@ -127,6 +132,14 @@ class Notification(Base):
             "event_type",
             "deduplication_key",
             name="uq_notifications_tenant_recipient_event_deduplication",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "recipient_candidate_id",
+            "channel",
+            "event_type",
+            "deduplication_key",
+            name="uq_notifications_tenant_candidate_event_deduplication",
         ),
         Index(
             "ix_notifications_tenant_status_scheduled_at",
@@ -149,6 +162,11 @@ class Notification(Base):
             "recipient_user_id",
             "status",
         ),
+        Index(
+            "ix_notifications_recipient_candidate_status",
+            "recipient_candidate_id",
+            "status",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -161,10 +179,13 @@ class Notification(Base):
         nullable=False,
         index=True,
     )
-    recipient_user_id: Mapped[UUID] = mapped_column(
+    recipient_user_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"),
-        nullable=False,
-        index=True,
+        nullable=True,
+    )
+    recipient_candidate_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("candidates.id", ondelete="CASCADE"),
+        nullable=True,
     )
     channel: Mapped[NotificationChannel] = mapped_column(
         PostgreSQLEnum(
@@ -193,6 +214,7 @@ class Notification(Base):
         nullable=False,
     )
     template_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    event_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # SHA-256 digest of the stable event/recipient identity, never a raw key.
     deduplication_key: Mapped[str] = mapped_column(

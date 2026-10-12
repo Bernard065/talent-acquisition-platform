@@ -162,6 +162,7 @@ async def main() -> None:
                         worker_id=worker_id,
                         sender=sender,
                         policy=delivery_policy,
+                        web_app_base_url=str(settings.web_app_base_url),
                     )
 
                 _record_heartbeat(settings.notification_worker_heartbeat_path)

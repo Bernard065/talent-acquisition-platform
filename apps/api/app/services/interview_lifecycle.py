@@ -27,6 +27,7 @@ from app.domains.interviews.transitions import (
     validate_interview_completion,
     validate_interview_reschedule,
 )
+from app.domains.notifications.enums import NotificationEventType
 from app.services.audit import record_audit_event
 from app.services.calendar_sync_events import enqueue_interview_calendar_sync
 from app.services.interview_lifecycle_errors import (
@@ -36,6 +37,7 @@ from app.services.interview_lifecycle_errors import (
     InterviewSessionNotFoundError,
     InterviewSessionVersionConflictError,
 )
+from app.services.interview_notifications import enqueue_interview_notifications
 
 _LIFECYCLE_WRITE_ROLES = frozenset(
     {
@@ -313,6 +315,12 @@ async def cancel_interview_session(
             },
         )
         await session.flush()
+        await enqueue_interview_notifications(
+            session,
+            context=context,
+            interview_session=interview_session,
+            event_type=NotificationEventType.INTERVIEW_CANCELLED,
+        )
         await session.refresh(interview_session)
 
     return interview_session
@@ -366,6 +374,13 @@ async def reschedule_interview_session(
                 )
 
             await session.flush()
+
+            await enqueue_interview_notifications(
+                session,
+                context=context,
+                interview_session=interview_session,
+                event_type=NotificationEventType.INTERVIEW_RESCHEDULED,
+            )
 
             enqueue_interview_calendar_sync(
                 session,

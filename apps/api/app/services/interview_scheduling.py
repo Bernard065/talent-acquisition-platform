@@ -20,9 +20,11 @@ from app.domains.interviews.enums import (
     InterviewParticipantRole,
     InterviewSessionStatus,
 )
+from app.domains.notifications.enums import NotificationEventType
 from app.services.audit import record_audit_event
 from app.services.calendar_sync_events import enqueue_interview_calendar_sync
 from app.services.candidate_errors import ApplicationNotFoundError
+from app.services.interview_notifications import enqueue_interview_notifications
 from app.services.interview_scheduling_errors import (
     InterviewApplicationNotReadyError,
     InterviewParticipantsNotFoundError,
@@ -221,6 +223,13 @@ async def schedule_interview(
             # PostgreSQL's exclusion constraint is the authoritative,
             # concurrency-safe double-booking check.
             await session.flush()
+
+            await enqueue_interview_notifications(
+                session,
+                context=context,
+                interview_session=interview_session,
+                event_type=NotificationEventType.INTERVIEW_SCHEDULED,
+            )
 
             enqueue_interview_calendar_sync(
                 session,
