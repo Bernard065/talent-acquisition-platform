@@ -1,5 +1,6 @@
 export type InterviewSessionStatus = "scheduled" | "completed" | "cancelled";
 export type InterviewParticipantRole = "interviewer" | "coordinator";
+export type InterviewFormat = "online" | "in_person";
 
 export const INTERVIEW_CANCELLATION_REASONS = [
   "candidate_withdrew",
@@ -21,7 +22,14 @@ export interface InterviewParticipantRequest {
 export interface ScheduleInterviewRequest {
   scheduled_start_at: string;
   scheduled_end_at: string;
+  format?: InterviewFormat | null;
+  meeting_url?: string | null;
+  location?: string | null;
   participants: InterviewParticipantRequest[];
+}
+
+export interface CompleteInterviewSessionRequest {
+  expected_version: number;
 }
 
 export interface InterviewParticipantSummaryResponse {
@@ -34,6 +42,9 @@ export interface InterviewSessionResponse {
   application_id: string;
   scheduled_start_at: string;
   scheduled_end_at: string;
+  format: InterviewFormat | null;
+  meeting_url: string | null;
+  location: string | null;
   status: InterviewSessionStatus;
   completed_at: string | null;
   cancelled_at: string | null;
@@ -41,6 +52,60 @@ export interface InterviewSessionResponse {
   created_at: string;
   updated_at: string;
   version: number;
+}
+
+export type InterviewFeedbackStatus = "draft" | "submitted";
+export type InterviewRecommendation = "strong_no" | "no" | "yes" | "strong_yes";
+
+export interface InterviewFeedback {
+  id: string;
+  interview_session_id: string;
+  status: InterviewFeedbackStatus;
+  overall_rating: number | null;
+  recommendation: InterviewRecommendation | null;
+  strengths: string | null;
+  concerns: string | null;
+  submitted_at: string | null;
+  created_at: string;
+  updated_at: string;
+  version: number;
+}
+
+export interface MyInterviewFeedbackResponse {
+  feedback: InterviewFeedback | null;
+}
+
+export interface InterviewFeedbackDraftRequest {
+  overall_rating?: number | null;
+  recommendation?: InterviewRecommendation | null;
+  strengths?: string | null;
+  concerns?: string | null;
+}
+
+export interface InterviewFeedbackUpdateRequest extends InterviewFeedbackDraftRequest {
+  expected_version: number;
+}
+
+export interface InterviewFeedbackSubmitRequest extends InterviewFeedbackUpdateRequest {
+  overall_rating: number;
+  recommendation: InterviewRecommendation;
+}
+
+export interface ApplicationSubmittedInterviewFeedback {
+  id: string;
+  interview_session_id: string;
+  scheduled_start_at: string;
+  interviewer_display_name: string;
+  status: "submitted";
+  overall_rating: number;
+  recommendation: InterviewRecommendation;
+  strengths: string | null;
+  concerns: string | null;
+  submitted_at: string;
+}
+
+export interface ApplicationSubmittedInterviewFeedbackList {
+  items: ApplicationSubmittedInterviewFeedback[];
 }
 
 export interface InterviewSearchResultResponse extends InterviewSessionResponse {

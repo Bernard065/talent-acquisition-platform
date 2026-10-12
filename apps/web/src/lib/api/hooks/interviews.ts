@@ -9,6 +9,7 @@ import {
 import { useSession } from "next-auth/react";
 import {
   cancelInterview,
+  completeInterview,
   getInterview,
   listInterviews,
   scheduleInterview,
@@ -81,6 +82,25 @@ export function useCancelInterview() {
         expected_version: interview.version,
         cancellation_reason: cancellationReason,
       },
+      idempotencyKey,
+    ),
+    onSuccess: async (interview) => {
+      queryClient.setQueryData(interviewQueryKeys.detail(interview.id), interview);
+      await queryClient.invalidateQueries({ queryKey: interviewQueryKeys.lists() });
+    },
+  });
+}
+
+export function useCompleteInterviewSession() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ interview, idempotencyKey }: {
+      interview: Pick<InterviewSessionResponse, "id" | "version">;
+      idempotencyKey: string;
+    }) => completeInterview(
+      interview.id,
+      { expected_version: interview.version },
       idempotencyKey,
     ),
     onSuccess: async (interview) => {

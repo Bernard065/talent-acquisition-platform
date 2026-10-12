@@ -15,7 +15,11 @@ from app.db.models.identity import User
 from app.db.models.interview import InterviewParticipant, InterviewSession
 from app.db.transactions import transactional
 from app.domains.candidates.enums import ApplicationStatus
-from app.domains.interviews.enums import InterviewParticipantRole, InterviewSessionStatus
+from app.domains.interviews.enums import (
+    InterviewFormat,
+    InterviewParticipantRole,
+    InterviewSessionStatus,
+)
 from app.services.audit import record_audit_event
 from app.services.calendar_sync_events import enqueue_interview_calendar_sync
 from app.services.candidate_errors import ApplicationNotFoundError
@@ -53,6 +57,9 @@ class ScheduleInterviewCommand:
     scheduled_start_at: datetime
     scheduled_end_at: datetime
     participants: tuple[InterviewParticipantCommand, ...]
+    format: InterviewFormat | None = None
+    meeting_url: str | None = None
+    location: str | None = None
 
     def __post_init__(self) -> None:
         start_at = _normalize_utc(self.scheduled_start_at, "scheduled_start_at")
@@ -66,6 +73,30 @@ class ScheduleInterviewCommand:
         if not self.participants:
             raise InterviewSchedulingValidationError(
                 "At least one interview participant is required."
+            )
+
+        normalized_location = self.location.strip() if self.location else None
+        if self.format is InterviewFormat.ONLINE:
+            if not self.meeting_url:
+                raise InterviewSchedulingValidationError(
+                    "An online interview requires a meeting URL."
+                )
+            if normalized_location:
+                raise InterviewSchedulingValidationError(
+                    "An online interview cannot include an in-person location."
+                )
+        elif self.format is InterviewFormat.IN_PERSON:
+            if self.meeting_url:
+                raise InterviewSchedulingValidationError(
+                    "An in-person interview cannot include a meeting URL."
+                )
+            if not normalized_location:
+                raise InterviewSchedulingValidationError(
+                    "An in-person interview requires a location."
+                )
+        elif self.meeting_url or normalized_location:
+            raise InterviewSchedulingValidationError(
+                "Set the interview format before providing location details."
             )
 
         participant_ids = [participant.user_id for participant in self.participants]
@@ -84,6 +115,7 @@ class ScheduleInterviewCommand:
 
         object.__setattr__(self, "scheduled_start_at", start_at)
         object.__setattr__(self, "scheduled_end_at", end_at)
+        object.__setattr__(self, "location", normalized_location)
 
 
 def _normalize_utc(value: datetime, field_name: str) -> datetime:
@@ -162,6 +194,9 @@ async def schedule_interview(
                 application_id=application.id,
                 scheduled_start_at=command.scheduled_start_at,
                 scheduled_end_at=command.scheduled_end_at,
+                format=command.format,
+                meeting_url=command.meeting_url,
+                location=command.location,
                 status=InterviewSessionStatus.SCHEDULED,
                 created_by_subject=context.subject,
             )

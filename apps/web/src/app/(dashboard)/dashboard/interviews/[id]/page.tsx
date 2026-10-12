@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
-import { useCancelInterview, useInterview } from "@/lib/api/hooks/interviews";
+import { InterviewFeedbackForm } from "@/components/interviews/interview-feedback-form";
+import { useCancelInterview, useCompleteInterviewSession, useInterview } from "@/lib/api/hooks/interviews";
+import { useApplicationSubmittedInterviewFeedback } from "@/lib/api/hooks/interview-feedback";
 import {
   INTERVIEW_CANCELLATION_REASONS,
   type InterviewCancellationReason,
@@ -26,12 +28,36 @@ export default function InterviewDetailsPage() {
   const { status: sessionStatus } = useSession();
   const { id } = useParams<{ id: string }>();
   const interviewQuery = useInterview(id);
+  const submittedFeedbackQuery = useApplicationSubmittedInterviewFeedback(
+    interviewQuery.data?.application_id ?? "",
+    Boolean(interviewQuery.data?.application_id),
+  );
   const cancelMutation = useCancelInterview();
+  const completeMutation = useCompleteInterviewSession();
   const interview = interviewQuery.data;
   const isLoading = sessionStatus === "loading" || interviewQuery.isLoading;
   const [cancellationReason, setCancellationReason] = useState<InterviewCancellationReason | "">("");
   const [isConfirming, setIsConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [now, setNow] = useState(0);
+  const [isConfirmingCompletion, setIsConfirmingCompletion] = useState(false);
+  const hasSubmittedFeedback = Boolean(
+    interview && submittedFeedbackQuery.data?.items.some(
+      (feedback) => feedback.interview_session_id === interview.id,
+    ),
+  );
+  const canComplete = Boolean(
+    interview && (
+      hasSubmittedFeedback || now >= new Date(interview.scheduled_end_at).getTime()
+    ),
+  );
+
+  useEffect(() => {
+    const updateNow = () => setNow(Date.now());
+    updateNow();
+    const intervalId = window.setInterval(updateNow, 30_000);
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   async function cancel() {
     if (!interview || !cancellationReason) {
@@ -49,6 +75,17 @@ export default function InterviewDetailsPage() {
       setCancellationReason("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not cancel the interview.");
+    }
+  }
+
+  async function complete() {
+    if (!interview || !canComplete) return;
+    setError(null);
+    try {
+      await completeMutation.mutateAsync({ interview, idempotencyKey: crypto.randomUUID() });
+      setIsConfirmingCompletion(false);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not complete the interview.");
     }
   }
 
@@ -119,6 +156,32 @@ export default function InterviewDetailsPage() {
                   </Link>
                 </dd>
               </div>
+              <div>
+                <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">Format</dt>
+                <dd className="mt-1 text-sm text-gray-900">
+                  {interview.format === "online"
+                    ? "Online"
+                    : interview.format === "in_person"
+                      ? "In person"
+                      : "Not specified"}
+                </dd>
+              </div>
+              {interview.location && (
+                <div>
+                  <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">Location</dt>
+                  <dd className="mt-1 text-sm text-gray-900">{interview.location}</dd>
+                </div>
+              )}
+              {interview.meeting_url && (
+                <div>
+                  <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">Online interview</dt>
+                  <dd className="mt-1">
+                    <a className="text-sm font-semibold text-sr-text-blue underline" href={interview.meeting_url} target="_blank" rel="noopener noreferrer">
+                      Join interview
+                    </a>
+                  </dd>
+                </div>
+              )}
               {interview.cancellation_reason && (
                 <div>
                   <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">Cancellation reason</dt>
@@ -128,6 +191,22 @@ export default function InterviewDetailsPage() {
             </dl>
             {interview.status === "scheduled" && (
               <div className="mt-8 border-t border-gray-100 pt-5">
+                {canComplete ? (
+                  <div className="mb-4 rounded-lg bg-blue-50 p-3">
+                    <p className="text-sm text-blue-900">
+                      {hasSubmittedFeedback
+                        ? "Feedback has been submitted. Confirm the interview took place to mark it complete."
+                        : "The scheduled end time has passed. Confirm the interview took place to mark it complete."}
+                    </p>
+                    <Button className="mt-3" disabled={completeMutation.isPending} onClick={() => { setError(null); setIsConfirmingCompletion(true); }}>
+                      Mark interview complete
+                    </Button>
+                  </div>
+                ) : (
+                  <p className="mb-4 text-sm text-gray-600">
+                    Submit interviewer feedback or wait until the scheduled end time to mark this interview complete.
+                  </p>
+                )}
                 <Button variant="destructive" onClick={() => { setError(null); setIsConfirming(true); }}>
                   Cancel interview
                 </Button>
@@ -136,7 +215,10 @@ export default function InterviewDetailsPage() {
             {error && !isConfirming && <p role="alert" className="mt-4 text-sm text-red-700">{error}</p>}
           </section>
 
-          <p className="text-xs text-gray-500">Session ID: {interview.id}</p>
+          <InterviewFeedbackForm
+            sessionId={interview.id}
+          />
+
         </>
       )}
 
@@ -174,6 +256,21 @@ export default function InterviewDetailsPage() {
               </Button>
               <Button variant="destructive" disabled={cancelMutation.isPending || !cancellationReason} onClick={() => void cancel()}>
                 {cancelMutation.isPending ? "Cancelling…" : "Confirm cancellation"}
+              </Button>
+            </div>
+          </section>
+        </div>
+      )}
+      {isConfirmingCompletion && interview?.status === "scheduled" && canComplete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <section role="dialog" aria-modal="true" aria-labelledby="complete-interview-title" className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <h2 id="complete-interview-title" className="text-lg font-semibold text-gray-900">Mark interview complete?</h2>
+            <p className="mt-2 text-sm text-gray-600">This records that the scheduled interview took place.</p>
+            {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
+            <div className="mt-6 flex justify-end gap-3">
+              <Button variant="outline" disabled={completeMutation.isPending} onClick={() => { setIsConfirmingCompletion(false); setError(null); }}>Cancel</Button>
+              <Button disabled={completeMutation.isPending} onClick={() => void complete()}>
+                {completeMutation.isPending ? "Saving…" : "Confirm completion"}
               </Button>
             </div>
           </section>

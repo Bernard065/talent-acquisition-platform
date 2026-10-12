@@ -1,6 +1,7 @@
 """Transactional, tenant-safe post-interview hiring decision workflow."""
 
 from dataclasses import dataclass
+from typing import cast
 from uuid import UUID
 
 from sqlalchemy import select
@@ -270,3 +271,31 @@ async def record_hiring_decision(
         await session.refresh(debrief)
 
     return debrief
+
+
+async def get_application_hiring_decision(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    application_id: UUID,
+) -> ApplicationDebrief | None:
+    """Return an existing final decision to authorized recruiting reviewers."""
+    _require_decision_access(context)
+    application = await session.scalar(
+        select(Application.id).where(
+            Application.id == application_id,
+            Application.tenant_id == context.tenant_id,
+        )
+    )
+    if application is None:
+        raise ApplicationNotFoundError("Application was not found.")
+
+    return cast(
+        ApplicationDebrief | None,
+        await session.scalar(
+            select(ApplicationDebrief).where(
+                ApplicationDebrief.tenant_id == context.tenant_id,
+                ApplicationDebrief.application_id == application_id,
+            )
+        ),
+    )

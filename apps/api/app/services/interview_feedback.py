@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import cast
 from uuid import UUID
 
 from sqlalchemy import select
@@ -9,8 +10,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authorization import Role, TenantContext
+from app.db.models.application import Application
 from app.db.models.identity import User
-from app.db.models.interview import InterviewParticipant
+from app.db.models.interview import InterviewParticipant, InterviewSession
 from app.db.models.interview_feedback import InterviewFeedback
 from app.db.transactions import transactional
 from app.domains.interviews.enums import (
@@ -30,6 +32,9 @@ from app.services.interview_feedback_errors import (
 
 _MAX_FEEDBACK_TEXT_LENGTH = 5_000
 _UNIQUE_VIOLATION_SQLSTATE = "23505"
+_FEEDBACK_REVIEW_ROLES = frozenset(
+    {Role.TENANT_ADMIN, Role.RECRUITER, Role.PEOPLE_OPERATIONS}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -444,3 +449,83 @@ async def get_owned_interview_feedback(
         raise InterviewFeedbackNotFoundError("Interview feedback was not found.")
 
     return feedback
+
+
+async def get_interview_session_feedback(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    interview_session_id: UUID,
+) -> InterviewFeedback | None:
+    """Return the caller's draft or submitted feedback for their assigned session."""
+    _require_interviewer_role(context)
+    interviewer_user_id = await _get_current_tenant_user_id(
+        session,
+        context=context,
+    )
+    await _require_assigned_interviewer(
+        session,
+        context=context,
+        interview_session_id=interview_session_id,
+        interviewer_user_id=interviewer_user_id,
+    )
+    return cast(
+        InterviewFeedback | None,
+        await session.scalar(
+            select(InterviewFeedback).where(
+                InterviewFeedback.tenant_id == context.tenant_id,
+                InterviewFeedback.interview_session_id == interview_session_id,
+                InterviewFeedback.interviewer_user_id == interviewer_user_id,
+            )
+        ),
+    )
+
+
+async def list_submitted_application_feedback(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    application_id: UUID,
+) -> list[tuple[InterviewFeedback, datetime, str]]:
+    """List submitted feedback for recruiting reviewers, never exposing drafts."""
+    if context.roles.isdisjoint(_FEEDBACK_REVIEW_ROLES):
+        raise InterviewFeedbackAccessDeniedError(
+            "Caller is not permitted to review interview feedback."
+        )
+
+    application_id_in_tenant = await session.scalar(
+        select(Application.id).where(
+            Application.id == application_id,
+            Application.tenant_id == context.tenant_id,
+        )
+    )
+    if application_id_in_tenant is None:
+        raise InterviewFeedbackNotFoundError("Application was not found.")
+
+    rows = await session.execute(
+        select(
+            InterviewFeedback,
+            InterviewSession.scheduled_start_at,
+            User.display_name,
+        )
+        .join(
+            InterviewSession,
+            InterviewSession.id == InterviewFeedback.interview_session_id,
+        )
+        .join(User, User.id == InterviewFeedback.interviewer_user_id)
+        .where(
+            InterviewFeedback.tenant_id == context.tenant_id,
+            InterviewSession.tenant_id == context.tenant_id,
+            InterviewSession.application_id == application_id,
+            InterviewFeedback.status == InterviewFeedbackStatus.SUBMITTED,
+            User.tenant_id == context.tenant_id,
+        )
+        .order_by(InterviewFeedback.submitted_at, InterviewFeedback.id)
+    )
+    return [
+        (feedback, scheduled_start_at, display_name)
+        for feedback, scheduled_start_at, display_name in rows.all()
+        if feedback.submitted_at is not None
+        and feedback.overall_rating is not None
+        and feedback.recommendation is not None
+    ]

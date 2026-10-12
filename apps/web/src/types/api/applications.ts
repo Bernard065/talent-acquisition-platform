@@ -118,3 +118,27 @@ export interface ApplicationFollowUpUpdateRequest extends ApplicationFollowUpReq
 export interface ApplicationFollowUpCompleteRequest {
   expected_version: number;
 }
+
+export type HiringDecision = "advance_to_offer" | "reject";
+
+export interface HiringDecisionResponse {
+  id: string;
+  application_id: string;
+  decision: HiringDecision;
+  rationale: string;
+  rejection_reason: ApplicationRejectionReason | null;
+  decided_at: string;
+  created_at: string;
+  version: number;
+}
+
+export interface HiringDecisionStateResponse {
+  decision: HiringDecisionResponse | null;
+}
+
+export interface RecordHiringDecisionRequest {
+  decision: HiringDecision;
+  expected_application_version: number;
+  rationale: string;
+  rejection_reason?: ApplicationRejectionReason | null;
+}

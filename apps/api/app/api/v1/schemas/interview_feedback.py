@@ -62,3 +62,30 @@ class InterviewFeedbackResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     version: int
+
+
+class MyInterviewFeedbackResponse(BaseModel):
+    """Only the caller's feedback for an assigned interview session."""
+
+    feedback: InterviewFeedbackResponse | None
+
+
+class ApplicationInterviewFeedbackItemResponse(BaseModel):
+    """Submitted interviewer assessment visible to recruiting decision makers."""
+
+    id: UUID
+    interview_session_id: UUID
+    scheduled_start_at: datetime
+    interviewer_display_name: str
+    status: InterviewFeedbackStatus
+    overall_rating: int
+    recommendation: InterviewRecommendation
+    strengths: str | None
+    concerns: str | None
+    submitted_at: datetime
+
+
+class ApplicationInterviewFeedbackListResponse(BaseModel):
+    """Submitted assessments for one application, excluding private drafts."""
+
+    items: list[ApplicationInterviewFeedbackItemResponse]

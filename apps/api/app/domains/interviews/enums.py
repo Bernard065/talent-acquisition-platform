@@ -3,6 +3,13 @@
 from enum import StrEnum
 
 
+class InterviewFormat(StrEnum):
+    """Where the interview takes place."""
+
+    ONLINE = "online"
+    IN_PERSON = "in_person"
+
+
 class InterviewSessionStatus(StrEnum):
     """Lifecycle state for an interview session."""
 
