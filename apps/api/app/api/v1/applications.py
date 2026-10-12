@@ -1,7 +1,7 @@
 """Version 1 job-application HTTP endpoints."""
 
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Response, status
@@ -18,6 +18,11 @@ from app.api.v1.schemas.applications import (
     ApplicationActivityResponse,
     ApplicationAssignmentRequest,
     ApplicationCreateRequest,
+    ApplicationFollowUpCompleteRequest,
+    ApplicationFollowUpCreateRequest,
+    ApplicationFollowUpListResponse,
+    ApplicationFollowUpResponse,
+    ApplicationFollowUpUpdateRequest,
     ApplicationListResponse,
     ApplicationPipelineItemResponse,
     ApplicationPipelineJobSummaryResponse,
@@ -31,6 +36,15 @@ from app.services.application_activity import list_application_activity
 from app.services.application_assignments import (
     AssignApplicationCommand,
     assign_application,
+)
+from app.services.application_follow_ups import (
+    ApplicationFollowUpCommand as FollowUpCommand,
+)
+from app.services.application_follow_ups import (
+    complete_application_follow_up,
+    create_application_follow_up,
+    list_application_follow_ups,
+    update_application_follow_up,
 )
 from app.services.application_pipeline import (
     TransitionApplicationStageCommand,
@@ -132,6 +146,164 @@ async def assign_application_endpoint(
         key=idempotency_key,
         operation_name="application.assign",
         payload={"application_id": str(application_id), **payload.model_dump(mode="json")},
+        operation=operation,
+    )
+    return _private_idempotency_response(result)
+
+
+@router.get(
+    "/{application_id}/follow-ups",
+    response_model=ApplicationFollowUpListResponse,
+    summary="List application follow-ups",
+)
+async def list_application_follow_ups_endpoint(
+    application_id: UUID,
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+) -> ApplicationFollowUpListResponse:
+    """Return the current and completed follow-ups for an application."""
+    items = await list_application_follow_ups(
+        session,
+        context=context,
+        application_id=application_id,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return ApplicationFollowUpListResponse(
+        items=[ApplicationFollowUpResponse.model_validate(item) for item in items],
+        active_follow_up_id=next(
+            (item.id for item in items if item.completed_at is None),
+            None,
+        ),
+    )
+
+
+@router.post(
+    "/{application_id}/follow-ups",
+    response_model=ApplicationFollowUpResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create an application follow-up",
+)
+async def create_application_follow_up_endpoint(
+    application_id: UUID,
+    payload: ApplicationFollowUpCreateRequest,
+    context: CallerContext,
+    session: DatabaseSession,
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Create a next action for the application's assigned recruiter."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        follow_up = await create_application_follow_up(
+            session,
+            context=context,
+            application_id=application_id,
+            command=FollowUpCommand(action=payload.action, due_at=payload.due_at),
+        )
+        return (
+            status.HTTP_201_CREATED,
+            ApplicationFollowUpResponse.model_validate(follow_up).model_dump(
+                mode="json"
+            ),
+        )
+
+    result = await execute_idempotently(
+        session,
+        context=context,
+        key=idempotency_key,
+        operation_name="application.follow_up.create",
+        payload={"application_id": str(application_id), **payload.model_dump(mode="json")},
+        operation=operation,
+    )
+    return _private_idempotency_response(result)
+
+
+@router.put(
+    "/{application_id}/follow-ups/{follow_up_id}",
+    response_model=ApplicationFollowUpResponse,
+    summary="Update a pending application follow-up",
+)
+async def update_application_follow_up_endpoint(
+    application_id: UUID,
+    follow_up_id: UUID,
+    payload: ApplicationFollowUpUpdateRequest,
+    context: CallerContext,
+    session: DatabaseSession,
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Update an active follow-up with optimistic concurrency."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        follow_up = await update_application_follow_up(
+            session,
+            context=context,
+            application_id=application_id,
+            follow_up_id=follow_up_id,
+            command=FollowUpCommand(action=payload.action, due_at=payload.due_at),
+            expected_version=payload.expected_version,
+        )
+        return (
+            status.HTTP_200_OK,
+            ApplicationFollowUpResponse.model_validate(follow_up).model_dump(
+                mode="json"
+            ),
+        )
+
+    result = await execute_idempotently(
+        session,
+        context=context,
+        key=idempotency_key,
+        operation_name="application.follow_up.update",
+        payload={
+            "application_id": str(application_id),
+            "follow_up_id": str(follow_up_id),
+            **payload.model_dump(mode="json"),
+        },
+        operation=operation,
+    )
+    return _private_idempotency_response(result)
+
+
+@router.post(
+    "/{application_id}/follow-ups/{follow_up_id}/complete",
+    response_model=ApplicationFollowUpResponse,
+    summary="Complete an application follow-up",
+)
+async def complete_application_follow_up_endpoint(
+    application_id: UUID,
+    follow_up_id: UUID,
+    payload: ApplicationFollowUpCompleteRequest,
+    context: CallerContext,
+    session: DatabaseSession,
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Mark a pending follow-up complete and retain it in history."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        follow_up = await complete_application_follow_up(
+            session,
+            context=context,
+            application_id=application_id,
+            follow_up_id=follow_up_id,
+            expected_version=payload.expected_version,
+        )
+        return (
+            status.HTTP_200_OK,
+            ApplicationFollowUpResponse.model_validate(follow_up).model_dump(
+                mode="json"
+            ),
+        )
+
+    result = await execute_idempotently(
+        session,
+        context=context,
+        key=idempotency_key,
+        operation_name="application.follow_up.complete",
+        payload={
+            "application_id": str(application_id),
+            "follow_up_id": str(follow_up_id),
+            **payload.model_dump(mode="json"),
+        },
         operation=operation,
     )
     return _private_idempotency_response(result)
@@ -242,6 +414,7 @@ async def summarize_application_pipeline_endpoint(
     applied_after: datetime | None = None,
     applied_before: datetime | None = None,
     mine: bool = False,
+    follow_up: Annotated[Literal["due"] | None, Query()] = None,
 ) -> ApplicationPipelineSummaryResponse:
     """Return filtered counts per job without returning candidate records."""
     summary = await summarize_application_pipeline(
@@ -255,6 +428,7 @@ async def summarize_application_pipeline_endpoint(
             applied_after=applied_after,
             applied_before=applied_before,
             assigned_to_subject=context.subject if mine else None,
+            follow_up_due=follow_up == "due",
         ),
     )
     response.headers["Cache-Control"] = "private, no-store"
@@ -267,6 +441,8 @@ async def summarize_application_pipeline_endpoint(
                 requisition_title=job.requisition_title,
                 total_count=job.total_count,
                 stage_counts=job.stage_counts,
+                follow_up_count=job.follow_up_count,
+                overdue_follow_up_count=job.overdue_follow_up_count,
             )
             for job in summary.jobs
         ],
@@ -294,6 +470,7 @@ async def search_application_pipeline_endpoint(
     applied_after: datetime | None = None,
     applied_before: datetime | None = None,
     mine: bool = False,
+    follow_up: Annotated[Literal["due"] | None, Query()] = None,
 ) -> ApplicationPipelineListResponse:
     """Return application cards with tenant-scoped candidate and job labels."""
 
@@ -308,6 +485,7 @@ async def search_application_pipeline_endpoint(
             applied_after=applied_after,
             applied_before=applied_before,
             assigned_to_subject=context.subject if mine else None,
+            follow_up_due=follow_up == "due",
         ),
         limit=limit,
         cursor=cursor,
@@ -324,6 +502,8 @@ async def search_application_pipeline_endpoint(
                 requisition_title=record.requisition_title,
                 assigned_to_user_id=record.application.assigned_to_user_id,
                 assigned_to_display_name=record.assigned_to_display_name,
+                follow_up_action=record.follow_up_action,
+                follow_up_due_at=record.follow_up_due_at,
                 status=record.application.status,
                 applied_at=record.application.applied_at,
                 version=record.application.version,

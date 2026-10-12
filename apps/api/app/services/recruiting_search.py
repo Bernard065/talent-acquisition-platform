@@ -7,12 +7,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import Select, and_, or_, select
+from sqlalchemy import Select, and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.functions import count
 
 from app.core.authorization import Role, TenantContext
 from app.db.models.application import Application
+from app.db.models.application_follow_up import ApplicationFollowUp
 from app.db.models.candidate import Candidate
 from app.db.models.identity import User
 from app.db.models.requisition import Requisition
@@ -56,6 +57,7 @@ class ApplicationSearchFilters:
     applied_after: datetime | None = None
     applied_before: datetime | None = None
     assigned_to_subject: str | None = None
+    follow_up_due: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +93,8 @@ class ApplicationPipelineRecord:
     candidate_email: str | None
     requisition_title: str
     assigned_to_display_name: str | None
+    follow_up_action: str | None
+    follow_up_due_at: datetime | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +114,8 @@ class ApplicationPipelineJobSummary:
     requisition_title: str
     total_count: int
     stage_counts: dict[ApplicationStatus, int]
+    follow_up_count: int
+    overdue_follow_up_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -430,11 +436,44 @@ async def summarize_application_pipeline(
                 requisition_title=requisition_title,
                 total_count=0,
                 stage_counts={status: 0 for status in ApplicationStatus},
+                follow_up_count=0,
+                overdue_follow_up_count=0,
             )
             jobs[requisition_id] = job
         job.stage_counts[application_status] = application_count
         job.total_count += application_count
         total_stage_counts[application_status] += application_count
+
+    filtered_application_ids = _application_search_statement(
+        context=context,
+        filters=normalized_filters,
+    ).with_only_columns(Application.id, Application.requisition_id).order_by(None).subquery()
+    follow_up_count_rows = await session.execute(
+        select(
+            filtered_application_ids.c.requisition_id,
+            count(ApplicationFollowUp.id),
+            func.sum(
+                case(
+                    (ApplicationFollowUp.due_at < datetime.now(UTC), 1),
+                    else_=0,
+                )
+            ),
+        )
+        .outerjoin(
+            ApplicationFollowUp,
+            and_(
+                ApplicationFollowUp.application_id == filtered_application_ids.c.id,
+                ApplicationFollowUp.tenant_id == context.tenant_id,
+                ApplicationFollowUp.completed_at.is_(None),
+            ),
+        )
+        .group_by(filtered_application_ids.c.requisition_id)
+    )
+    for requisition_id, follow_up_count, overdue_count in follow_up_count_rows:
+        job = jobs.get(requisition_id)
+        if job is not None:
+            job.follow_up_count = follow_up_count
+            job.overdue_follow_up_count = overdue_count or 0
 
     return ApplicationPipelineSummary(
         total_count=sum(total_stage_counts.values()),
@@ -500,6 +539,15 @@ def _application_search_statement(
         statement = statement.where(
             Application.assigned_to_user_id == assigned_user_id
         )
+
+    if filters.follow_up_due:
+        due_follow_up = select(ApplicationFollowUp.id).where(
+            ApplicationFollowUp.tenant_id == context.tenant_id,
+            ApplicationFollowUp.application_id == Application.id,
+            ApplicationFollowUp.completed_at.is_(None),
+            ApplicationFollowUp.due_at <= datetime.now(UTC),
+        )
+        statement = statement.where(due_follow_up.exists())
 
     if filters.status is not None:
         statement = statement.where(Application.status == filters.status)
@@ -607,6 +655,24 @@ async def search_application_pipeline(
             user_id: display_name for user_id, display_name in assigned_user_rows
         }
 
+    follow_up_rows = await session.execute(
+        select(
+            ApplicationFollowUp.application_id,
+            ApplicationFollowUp.action,
+            ApplicationFollowUp.due_at,
+        ).where(
+            ApplicationFollowUp.tenant_id == context.tenant_id,
+            ApplicationFollowUp.application_id.in_(
+                {application.id for application in page.items}
+            ),
+            ApplicationFollowUp.completed_at.is_(None),
+        )
+    )
+    follow_ups = {
+        application_id: (action, due_at)
+        for application_id, action, due_at in follow_up_rows
+    }
+
     records: list[ApplicationPipelineRecord] = []
     for application in page.items:
         candidate = candidates.get(application.candidate_id)
@@ -628,6 +694,16 @@ async def search_application_pipeline(
                 )
                 if application.assigned_to_user_id is not None
                 else None,
+                follow_up_action=(
+                    follow_ups[application.id][0]
+                    if application.id in follow_ups
+                    else None
+                ),
+                follow_up_due_at=(
+                    follow_ups[application.id][1]
+                    if application.id in follow_ups
+                    else None
+                ),
             )
         )
 

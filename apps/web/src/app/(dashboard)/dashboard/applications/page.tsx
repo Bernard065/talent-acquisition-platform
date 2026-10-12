@@ -46,12 +46,41 @@ const REJECTION_REASONS: { value: ApplicationRejectionReason; label: string }[] 
   { value: "other", label: "Other" },
 ];
 
-const APPLICATION_CARD_HEIGHT = 164;
+const APPLICATION_CARD_HEIGHT = 200;
 const VIRTUAL_LIST_OVERSCAN = 5;
 
 function formatAppliedDate(value: string): string {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(
     new Date(value),
+  );
+}
+
+function FollowUpIndicator({
+  action,
+  dueAt,
+}: {
+  action: string | null;
+  dueAt: string | null;
+}) {
+  if (!action || !dueAt) {
+    return <span className="text-xs text-gray-400">No follow-up</span>;
+  }
+  const dueDate = new Date(dueAt);
+  const now = new Date();
+  const isOverdue = dueDate < now;
+  const isDueToday = dueDate.toDateString() === now.toDateString();
+  const label = isOverdue ? "Overdue" : isDueToday ? "Due today" : "Due";
+  const style = isOverdue
+    ? "bg-red-100 text-red-800"
+    : isDueToday
+      ? "bg-amber-100 text-amber-900"
+      : "bg-blue-50 text-blue-800";
+
+  return (
+    <span title={`${action} · ${label} ${formatAppliedDate(dueAt)}`} className={`inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-xs ${style}`}>
+      <span className="shrink-0 font-semibold">{label} · {formatAppliedDate(dueAt)}</span>
+      <span className="truncate">{action}</span>
+    </span>
   );
 }
 
@@ -164,6 +193,12 @@ function JobApplicationGroup({
           <div className="min-w-0">
             <h2 className="truncate text-sm font-semibold text-sr-text-blue">{group.requisition_title}</h2>
             <p className="mt-1 text-xs text-gray-500">{group.total_count} application{group.total_count === 1 ? "" : "s"}</p>
+            {group.follow_up_count > 0 && (
+              <p className="mt-1 text-xs text-gray-600">
+                {group.follow_up_count} follow-up{group.follow_up_count === 1 ? "" : "s"}
+                {group.overdue_follow_up_count > 0 ? ` · ${group.overdue_follow_up_count} overdue` : ""}
+              </p>
+            )}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 pl-6 sm:pl-0" aria-label="Applicant counts by stage">
@@ -227,6 +262,7 @@ function JobApplicationGroup({
                         <span>Applied {formatAppliedDate(application.applied_at)}</span>
                       </div>
                       <p className="mt-1 text-xs text-gray-500">Owner: {application.assigned_to_display_name ?? "Unassigned"}</p>
+                      <div className="mt-2"><FollowUpIndicator action={application.follow_up_action} dueAt={application.follow_up_due_at} /></div>
                       <div className="mt-3">{renderStageActions(application)}</div>
                     </div>
                   </div>
@@ -236,7 +272,7 @@ function JobApplicationGroup({
             <div className="hidden overflow-x-auto sm:block">
               <table className="w-full min-w-190 text-left text-sm">
                 <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-                  <tr><th className="w-12 px-4 py-3">Select</th><th className="px-4 py-3">Candidate</th><th className="px-4 py-3">Owner</th><th className="px-4 py-3">Applied</th><th className="px-4 py-3">Stage</th><th className="w-48 px-4 py-3">Actions</th></tr>
+                  <tr><th className="w-12 px-4 py-3">Select</th><th className="px-4 py-3">Candidate</th><th className="px-4 py-3">Owner</th><th className="px-4 py-3">Next action</th><th className="px-4 py-3">Applied</th><th className="px-4 py-3">Stage</th><th className="w-48 px-4 py-3">Actions</th></tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {applications.map((application) => (
@@ -256,6 +292,7 @@ function JobApplicationGroup({
                         {application.candidate_email && <p className="mt-0.5 text-xs text-gray-500">{application.candidate_email}</p>}
                       </td>
                       <td className="px-4 py-3 text-gray-700">{application.assigned_to_display_name ?? "Unassigned"}</td>
+                      <td className="px-4 py-3"><FollowUpIndicator action={application.follow_up_action} dueAt={application.follow_up_due_at} /></td>
                       <td className="whitespace-nowrap px-4 py-3 text-gray-600">{formatAppliedDate(application.applied_at)}</td>
                       <td className="px-4 py-3"><span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">{STAGES.find((stage) => stage.status === application.status)?.label ?? application.status}</span></td>
                       <td className="px-4 py-3">{renderStageActions(application)}</td>
@@ -278,6 +315,7 @@ export default function ApplicationsPage() {
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<ApplicationStatus | "">("");
   const [myApplicationsOnly, setMyApplicationsOnly] = useState(false);
+  const [followUpDueOnly, setFollowUpDueOnly] = useState(false);
   const [appliedAfter, setAppliedAfter] = useState("");
   const [appliedBefore, setAppliedBefore] = useState("");
   const [view, setView] = useState<"jobs" | "board" | "table">("jobs");
@@ -298,6 +336,7 @@ export default function ApplicationsPage() {
     ...(selectedRequisition ? { requisition_id: selectedRequisition } : {}),
     ...(selectedStatus ? { status: selectedStatus } : {}),
     ...(myApplicationsOnly ? { mine: true } : {}),
+    ...(followUpDueOnly ? { follow_up: "due" as const } : {}),
     ...(!invalidDateRange && appliedAfter ? { applied_after: `${appliedAfter}T00:00:00Z` } : {}),
     ...(!invalidDateRange && appliedBefore ? { applied_before: `${appliedBefore}T23:59:59.999999Z` } : {}),
   };
@@ -507,6 +546,20 @@ export default function ApplicationsPage() {
             </select>
           </label>
           <label className="flex flex-col gap-1 text-xs font-medium text-gray-600">
+            Follow-up
+            <select
+              value={followUpDueOnly ? "due" : "all"}
+              onChange={(event) => {
+                clearPipelineSelection();
+                setFollowUpDueOnly(event.target.value === "due");
+              }}
+              className="h-10 min-w-44 rounded-lg border border-gray-200 bg-white px-3 text-sm font-normal text-gray-700 outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
+            >
+              <option value="all">All follow-ups</option>
+              <option value="due">Due or overdue</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600">
             Applied from
             <input type="date" value={appliedAfter} onChange={(event) => { clearPipelineSelection(); setAppliedAfter(event.target.value); }} className="h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm font-normal text-gray-700" />
           </label>
@@ -613,9 +666,11 @@ export default function ApplicationsPage() {
         <div className="rounded-xl border border-gray-200 bg-white p-8 text-sm text-gray-500" aria-live="polite">
           Loading applications…
         </div>
-      ) : error && applications.length === 0 ? null : totalMatchingApplications === 0 && (debouncedSearchQuery || selectedRequisition || selectedStatus || appliedAfter || appliedBefore || myApplicationsOnly) ? (
+      ) : error && applications.length === 0 ? null : totalMatchingApplications === 0 && (debouncedSearchQuery || selectedRequisition || selectedStatus || appliedAfter || appliedBefore || myApplicationsOnly || followUpDueOnly) ? (
         <div className="rounded-xl border border-dashed border-gray-300 bg-white p-12 text-center text-sm text-gray-600">
-          {myApplicationsOnly && !debouncedSearchQuery && !selectedRequisition && !selectedStatus && !appliedAfter && !appliedBefore
+          {followUpDueOnly && !debouncedSearchQuery && !selectedRequisition && !selectedStatus && !appliedAfter && !appliedBefore && !myApplicationsOnly
+            ? "No follow-ups are due or overdue."
+            : myApplicationsOnly && !debouncedSearchQuery && !selectedRequisition && !selectedStatus && !appliedAfter && !appliedBefore && !followUpDueOnly
             ? "No applications are assigned to you yet. Ask a teammate to assign one to you."
             : "No applications match these filters. Try changing the search or filter values."}
         </div>
@@ -667,6 +722,7 @@ export default function ApplicationsPage() {
                           <span>Applied {formatAppliedDate(application.applied_at)}</span>
                         </div>
                         <p className="mt-1 text-xs text-gray-500">Owner: {application.assigned_to_display_name ?? "Unassigned"}</p>
+                        <div className="mt-2"><FollowUpIndicator action={application.follow_up_action} dueAt={application.follow_up_due_at} /></div>
                         <div className="mt-3">{renderStageActions(application)}</div>
                       </div>
                     </div>
@@ -690,6 +746,7 @@ export default function ApplicationsPage() {
                     <th className="px-4 py-3">Candidate</th>
                     <th className="px-4 py-3">Job</th>
                     <th className="px-4 py-3">Owner</th>
+                    <th className="px-4 py-3">Next action</th>
                     <th className="px-4 py-3">Applied</th>
                     <th className="px-4 py-3">Stage</th>
                     <th className="px-4 py-3">Actions</th>
@@ -714,6 +771,7 @@ export default function ApplicationsPage() {
                       </td>
                       <td className="px-4 py-3 text-gray-700">{application.requisition_title}</td>
                       <td className="px-4 py-3 text-gray-700">{application.assigned_to_display_name ?? "Unassigned"}</td>
+                      <td className="px-4 py-3"><FollowUpIndicator action={application.follow_up_action} dueAt={application.follow_up_due_at} /></td>
                       <td className="whitespace-nowrap px-4 py-3 text-gray-600">{formatAppliedDate(application.applied_at)}</td>
                       <td className="px-4 py-3"><span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">{STAGES.find((stage) => stage.status === application.status)?.label ?? application.status}</span></td>
                       <td className="w-44 px-4 py-3">{renderStageActions(application)}</td>
@@ -744,7 +802,7 @@ export default function ApplicationsPage() {
                         renderApplication={(application) => (
                           <article
                             role="listitem"
-                            className="relative mb-2 h-39 overflow-hidden rounded-lg border border-gray-200 bg-white p-3 shadow-sm transition hover:border-sr-green/50 hover:shadow has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-sr-green"
+                className="relative mb-2 h-48 overflow-hidden rounded-lg border border-gray-200 bg-white p-3 shadow-sm transition hover:border-sr-green/50 hover:shadow has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-sr-green"
                           >
                             <Link
                               aria-label={`Open ${application.candidate_name} application for ${application.requisition_title}`}
@@ -766,6 +824,7 @@ export default function ApplicationsPage() {
                               <p className="mt-2 truncate text-xs font-medium text-gray-700">{application.requisition_title}</p>
                               <p className="mt-1 text-xs text-gray-500">Applied {formatAppliedDate(application.applied_at)}</p>
                               <p className="mt-1 truncate text-xs text-gray-500">Owner: {application.assigned_to_display_name ?? "Unassigned"}</p>
+                              <div className="mt-1 truncate"><FollowUpIndicator action={application.follow_up_action} dueAt={application.follow_up_due_at} /></div>
                               <div className="pointer-events-auto mt-2">{renderStageActions(application)}</div>
                             </div>
                           </article>

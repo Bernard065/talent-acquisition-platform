@@ -5,6 +5,7 @@ from app.db.models.application_debrief import (
     ApplicationDebrief,
     ApplicationDecisionHistory,
 )
+from app.db.models.application_follow_up import ApplicationFollowUp
 from app.db.models.application_stage_history import ApplicationStageHistory
 from app.db.models.approval import (
     ApprovalPolicy,
@@ -68,6 +69,7 @@ __all__ = [
     "ApplicationDebrief",
     "ApplicationDecisionHistory",
     "ApplicationStageHistory",
+    "ApplicationFollowUp",
     "ApprovalPolicy",
     "ApprovalPolicyStep",
     "AuditEvent",

@@ -10,18 +10,25 @@ import { useSession } from "next-auth/react";
 import {
   createApplication,
   assignApplication,
+  completeApplicationFollowUp,
+  createApplicationFollowUp,
   getApplicationActivity,
   getApplication,
   getApplicationPipelineSummary,
   listApplicationPipeline,
+  listApplicationFollowUps,
   listApplications,
   transitionApplicationStage,
+  updateApplicationFollowUp,
   type ApplicationFilterParams,
   type ApplicationSearchParams,
 } from "../services/applications";
 import type {
   ApplicationResponse,
   ApplicationAssignmentRequest,
+  ApplicationFollowUpCompleteRequest,
+  ApplicationFollowUpRequest,
+  ApplicationFollowUpUpdateRequest,
   ApplicationCreateRequest,
   ApplicationRejectionReason,
   ApplicationStatus,
@@ -41,6 +48,7 @@ export const applicationQueryKeys = {
     [...applicationQueryKeys.pipelineSummaries(), params] as const,
   detail: (id: string) => [...applicationQueryKeys.all, "detail", id] as const,
   activity: (id: string) => [...applicationQueryKeys.all, "activity", id] as const,
+  followUps: (id: string) => [...applicationQueryKeys.all, "follow-ups", id] as const,
 };
 
 export function useApplications(params: ApplicationSearchParams = {}) {
@@ -102,6 +110,65 @@ export function useApplicationActivity(id: string) {
     queryKey: applicationQueryKeys.activity(id),
     queryFn: ({ signal }) => getApplicationActivity(id, { signal }),
     enabled: status === "authenticated" && Boolean(id),
+  });
+}
+
+export function useApplicationFollowUps(id: string) {
+  const { status } = useSession();
+
+  return useQuery({
+    queryKey: applicationQueryKeys.followUps(id),
+    queryFn: ({ signal }) => listApplicationFollowUps(id, { signal }),
+    enabled: status === "authenticated" && Boolean(id),
+  });
+}
+
+function useInvalidateFollowUps() {
+  const queryClient = useQueryClient();
+  return async (id: string) => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: applicationQueryKeys.followUps(id) }),
+      queryClient.invalidateQueries({ queryKey: applicationQueryKeys.pipelines() }),
+      queryClient.invalidateQueries({ queryKey: applicationQueryKeys.pipelineSummaries() }),
+    ]);
+  };
+}
+
+export function useCreateApplicationFollowUp() {
+  const invalidateFollowUps = useInvalidateFollowUps();
+  return useMutation({
+    mutationFn: ({ id, followUp, idempotencyKey }: {
+      id: string;
+      followUp: ApplicationFollowUpRequest;
+      idempotencyKey: string;
+    }) => createApplicationFollowUp(id, followUp, idempotencyKey),
+    onSuccess: (_result, { id }) => invalidateFollowUps(id),
+  });
+}
+
+export function useUpdateApplicationFollowUp() {
+  const invalidateFollowUps = useInvalidateFollowUps();
+  return useMutation({
+    mutationFn: ({ id, followUpId, followUp, idempotencyKey }: {
+      id: string;
+      followUpId: string;
+      followUp: ApplicationFollowUpUpdateRequest;
+      idempotencyKey: string;
+    }) => updateApplicationFollowUp(id, followUpId, followUp, idempotencyKey),
+    onSuccess: (_result, { id }) => invalidateFollowUps(id),
+  });
+}
+
+export function useCompleteApplicationFollowUp() {
+  const invalidateFollowUps = useInvalidateFollowUps();
+  return useMutation({
+    mutationFn: ({ id, followUpId, followUp, idempotencyKey }: {
+      id: string;
+      followUpId: string;
+      followUp: ApplicationFollowUpCompleteRequest;
+      idempotencyKey: string;
+    }) => completeApplicationFollowUp(id, followUpId, followUp, idempotencyKey),
+    onSuccess: (_result, { id }) => invalidateFollowUps(id),
   });
 }
 

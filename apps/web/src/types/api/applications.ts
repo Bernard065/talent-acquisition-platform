@@ -59,6 +59,8 @@ export interface ApplicationPipelineItem {
   requisition_title: string;
   assigned_to_user_id: string | null;
   assigned_to_display_name: string | null;
+  follow_up_action: string | null;
+  follow_up_due_at: string | null;
   status: ApplicationStatus;
   applied_at: string;
   version: number;
@@ -80,10 +82,39 @@ export interface ApplicationPipelineJobSummary {
   requisition_title: string;
   total_count: number;
   stage_counts: Record<ApplicationStatus, number>;
+  follow_up_count: number;
+  overdue_follow_up_count: number;
 }
 
 export interface ApplicationPipelineSummaryResponse {
   total_count: number;
   stage_counts: Record<ApplicationStatus, number>;
   jobs: ApplicationPipelineJobSummary[];
+}
+
+export interface ApplicationFollowUp {
+  id: string;
+  action: string;
+  due_at: string;
+  created_at: string;
+  completed_at: string | null;
+  version: number;
+}
+
+export interface ApplicationFollowUpListResponse {
+  items: ApplicationFollowUp[];
+  active_follow_up_id: string | null;
+}
+
+export interface ApplicationFollowUpRequest {
+  action: string;
+  due_at: string;
+}
+
+export interface ApplicationFollowUpUpdateRequest extends ApplicationFollowUpRequest {
+  expected_version: number;
+}
+
+export interface ApplicationFollowUpCompleteRequest {
+  expected_version: number;
 }
