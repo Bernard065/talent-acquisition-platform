@@ -34,6 +34,11 @@ from app.services.application_pipeline_errors import (
     ApplicationRejectionReasonError,
     ApplicationVersionConflictError,
 )
+from app.services.application_screening_errors import (
+    ApplicationScreeningAccessDeniedError,
+    ApplicationScreeningConflictError,
+    ApplicationScreeningValidationError,
+)
 from app.services.approval_errors import (
     ApprovalDecisionAlreadyMadeError,
     ApprovalDecisionForbiddenError,
@@ -468,6 +473,30 @@ async def application_version_conflict(
         request,
         status_code=status.HTTP_409_CONFLICT,
         detail="Application has changed; retrieve the latest version and retry.",
+    )
+
+
+async def application_screening_conflict(
+    request: Request,
+    error: Exception,
+) -> JSONResponse:
+    """Explain why an assessment cannot be recorded in the current state."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_409_CONFLICT,
+        detail=str(error),
+    )
+
+
+async def invalid_application_screening_request(
+    request: Request,
+    error: Exception,
+) -> JSONResponse:
+    """Return a readable validation error for screening scorecards."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail=str(error),
     )
 
 
@@ -1365,6 +1394,18 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         ApplicationPipelineAccessDeniedError,
         forbidden,
+    )
+    application.add_exception_handler(
+        ApplicationScreeningAccessDeniedError,
+        forbidden,
+    )
+    application.add_exception_handler(
+        ApplicationScreeningConflictError,
+        application_screening_conflict,
+    )
+    application.add_exception_handler(
+        ApplicationScreeningValidationError,
+        invalid_application_screening_request,
     )
     application.add_exception_handler(
         InvalidApplicationTransition,
