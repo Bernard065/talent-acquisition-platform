@@ -13,7 +13,11 @@ import {
   useCandidateDocuments,
 } from "@/lib/api/hooks/documents";
 import { useRequisition } from "@/lib/api/hooks/requisitions";
-import type { ApplicationStatus } from "@/types/api/applications";
+import type {
+  ApplicationRejectionReason,
+  ApplicationStatus,
+} from "@/types/api/applications";
+import { useApplicationActivity } from "@/lib/api/hooks/applications";
 
 const STATUS_LABELS: Record<ApplicationStatus, string> = {
   applied: "New",
@@ -23,6 +27,15 @@ const STATUS_LABELS: Record<ApplicationStatus, string> = {
   hired: "Hired",
   rejected: "Rejected",
   withdrawn: "Withdrawn",
+};
+
+const REJECTION_REASON_LABELS: Record<ApplicationRejectionReason, string> = {
+  not_qualified: "Does not meet role requirements",
+  better_matched_candidate: "Another candidate was a stronger match",
+  failed_assessment: "Did not meet assessment criteria",
+  compensation_mismatch: "Compensation expectations did not align",
+  role_closed: "Role is no longer open",
+  other: "Other",
 };
 
 function formatDate(value: string): string {
@@ -64,6 +77,7 @@ export default function ApplicationDetailsPage() {
   const { status: sessionStatus } = useSession();
   const { id } = useParams<{ id: string }>();
   const applicationQuery = useApplication(id);
+  const activityQuery = useApplicationActivity(id);
   const application = applicationQuery.data;
   const candidateQuery = useCandidate(application?.candidate_id ?? "");
   const documentsQuery = useCandidateDocuments(application?.candidate_id ?? "");
@@ -232,6 +246,51 @@ export default function ApplicationDetailsPage() {
                   ? "Your browser blocked the preview window. Allow pop-ups for this site and try again."
                   : "We couldn’t prepare the document preview. Please try again."}
               </p>
+            )}
+          </section>
+
+          <section aria-labelledby="application-activity-heading" className="rounded-xl border border-gray-200 bg-white p-6">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 id="application-activity-heading" className="text-base font-semibold text-sr-text-blue">Application activity</h2>
+                <p className="mt-1 text-sm text-gray-600">A history of this application’s pipeline stage changes.</p>
+              </div>
+              {activityQuery.isError && (
+                <Button type="button" variant="outline" onClick={() => void activityQuery.refetch()}>
+                  Try again
+                </Button>
+              )}
+            </div>
+
+            {activityQuery.isLoading ? (
+              <p className="mt-5 text-sm text-gray-500" aria-live="polite">Loading application activity…</p>
+            ) : activityQuery.isError ? (
+              <p role="alert" className="mt-5 text-sm text-red-800">We couldn’t load the application activity. Please try again.</p>
+            ) : !activityQuery.data?.items.length ? (
+              <p className="mt-5 text-sm text-gray-600">No stage changes have been recorded for this application yet.</p>
+            ) : (
+              <ol className="mt-5 space-y-5">
+                {activityQuery.data.items.map((event) => (
+                  <li key={event.id} className="relative flex gap-3">
+                    <span aria-hidden="true" className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-sr-green ring-4 ring-sr-mint/30" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-gray-900">
+                        {event.from_status
+                          ? `Moved from ${STATUS_LABELS[event.from_status]} to ${STATUS_LABELS[event.to_status]}`
+                          : `Application submitted · ${STATUS_LABELS[event.to_status]}`}
+                      </p>
+                      <p className="mt-1 text-xs text-gray-600">
+                        {event.actor_display_name} · {formatDate(event.transitioned_at)}
+                      </p>
+                      {event.rejection_reason && (
+                        <p className="mt-2 text-sm text-gray-700">
+                          Reason: {REJECTION_REASON_LABELS[event.rejection_reason]}
+                        </p>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ol>
             )}
           </section>
         </>

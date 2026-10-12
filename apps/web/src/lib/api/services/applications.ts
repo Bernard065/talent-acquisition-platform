@@ -2,6 +2,7 @@ import { get, post, type RequestOptions } from "../client";
 import type { PaginationParams } from "../types";
 import type {
   ApplicationResponse,
+  ApplicationActivityResponse,
   ApplicationListResponse,
   ApplicationCreateRequest,
   ApplicationStatus,
@@ -56,6 +57,13 @@ export async function getApplication(
   options?: RequestOptions,
 ): Promise<ApplicationResponse> {
   return get<ApplicationResponse>(`/applications/${id}`, options);
+}
+
+export async function getApplicationActivity(
+  id: string,
+  options?: RequestOptions,
+): Promise<ApplicationActivityResponse> {
+  return get<ApplicationActivityResponse>(`/applications/${id}/activity`, options);
 }
 
 export async function createApplication(

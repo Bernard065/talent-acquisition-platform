@@ -5,7 +5,10 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
-from app.domains.candidates.enums import ApplicationStatus
+from app.domains.candidates.enums import (
+    ApplicationRejectionReason,
+    ApplicationStatus,
+)
 
 
 class ApplicationCreateRequest(BaseModel):
@@ -30,6 +33,23 @@ class ApplicationResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     version: int
+
+
+class ApplicationActivityItemResponse(BaseModel):
+    """One immutable pipeline-stage event for an application timeline."""
+
+    id: UUID
+    from_status: ApplicationStatus | None
+    to_status: ApplicationStatus
+    rejection_reason: ApplicationRejectionReason | None
+    actor_display_name: str
+    transitioned_at: datetime
+
+
+class ApplicationActivityResponse(BaseModel):
+    """Stage-transition activity for one application, newest first."""
+
+    items: list[ApplicationActivityItemResponse]
 
 
 class ApplicationListResponse(BaseModel):

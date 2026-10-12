@@ -9,6 +9,7 @@ import {
 import { useSession } from "next-auth/react";
 import {
   createApplication,
+  getApplicationActivity,
   getApplication,
   getApplicationPipelineSummary,
   listApplicationPipeline,
@@ -37,6 +38,7 @@ export const applicationQueryKeys = {
   pipelineSummary: (params: ApplicationFilterParams = {}) =>
     [...applicationQueryKeys.pipelineSummaries(), params] as const,
   detail: (id: string) => [...applicationQueryKeys.all, "detail", id] as const,
+  activity: (id: string) => [...applicationQueryKeys.all, "activity", id] as const,
 };
 
 export function useApplications(params: ApplicationSearchParams = {}) {
@@ -91,6 +93,16 @@ export function useApplication(id: string) {
   });
 }
 
+export function useApplicationActivity(id: string) {
+  const { status } = useSession();
+
+  return useQuery({
+    queryKey: applicationQueryKeys.activity(id),
+    queryFn: ({ signal }) => getApplicationActivity(id, { signal }),
+    enabled: status === "authenticated" && Boolean(id),
+  });
+}
+
 export function useCreateApplication() {
   const queryClient = useQueryClient();
 
@@ -134,6 +146,9 @@ export function useTransitionApplicationStage() {
         queryClient.invalidateQueries({ queryKey: applicationQueryKeys.lists() }),
         queryClient.invalidateQueries({ queryKey: applicationQueryKeys.pipelines() }),
         queryClient.invalidateQueries({ queryKey: applicationQueryKeys.pipelineSummaries() }),
+        queryClient.invalidateQueries({
+          queryKey: applicationQueryKeys.activity(application.id),
+        }),
         queryClient.setQueryData(
           applicationQueryKeys.detail(application.id),
           application,
