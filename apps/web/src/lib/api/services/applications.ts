@@ -7,6 +7,7 @@ import type {
   ApplicationStatus,
   ApplicationRejectionReason,
   ApplicationPipelineListResponse,
+  ApplicationPipelineSummaryResponse,
 } from "@/types/api";
 
 export interface ApplicationSearchParams extends PaginationParams {
@@ -17,6 +18,8 @@ export interface ApplicationSearchParams extends PaginationParams {
   applied_after?: string;
   applied_before?: string;
 }
+
+export type ApplicationFilterParams = Omit<ApplicationSearchParams, "cursor" | "limit">;
 
 export async function listApplications(
   params?: ApplicationSearchParams,
@@ -33,6 +36,16 @@ export async function listApplicationPipeline(
   options?: RequestOptions,
 ): Promise<ApplicationPipelineListResponse> {
   return get<ApplicationPipelineListResponse>("/applications/pipeline", {
+    ...options,
+    params: { ...options?.params, ...params },
+  });
+}
+
+export async function getApplicationPipelineSummary(
+  params?: ApplicationFilterParams,
+  options?: RequestOptions,
+): Promise<ApplicationPipelineSummaryResponse> {
+  return get<ApplicationPipelineSummaryResponse>("/applications/pipeline/summary", {
     ...options,
     params: { ...options?.params, ...params },
   });

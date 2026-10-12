@@ -7,8 +7,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import Select, and_, func, or_, select
+from sqlalchemy import Select, and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.functions import count
 
 from app.core.authorization import Role, TenantContext
 from app.db.models.application import Application
@@ -96,6 +97,25 @@ class ApplicationPipelinePage:
     items: list[ApplicationPipelineRecord]
     next_cursor: str | None
     stage_counts: dict[ApplicationStatus, int]
+
+
+@dataclass(slots=True)
+class ApplicationPipelineJobSummary:
+    """Tenant-safe application counts for one requisition."""
+
+    requisition_id: UUID
+    requisition_title: str
+    total_count: int
+    stage_counts: dict[ApplicationStatus, int]
+
+
+@dataclass(frozen=True, slots=True)
+class ApplicationPipelineSummary:
+    """Filtered pipeline totals grouped by requisition."""
+
+    total_count: int
+    stage_counts: dict[ApplicationStatus, int]
+    jobs: list[ApplicationPipelineJobSummary]
 
 
 def _require_recruiting_read_role(context: TenantContext) -> None:
@@ -298,19 +318,7 @@ async def search_applications(
     if not 1 <= limit <= 100:
         raise ValueError("Application search limit must be between 1 and 100.")
 
-    if (
-        filters.applied_after is not None
-        and filters.applied_before is not None
-        and _normalize_aware_datetime(
-            filters.applied_after,
-            field_name="applied_after",
-        )
-        > _normalize_aware_datetime(
-            filters.applied_before,
-            field_name="applied_before",
-        )
-    ):
-        raise ValueError("applied_after must not be later than applied_before.")
+    _validate_application_search_filters(filters)
 
     statement = _application_search_statement(context=context, filters=filters)
 
@@ -348,6 +356,87 @@ async def search_applications(
             if has_next_page
             else None
         ),
+    )
+
+
+def _validate_application_search_filters(filters: ApplicationSearchFilters) -> None:
+    """Validate the date bounds shared by application searches and summaries."""
+    if (
+        filters.applied_after is not None
+        and filters.applied_before is not None
+        and _normalize_aware_datetime(
+            filters.applied_after,
+            field_name="applied_after",
+        )
+        > _normalize_aware_datetime(
+            filters.applied_before,
+            field_name="applied_before",
+        )
+    ):
+        raise ValueError("applied_after must not be later than applied_before.")
+
+
+async def summarize_application_pipeline(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    filters: ApplicationSearchFilters | None = None,
+) -> ApplicationPipelineSummary:
+    """Return tenant-scoped application totals grouped by job and stage."""
+    _require_recruiting_read_role(context)
+    normalized_filters = filters or ApplicationSearchFilters()
+    _validate_application_search_filters(normalized_filters)
+
+    filtered_applications = _application_search_statement(
+        context=context,
+        filters=normalized_filters,
+    ).with_only_columns(
+        Application.requisition_id,
+        Application.status,
+    ).order_by(None).subquery()
+
+    rows = await session.execute(
+        select(
+            filtered_applications.c.requisition_id,
+            Requisition.title,
+            filtered_applications.c.status,
+            count(),
+        )
+        .join(
+            Requisition,
+            and_(
+                Requisition.id == filtered_applications.c.requisition_id,
+                Requisition.tenant_id == context.tenant_id,
+            ),
+        )
+        .group_by(
+            filtered_applications.c.requisition_id,
+            Requisition.title,
+            filtered_applications.c.status,
+        )
+        .order_by(Requisition.title, filtered_applications.c.requisition_id)
+    )
+
+    jobs: dict[UUID, ApplicationPipelineJobSummary] = {}
+    total_stage_counts = {application_status: 0 for application_status in ApplicationStatus}
+    for requisition_id, requisition_title, application_status, application_count in rows:
+        job = jobs.get(requisition_id)
+        if job is None:
+            job = ApplicationPipelineJobSummary(
+                requisition_id=requisition_id,
+                requisition_title=requisition_title,
+                total_count=0,
+                stage_counts={status: 0 for status in ApplicationStatus},
+            )
+            jobs[requisition_id] = job
+        job.stage_counts[application_status] = application_count
+        job.total_count += application_count
+        total_stage_counts[application_status] += application_count
+
+    return ApplicationPipelineSummary(
+        total_count=sum(total_stage_counts.values()),
+        stage_counts=total_stage_counts,
+        jobs=list(jobs.values()),
     )
 
 
@@ -444,7 +533,7 @@ async def search_application_pipeline(
         filters=filters,
     ).with_only_columns(Application.id, Application.status).order_by(None).subquery()
     count_rows = await session.execute(
-        select(filtered_applications.c.status, func.count())
+        select(filtered_applications.c.status, count())
         .group_by(filtered_applications.c.status)
     )
     stage_counts = {application_status: 0 for application_status in ApplicationStatus}

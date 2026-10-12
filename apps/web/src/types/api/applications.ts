@@ -53,3 +53,16 @@ export interface ApplicationPipelineListResponse {
   next_cursor?: string | null;
   stage_counts: Record<ApplicationStatus, number>;
 }
+
+export interface ApplicationPipelineJobSummary {
+  requisition_id: string;
+  requisition_title: string;
+  total_count: number;
+  stage_counts: Record<ApplicationStatus, number>;
+}
+
+export interface ApplicationPipelineSummaryResponse {
+  total_count: number;
+  stage_counts: Record<ApplicationStatus, number>;
+  jobs: ApplicationPipelineJobSummary[];
+}

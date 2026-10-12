@@ -8,11 +8,14 @@ import { Button } from "@/components/ui/button";
 import {
   useBulkTransitionApplicationStage,
   useApplicationPipeline,
+  useApplicationPipelineSummary,
   useTransitionApplicationStage,
 } from "@/lib/api/hooks/applications";
+import type { ApplicationFilterParams } from "@/lib/api/services/applications";
 import { useRequisitions } from "@/lib/api/hooks/requisitions";
 import type {
   ApplicationPipelineItem,
+  ApplicationPipelineJobSummary,
   ApplicationRejectionReason,
   ApplicationStatus,
 } from "@/types/api";
@@ -118,6 +121,154 @@ function VirtualizedApplicationLane({
   );
 }
 
+function JobApplicationGroup({
+  group,
+  filters,
+  selectedApplications,
+  isTransitioning,
+  onToggleSelection,
+  renderStageActions,
+}: {
+  group: ApplicationPipelineJobSummary;
+  filters: ApplicationFilterParams;
+  selectedApplications: ReadonlyMap<string, ApplicationPipelineItem>;
+  isTransitioning: boolean;
+  onToggleSelection: (application: ApplicationPipelineItem, selected: boolean) => void;
+  renderStageActions: (application: ApplicationPipelineItem) => ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const applicationsQuery = useApplicationPipeline({
+    ...filters,
+    requisition_id: group.requisition_id,
+    limit: 50,
+  }, expanded);
+  const applications = useMemo(
+    () => applicationsQuery.data?.pages.flatMap((page) => page.items) ?? [],
+    [applicationsQuery.data],
+  );
+  const allLoadedSelected = applications.length > 0
+    && applications.every((application) => selectedApplications.has(application.id));
+
+  function toggleAllLoaded(selected: boolean) {
+    for (const application of applications) onToggleSelection(application, selected);
+  }
+
+  return (
+    <details
+      className="group rounded-xl border border-gray-200 bg-white shadow-sm"
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+    >
+      <summary className="flex cursor-pointer list-none flex-col gap-3 p-4 hover:bg-gray-50 sm:flex-row sm:items-center sm:justify-between [&::-webkit-details-marker]:hidden">
+        <div className="flex min-w-0 items-start gap-3">
+          <span aria-hidden="true" className="mt-0.5 text-gray-400 transition group-open:rotate-90">›</span>
+          <div className="min-w-0">
+            <h2 className="truncate text-sm font-semibold text-sr-text-blue">{group.requisition_title}</h2>
+            <p className="mt-1 text-xs text-gray-500">{group.total_count} application{group.total_count === 1 ? "" : "s"}</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 pl-6 sm:pl-0" aria-label="Applicant counts by stage">
+          {STAGES.filter((stage) => group.stage_counts[stage.status] > 0).map((stage) => (
+            <span key={stage.status} className="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-600">
+              {stage.label} {group.stage_counts[stage.status]}
+            </span>
+          ))}
+          <span className="ml-1 text-xs font-medium text-sr-green">View applications</span>
+        </div>
+      </summary>
+      <div className="border-t border-gray-100 p-3">
+        {applicationsQuery.isLoading ? (
+          <p className="px-1 py-4 text-sm text-gray-500" role="status">Loading applications…</p>
+        ) : applicationsQuery.isError ? (
+          <div className="flex flex-col gap-3 rounded-lg bg-red-50 p-3 text-sm text-red-800 sm:flex-row sm:items-center sm:justify-between" role="alert">
+            <p>We couldn’t load applications for this job.</p>
+            <Button variant="outline" onClick={() => void applicationsQuery.refetch()}>Try again</Button>
+          </div>
+        ) : (
+          <>
+            <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={allLoadedSelected}
+                  disabled={applications.length === 0 || isTransitioning}
+                  onChange={(event) => toggleAllLoaded(event.target.checked)}
+                  className="size-4 cursor-pointer accent-sr-green disabled:cursor-not-allowed"
+                  aria-label={`Select all ${applications.length} loaded applications for ${group.requisition_title}`}
+                />
+                Select loaded applications ({applications.length})
+              </label>
+              {applicationsQuery.hasNextPage && (
+                <Button
+                  variant="outline"
+                  disabled={applicationsQuery.isFetchingNextPage}
+                  onClick={() => void applicationsQuery.fetchNextPage()}
+                >
+                  {applicationsQuery.isFetchingNextPage ? "Loading…" : "Load more for this job"}
+                </Button>
+              )}
+            </div>
+            <div className="space-y-2 sm:hidden">
+              {applications.map((application) => (
+                <article key={application.id} className="rounded-lg border border-gray-200 p-3">
+                  <div className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedApplications.has(application.id)}
+                      disabled={isTransitioning}
+                      onChange={(event) => onToggleSelection(application, event.target.checked)}
+                      className="mt-1 size-4 shrink-0 cursor-pointer accent-sr-green disabled:cursor-not-allowed"
+                      aria-label={`Select ${application.candidate_name}`}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <Link href={`/dashboard/applications/${application.id}`} className="block truncate text-sm font-semibold text-sr-text-blue hover:text-sr-green">{application.candidate_name}</Link>
+                      {application.candidate_email && <p className="mt-0.5 break-all text-xs text-gray-500">{application.candidate_email}</p>}
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-600">
+                        <span className="rounded-full bg-gray-100 px-2.5 py-1">{STAGES.find((stage) => stage.status === application.status)?.label ?? application.status}</span>
+                        <span>Applied {formatAppliedDate(application.applied_at)}</span>
+                      </div>
+                      <div className="mt-3">{renderStageActions(application)}</div>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto sm:block">
+              <table className="w-full min-w-190 text-left text-sm">
+                <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                  <tr><th className="w-12 px-4 py-3">Select</th><th className="px-4 py-3">Candidate</th><th className="px-4 py-3">Applied</th><th className="px-4 py-3">Stage</th><th className="w-48 px-4 py-3">Actions</th></tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {applications.map((application) => (
+                    <tr key={application.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedApplications.has(application.id)}
+                          disabled={isTransitioning}
+                          onChange={(event) => onToggleSelection(application, event.target.checked)}
+                          className="size-4 cursor-pointer accent-sr-green disabled:cursor-not-allowed"
+                          aria-label={`Select ${application.candidate_name}`}
+                        />
+                      </td>
+                      <td className="px-4 py-3">
+                        <Link href={`/dashboard/applications/${application.id}`} className="font-medium text-sr-text-blue hover:text-sr-green">{application.candidate_name}</Link>
+                        {application.candidate_email && <p className="mt-0.5 text-xs text-gray-500">{application.candidate_email}</p>}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-gray-600">{formatAppliedDate(application.applied_at)}</td>
+                      <td className="px-4 py-3"><span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">{STAGES.find((stage) => stage.status === application.status)?.label ?? application.status}</span></td>
+                      <td className="px-4 py-3">{renderStageActions(application)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </div>
+    </details>
+  );
+}
+
 export default function ApplicationsPage() {
   const { status: sessionStatus } = useSession();
   const [selectedRequisition, setSelectedRequisition] = useState("");
@@ -129,7 +280,9 @@ export default function ApplicationsPage() {
   const [view, setView] = useState<"jobs" | "board" | "table">("jobs");
   const [pendingRejection, setPendingRejection] = useState<ApplicationPipelineItem | null>(null);
   const [pendingBulkRejection, setPendingBulkRejection] = useState(false);
-  const [selectedApplicationIds, setSelectedApplicationIds] = useState<Set<string>>(() => new Set());
+  const [selectedApplicationById, setSelectedApplicationById] = useState<Map<string, ApplicationPipelineItem>>(
+    () => new Map(),
+  );
   const [bulkFeedback, setBulkFeedback] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState<ApplicationRejectionReason>("not_qualified");
   useEffect(() => {
@@ -137,14 +290,15 @@ export default function ApplicationsPage() {
     return () => window.clearTimeout(timeout);
   }, [searchQuery]);
   const invalidDateRange = Boolean(appliedAfter && appliedBefore && appliedAfter > appliedBefore);
-  const applicationsQuery = useApplicationPipeline({
-    limit: 50,
+  const applicationFilters: ApplicationFilterParams = {
     ...(debouncedSearchQuery ? { query: debouncedSearchQuery } : {}),
     ...(selectedRequisition ? { requisition_id: selectedRequisition } : {}),
     ...(selectedStatus ? { status: selectedStatus } : {}),
     ...(!invalidDateRange && appliedAfter ? { applied_after: `${appliedAfter}T00:00:00Z` } : {}),
     ...(!invalidDateRange && appliedBefore ? { applied_before: `${appliedBefore}T23:59:59.999999Z` } : {}),
-  });
+  };
+  const applicationsQuery = useApplicationPipeline({ limit: 50, ...applicationFilters }, view !== "jobs");
+  const summaryQuery = useApplicationPipelineSummary(applicationFilters, view === "jobs");
   const requisitionsQuery = useRequisitions({ limit: 100 });
   const transitionMutation = useTransitionApplicationStage();
   const bulkTransitionMutation = useBulkTransitionApplicationStage();
@@ -152,30 +306,10 @@ export default function ApplicationsPage() {
     () => applicationsQuery.data?.pages.flatMap((page) => page.items) ?? [],
     [applicationsQuery.data],
   );
-  const jobApplicationGroups = useMemo(() => {
-    const groups = new Map<string, { title: string; applications: ApplicationPipelineItem[] }>();
-    for (const application of applications) {
-      const group = groups.get(application.requisition_id) ?? {
-        title: application.requisition_title,
-        applications: [],
-      };
-      group.applications.push(application);
-      groups.set(application.requisition_id, group);
-    }
-    return Array.from(groups, ([requisitionId, group]) => {
-      const stageCounts = group.applications.reduce<Record<ApplicationStatus, number>>(
-        (counts, application) => {
-          counts[application.status] += 1;
-          return counts;
-        },
-        { applied: 0, screening: 0, interview: 0, offer: 0, hired: 0, rejected: 0, withdrawn: 0 },
-      );
-      return { requisitionId, ...group, stageCounts };
-    })
-      .sort((left, right) => left.title.localeCompare(right.title));
-  }, [applications]);
+  const jobApplicationGroups = summaryQuery.data?.jobs ?? [];
   const requisitions = requisitionsQuery.data?.pages.flatMap((page) => page.items) ?? [];
-  const selectedApplications = applications.filter((application) => selectedApplicationIds.has(application.id));
+  const selectedApplications = Array.from(selectedApplicationById.values());
+  const selectedApplicationIds = new Set(selectedApplicationById.keys());
   const bulkStageOptions = selectedApplications.length
     ? (ALLOWED_NEXT_STAGES[selectedApplications[0].status] ?? []).filter((targetStatus) =>
       selectedApplications.every((application) =>
@@ -183,13 +317,13 @@ export default function ApplicationsPage() {
       ),
     )
     : [];
-  const allLoadedApplicationsSelected = applications.length > 0
+  const allLoadedApplicationsSelected = view !== "jobs" && applications.length > 0
     && applications.every((application) => selectedApplicationIds.has(application.id));
   const isLoading = sessionStatus !== "authenticated"
-    || applicationsQuery.isLoading
+    || (view === "jobs" ? summaryQuery.isLoading : applicationsQuery.isLoading)
     || requisitionsQuery.isLoading;
   const isTransitioning = transitionMutation.isPending || bulkTransitionMutation.isPending;
-  const error = applicationsQuery.isError || requisitionsQuery.isError
+  const error = (view === "jobs" ? summaryQuery.isError : applicationsQuery.isError) || requisitionsQuery.isError
     ? "We couldn’t load applications from your workspace. Please try again."
     : null;
   const transitionError = transitionMutation.isError
@@ -201,9 +335,9 @@ export default function ApplicationsPage() {
     targetStatus: ApplicationStatus,
     reason?: ApplicationRejectionReason,
   ) {
-    setSelectedApplicationIds((current) => {
+    setSelectedApplicationById((current) => {
       if (!current.has(application.id)) return current;
-      const next = new Set(current);
+      const next = new Map(current);
       next.delete(application.id);
       return next;
     });
@@ -217,27 +351,27 @@ export default function ApplicationsPage() {
   }
 
   function clearPipelineSelection() {
-    setSelectedApplicationIds(new Set());
+    setSelectedApplicationById(new Map());
     setBulkFeedback(null);
     setPendingBulkRejection(false);
     setPendingRejection(null);
   }
 
-  function toggleApplicationSelection(applicationId: string, selected: boolean) {
-    setSelectedApplicationIds((current) => {
-      const next = new Set(current);
-      if (selected) next.add(applicationId);
-      else next.delete(applicationId);
+  function toggleApplicationSelection(application: ApplicationPipelineItem, selected: boolean) {
+    setSelectedApplicationById((current) => {
+      const next = new Map(current);
+      if (selected) next.set(application.id, application);
+      else next.delete(application.id);
       return next;
     });
     setBulkFeedback(null);
   }
 
   function toggleAllLoadedApplications(selected: boolean) {
-    setSelectedApplicationIds((current) => {
-      const next = new Set(current);
+    setSelectedApplicationById((current) => {
+      const next = new Map(current);
       for (const application of applications) {
-        if (selected) next.add(application.id);
+        if (selected) next.set(application.id, application);
         else next.delete(application.id);
       }
       return next;
@@ -265,7 +399,12 @@ export default function ApplicationsPage() {
       const failedIds = results.filter((result) => !result.application).map((result) => result.id);
       const succeeded = results.length - failedIds.length;
       const targetLabel = STAGES.find((stage) => stage.status === targetStatus)?.label ?? targetStatus;
-      setSelectedApplicationIds(new Set(failedIds));
+      const failedApplications = new Map<string, ApplicationPipelineItem>();
+      for (const id of failedIds) {
+        const application = selectedApplicationById.get(id);
+        if (application) failedApplications.set(id, application);
+      }
+      setSelectedApplicationById(failedApplications);
       setBulkFeedback(failedIds.length
         ? `${succeeded} application${succeeded === 1 ? "" : "s"} moved to ${targetLabel}; ${failedIds.length} could not be updated. The failed applications remain selected.`
         : `${succeeded} application${succeeded === 1 ? "" : "s"} moved to ${targetLabel}.`);
@@ -317,17 +456,20 @@ export default function ApplicationsPage() {
     },
     { applied: 0, screening: 0, interview: 0, offer: 0, hired: 0, rejected: 0, withdrawn: 0 },
   );
-  const stageCounts = applicationsQuery.data?.pages[0]?.stage_counts ?? loadedStageCounts;
-  const totalMatchingApplications = Object.values(stageCounts).reduce((total, count) => total + count, 0);
+  const stageCounts = view === "jobs"
+    ? summaryQuery.data?.stage_counts ?? loadedStageCounts
+    : applicationsQuery.data?.pages[0]?.stage_counts ?? loadedStageCounts;
+  const totalMatchingApplications = view === "jobs"
+    ? summaryQuery.data?.total_count ?? 0
+    : Object.values(stageCounts).reduce((total, count) => total + count, 0);
   return (
     <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-6">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <header className="flex flex-col gap-4">
         <div>
-          <p className="text-sm font-medium text-gray-500">Recruit</p>
           <h1 className="mt-1 text-2xl font-bold tracking-tight text-sr-text-blue">Applications</h1>
           <p className="mt-2 text-sm text-gray-600">Review candidates and track progress across your open roles.</p>
         </div>
-        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+        <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
           <label className="flex flex-col gap-1 text-xs font-medium text-gray-600">
             Search
             <input id="application-search" type="search" value={searchQuery} onChange={(event) => { clearPipelineSelection(); setSearchQuery(event.target.value); }} placeholder="Candidate, email, or job" className="h-10 min-w-56 rounded-lg border border-gray-200 bg-white px-3 text-sm font-normal outline-none placeholder:text-gray-400 focus:border-sr-green focus:ring-2 focus:ring-sr-green/20" />
@@ -358,9 +500,9 @@ export default function ApplicationsPage() {
       </header>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-gray-600" aria-live="polite">
-          {invalidDateRange ? "The start date must be on or before the end date." : `${totalMatchingApplications} matching application${totalMatchingApplications === 1 ? "" : "s"}`}
-        </p>
+        {invalidDateRange && (
+          <p className="text-sm text-red-700" role="alert">The start date must be on or before the end date.</p>
+        )}
         <div className="flex flex-wrap items-center gap-3">
           <div className="inline-flex self-start rounded-lg border border-gray-200 bg-white p-1" role="group" aria-label="Applications layout">
             <button type="button" aria-pressed={view === "jobs"} onClick={() => setView("jobs")} className={`rounded-md px-3 py-1.5 text-sm ${view === "jobs" ? "bg-sr-text-blue text-white" : "text-gray-700 hover:bg-gray-100"}`}>By job</button>
@@ -371,17 +513,21 @@ export default function ApplicationsPage() {
       </div>
 
       <div className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
-        <label className="flex items-center gap-2 text-sm text-gray-700">
-          <input
-            type="checkbox"
-            checked={allLoadedApplicationsSelected}
-            disabled={applications.length === 0 || isTransitioning}
-            onChange={(event) => toggleAllLoadedApplications(event.target.checked)}
-            className="size-4 cursor-pointer accent-sr-green disabled:cursor-not-allowed"
-            aria-label="Select all loaded applications"
-          />
-          Select all loaded ({applications.length})
-        </label>
+        {view === "jobs" ? (
+          <p className="text-sm text-gray-600">Expand a job to select its loaded applications for bulk actions.</p>
+        ) : (
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={allLoadedApplicationsSelected}
+              disabled={applications.length === 0 || isTransitioning}
+              onChange={(event) => toggleAllLoadedApplications(event.target.checked)}
+              className="size-4 cursor-pointer accent-sr-green disabled:cursor-not-allowed"
+              aria-label="Select all loaded applications"
+            />
+            Select all loaded ({applications.length})
+          </label>
+        )}
         {selectedApplications.length > 0 && (
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <span className="text-sm font-medium text-gray-700" aria-live="polite">
@@ -432,7 +578,7 @@ export default function ApplicationsPage() {
           <Button
             variant="outline"
             onClick={() => void Promise.all([
-              applicationsQuery.refetch(),
+              view === "jobs" ? summaryQuery.refetch() : applicationsQuery.refetch(),
               requisitionsQuery.refetch(),
             ])}
           >Try again</Button>
@@ -466,88 +612,15 @@ export default function ApplicationsPage() {
           {view === "jobs" && (
             <div className="space-y-3">
               {jobApplicationGroups.map((group) => (
-                <details key={group.requisitionId} className="group rounded-xl border border-gray-200 bg-white shadow-sm">
-                  <summary className="flex cursor-pointer list-none flex-col gap-3 p-4 hover:bg-gray-50 sm:flex-row sm:items-center sm:justify-between [&::-webkit-details-marker]:hidden">
-                    <div className="flex min-w-0 items-start gap-3">
-                      <span aria-hidden="true" className="mt-0.5 text-gray-400 transition group-open:rotate-90">›</span>
-                      <div className="min-w-0">
-                        <h2 className="truncate text-sm font-semibold text-sr-text-blue">{group.title}</h2>
-                        <p className="mt-1 text-xs text-gray-500">{group.applications.length} applicants loaded</p>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 pl-6 sm:pl-0" aria-label="Applicant counts by stage">
-                      {STAGES.filter((stage) => group.stageCounts[stage.status] > 0).map((stage) => (
-                        <span key={stage.status} className="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-600">
-                          {stage.label} {group.stageCounts[stage.status]}
-                        </span>
-                      ))}
-                      <span className="ml-1 text-xs font-medium text-sr-green">View applicants</span>
-                    </div>
-                  </summary>
-                  <div className="border-t border-gray-100">
-                    <div className="space-y-2 px-3 pb-3 sm:hidden">
-                      {group.applications.map((application) => (
-                        <article key={application.id} className="rounded-lg border border-gray-200 p-3">
-                          <div className="flex items-start gap-3">
-                            <input
-                              type="checkbox"
-                              checked={selectedApplicationIds.has(application.id)}
-                              disabled={isTransitioning}
-                              onChange={(event) => toggleApplicationSelection(application.id, event.target.checked)}
-                              className="mt-1 size-4 shrink-0 cursor-pointer accent-sr-green disabled:cursor-not-allowed"
-                              aria-label={`Select ${application.candidate_name}`}
-                            />
-                            <div className="min-w-0 flex-1">
-                              <Link href={`/dashboard/applications/${application.id}`} className="block truncate text-sm font-semibold text-sr-text-blue hover:text-sr-green">{application.candidate_name}</Link>
-                              {application.candidate_email && <p className="mt-0.5 break-all text-xs text-gray-500">{application.candidate_email}</p>}
-                              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-600">
-                                <span className="rounded-full bg-gray-100 px-2.5 py-1">{STAGES.find((stage) => stage.status === application.status)?.label ?? application.status}</span>
-                                <span>Applied {formatAppliedDate(application.applied_at)}</span>
-                              </div>
-                              <div className="mt-3">{renderStageActions(application)}</div>
-                            </div>
-                          </div>
-                        </article>
-                      ))}
-                    </div>
-                    <div className="hidden overflow-x-auto sm:block">
-                      <table className="w-full min-w-[760px] text-left text-sm">
-                        <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-                          <tr>
-                            <th className="w-12 px-4 py-3">Select</th>
-                            <th className="px-4 py-3">Candidate</th>
-                            <th className="px-4 py-3">Applied</th>
-                            <th className="px-4 py-3">Stage</th>
-                            <th className="w-48 px-4 py-3">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                          {group.applications.map((application) => (
-                            <tr key={application.id} className="hover:bg-gray-50">
-                              <td className="px-4 py-3">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedApplicationIds.has(application.id)}
-                                  disabled={isTransitioning}
-                                  onChange={(event) => toggleApplicationSelection(application.id, event.target.checked)}
-                                  className="size-4 cursor-pointer accent-sr-green disabled:cursor-not-allowed"
-                                  aria-label={`Select ${application.candidate_name}`}
-                                />
-                              </td>
-                              <td className="px-4 py-3">
-                                <Link href={`/dashboard/applications/${application.id}`} className="font-medium text-sr-text-blue hover:text-sr-green">{application.candidate_name}</Link>
-                                {application.candidate_email && <p className="mt-0.5 text-xs text-gray-500">{application.candidate_email}</p>}
-                              </td>
-                              <td className="whitespace-nowrap px-4 py-3 text-gray-600">{formatAppliedDate(application.applied_at)}</td>
-                              <td className="px-4 py-3"><span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">{STAGES.find((stage) => stage.status === application.status)?.label ?? application.status}</span></td>
-                              <td className="px-4 py-3">{renderStageActions(application)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </details>
+                <JobApplicationGroup
+                  key={group.requisition_id}
+                  group={group}
+                  filters={applicationFilters}
+                  selectedApplications={selectedApplicationById}
+                  isTransitioning={isTransitioning}
+                  onToggleSelection={toggleApplicationSelection}
+                  renderStageActions={renderStageActions}
+                />
               ))}
             </div>
           )}
@@ -561,14 +634,14 @@ export default function ApplicationsPage() {
                         type="checkbox"
                         checked={selectedApplicationIds.has(application.id)}
                         disabled={isTransitioning}
-                        onChange={(event) => toggleApplicationSelection(application.id, event.target.checked)}
+                        onChange={(event) => toggleApplicationSelection(application, event.target.checked)}
                         className="mt-1 size-4 shrink-0 cursor-pointer accent-sr-green disabled:cursor-not-allowed"
                         aria-label={`Select ${application.candidate_name}`}
                       />
                       <div className="min-w-0 flex-1">
                         <Link href={`/dashboard/applications/${application.id}`} className="block truncate text-sm font-semibold text-sr-text-blue hover:text-sr-green">{application.candidate_name}</Link>
                         {application.candidate_email && <p className="mt-0.5 break-all text-xs text-gray-500">{application.candidate_email}</p>}
-                        <p className="mt-2 break-words text-xs font-medium text-gray-700">{application.requisition_title}</p>
+                        <p className="mt-2 wrap-break-word text-xs font-medium text-gray-700">{application.requisition_title}</p>
                         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-600">
                           <span className="rounded-full bg-gray-100 px-2.5 py-1">{STAGES.find((stage) => stage.status === application.status)?.label ?? application.status}</span>
                           <span>Applied {formatAppliedDate(application.applied_at)}</span>
@@ -580,7 +653,7 @@ export default function ApplicationsPage() {
                 ))}
               </div>
               <div className="hidden overflow-x-auto rounded-xl border border-gray-200 bg-white sm:block">
-              <table className="w-full min-w-[780px] text-left text-sm">
+              <table className="w-full min-w-195 text-left text-sm">
                 <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                   <tr>
                     <th className="w-12 px-4 py-3">
@@ -608,7 +681,7 @@ export default function ApplicationsPage() {
                           type="checkbox"
                           checked={selectedApplicationIds.has(application.id)}
                           disabled={isTransitioning}
-                          onChange={(event) => toggleApplicationSelection(application.id, event.target.checked)}
+                          onChange={(event) => toggleApplicationSelection(application, event.target.checked)}
                           className="size-4 cursor-pointer accent-sr-green disabled:cursor-not-allowed"
                           aria-label={`Select ${application.candidate_name}`}
                         />
@@ -648,7 +721,7 @@ export default function ApplicationsPage() {
                         renderApplication={(application) => (
                           <article
                             role="listitem"
-                            className="relative mb-2 h-[156px] overflow-hidden rounded-lg border border-gray-200 bg-white p-3 shadow-sm transition hover:border-sr-green/50 hover:shadow has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-sr-green"
+                            className="relative mb-2 h-39 overflow-hidden rounded-lg border border-gray-200 bg-white p-3 shadow-sm transition hover:border-sr-green/50 hover:shadow has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-sr-green"
                           >
                             <Link
                               aria-label={`Open ${application.candidate_name} application for ${application.requisition_title}`}
@@ -660,7 +733,7 @@ export default function ApplicationsPage() {
                               checked={selectedApplicationIds.has(application.id)}
                               disabled={isTransitioning}
                               onClick={(event) => event.stopPropagation()}
-                              onChange={(event) => toggleApplicationSelection(application.id, event.target.checked)}
+                              onChange={(event) => toggleApplicationSelection(application, event.target.checked)}
                               className="absolute right-3 top-3 z-20 size-4 cursor-pointer accent-sr-green disabled:cursor-not-allowed"
                               aria-label={`Select ${application.candidate_name}`}
                             />
@@ -681,8 +754,10 @@ export default function ApplicationsPage() {
             </div>
             </>
           )}
-          <p className="text-center text-xs text-gray-500">Showing {applications.length} of {totalMatchingApplications} matching applications</p>
-          {applicationsQuery.hasNextPage && (
+          {view !== "jobs" && (
+            <p className="text-center text-xs text-gray-500">Showing {applications.length} loaded applications</p>
+          )}
+          {view !== "jobs" && applicationsQuery.hasNextPage && (
             <div className="flex justify-center">
               <Button
                 variant="outline"

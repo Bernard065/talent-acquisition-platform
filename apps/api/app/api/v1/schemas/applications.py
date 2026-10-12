@@ -61,3 +61,20 @@ class ApplicationPipelineListResponse(BaseModel):
     items: list[ApplicationPipelineItemResponse]
     next_cursor: str | None = None
     stage_counts: dict[ApplicationStatus, int]
+
+
+class ApplicationPipelineJobSummaryResponse(BaseModel):
+    """Application counts for one job, grouped by the current pipeline stage."""
+
+    requisition_id: UUID
+    requisition_title: str
+    total_count: int
+    stage_counts: dict[ApplicationStatus, int]
+
+
+class ApplicationPipelineSummaryResponse(BaseModel):
+    """Filtered application totals without loading candidate profile data."""
+
+    total_count: int
+    stage_counts: dict[ApplicationStatus, int]
+    jobs: list[ApplicationPipelineJobSummaryResponse]
