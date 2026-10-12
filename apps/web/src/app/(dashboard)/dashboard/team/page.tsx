@@ -6,8 +6,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   useCreateTeamInvitation,
+  useGrantTeamMemberInterviewerRole,
   useRevokeTeamInvitation,
+  useTeamInterviewers,
   useTeamInvitations,
+  useWorkspaceMembers,
 } from "@/lib/api/hooks/team";
 import type { TeamInvitation, TeamRole } from "@/types/api/team";
 
@@ -22,10 +25,16 @@ export default function TeamPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const invitationsQuery = useTeamInvitations();
+  const membersQuery = useWorkspaceMembers();
+  const interviewersQuery = useTeamInterviewers();
   const createInvitation = useCreateTeamInvitation();
+  const grantInterviewerRole = useGrantTeamMemberInterviewerRole();
   const revokeInvitation = useRevokeTeamInvitation();
   const invitations = invitationsQuery.data ?? [];
   const busy = createInvitation.isPending || revokeInvitation.isPending;
+  const [memberIdToPromote, setMemberIdToPromote] = useState("");
+  const interviewerIds = new Set(interviewersQuery.data?.items.map((item) => item.id) ?? []);
+  const eligibleMembers = membersQuery.data?.items.filter((item) => !interviewerIds.has(item.id)) ?? [];
   const listError = invitationsQuery.isError
     ? "You need workspace admin access to manage invitations, or the list could not be loaded."
     : null;
@@ -65,6 +74,48 @@ export default function TeamPage() {
       </form>
       {notice && <p role="status" className="mt-4 text-sm text-green-800">{notice}</p>}
       {(error || listError) && <p role="alert" className="mt-4 text-sm text-red-700">{error ?? listError}</p>}
+    </section>
+    <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+      <h2 className="text-lg font-semibold text-sr-text-blue">Add interviewer access</h2>
+      <p className="mt-1 text-sm text-gray-600">Give any existing workspace teammate interviewer access without sending another invitation. Their current role stays in place. They should sign out and back in to refresh their access.</p>
+      {membersQuery.isLoading || interviewersQuery.isLoading ? (
+        <p className="mt-4 text-sm text-gray-500" role="status">Loading workspace teammates…</p>
+      ) : membersQuery.isError || interviewersQuery.isError ? (
+        <div className="mt-4 flex flex-wrap items-center gap-3" role="alert">
+          <p className="text-sm text-red-700">We couldn’t load teammates and their interviewer access.</p>
+          <Button type="button" variant="outline" onClick={() => { void membersQuery.refetch(); void interviewersQuery.refetch(); }}>Try again</Button>
+        </div>
+      ) : eligibleMembers.length === 0 ? (
+        <p className="mt-4 text-sm text-gray-600">Every workspace teammate already has interviewer access, or no members are available.</p>
+      ) : (
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="grid flex-1 gap-2">
+            <Label htmlFor="interviewer-member">Existing teammate</Label>
+            <select id="interviewer-member" className="h-10 rounded-md border border-gray-300 bg-white px-3 text-sm" value={memberIdToPromote} onChange={(event) => setMemberIdToPromote(event.target.value)}>
+              <option value="">Select a teammate</option>
+              {eligibleMembers.map((member) => <option key={member.id} value={member.id}>{member.display_name} · {member.email}</option>)}
+            </select>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={!memberIdToPromote || grantInterviewerRole.isPending}
+            onClick={async () => {
+              setError(null);
+              setNotice(null);
+              try {
+                await grantInterviewerRole.mutateAsync(memberIdToPromote);
+                setMemberIdToPromote("");
+                setNotice("Interviewer access added. They are now available when scheduling. Ask them to sign out and back in to activate interviewer permissions.");
+              } catch {
+                setError("Could not add interviewer access. Refresh the team list and try again.");
+              }
+            }}
+          >
+            {grantInterviewerRole.isPending ? "Adding…" : "Add interviewer access"}
+          </Button>
+        </div>
+      )}
     </section>
     <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
       <h2 className="text-lg font-semibold text-sr-text-blue">Invitations</h2>

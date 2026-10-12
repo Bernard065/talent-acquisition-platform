@@ -22,7 +22,8 @@ import {
   useCandidateDocuments,
 } from "@/lib/api/hooks/documents";
 import { useRequisition } from "@/lib/api/hooks/requisitions";
-import { useTeamMembers } from "@/lib/api/hooks/team";
+import { useTeamInterviewers, useTeamMembers } from "@/lib/api/hooks/team";
+import { useInterviews, useScheduleInterview } from "@/lib/api/hooks/interviews";
 import type {
   ApplicationRejectionReason,
   ApplicationStatus,
@@ -229,6 +230,189 @@ function ApplicationFollowUpEditor({
   );
 }
 
+function ApplicationInterviewsSection({
+  applicationId,
+  applicationStatus,
+}: {
+  applicationId: string;
+  applicationStatus: ApplicationStatus;
+}) {
+  const [scheduledStart, setScheduledStart] = useState("");
+  const [scheduledEnd, setScheduledEnd] = useState("");
+  const [selectedInterviewers, setSelectedInterviewers] = useState<string[]>([]);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const interviewsQuery = useInterviews({ application_id: applicationId, limit: 25 });
+  const interviewersQuery = useTeamInterviewers();
+  const scheduleMutation = useScheduleInterview();
+  const sessions = interviewsQuery.data?.pages.flatMap((page) => page.items) ?? [];
+  const interviewerNames = new Map(
+    (interviewersQuery.data?.items ?? []).map((interviewer) => [interviewer.id, interviewer.display_name]),
+  );
+  const startMillis = scheduledStart ? new Date(scheduledStart).getTime() : NaN;
+  const endMillis = scheduledEnd ? new Date(scheduledEnd).getTime() : NaN;
+  const validSchedule = Number.isFinite(startMillis) &&
+    Number.isFinite(endMillis) &&
+    endMillis > startMillis &&
+    selectedInterviewers.length > 0;
+
+  function schedule(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (applicationStatus !== "interview" || !validSchedule) return;
+    if (startMillis <= Date.now()) {
+      setScheduleError("Choose a future start time for the interview.");
+      return;
+    }
+    setScheduleError(null);
+    scheduleMutation.mutate({
+      applicationId,
+      interview: {
+        scheduled_start_at: new Date(scheduledStart).toISOString(),
+        scheduled_end_at: new Date(scheduledEnd).toISOString(),
+        participants: selectedInterviewers.map((user_id) => ({ user_id, role: "interviewer" })),
+      },
+      idempotencyKey: crypto.randomUUID(),
+    }, {
+      onSuccess: () => {
+        setScheduledStart("");
+        setScheduledEnd("");
+        setSelectedInterviewers([]);
+      },
+    });
+  }
+
+  return (
+    <section aria-labelledby="application-interviews-heading" className="rounded-xl border border-gray-200 bg-white p-6">
+      <div>
+        <h2 id="application-interviews-heading" className="text-base font-semibold text-sr-text-blue">Interviews</h2>
+        <p className="mt-1 text-sm text-gray-600">View scheduled sessions and plan the next conversation.</p>
+      </div>
+
+      {interviewsQuery.isLoading ? (
+        <p className="mt-4 text-sm text-gray-500" role="status">Loading interview sessions…</p>
+      ) : interviewsQuery.isError ? (
+        <div className="mt-4 flex flex-wrap items-center gap-3" role="alert">
+          <p className="text-sm text-red-800">We couldn’t load interview sessions for this application.</p>
+          <Button type="button" variant="outline" onClick={() => void interviewsQuery.refetch()}>Try again</Button>
+        </div>
+      ) : sessions.length === 0 ? (
+        <p className="mt-4 text-sm text-gray-600">No interview sessions have been scheduled yet.</p>
+      ) : (
+        <>
+          <ul className="mt-4 divide-y divide-gray-100">
+            {sessions.map((interview) => (
+              <li key={interview.id} className="flex flex-col gap-2 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-900">
+                    {formatDate(interview.scheduled_start_at)} – {new Intl.DateTimeFormat(undefined, { timeStyle: "short" }).format(new Date(interview.scheduled_end_at))}
+                  </p>
+                  <p className="mt-1 text-sm text-gray-600">
+                    {interview.participants.length
+                      ? interview.participants.map((participant) => interviewerNames.get(participant.user_id) ?? "Workspace interviewer").join(", ")
+                      : "No interviewer details available"}
+                  </p>
+                </div>
+                <span className={`w-fit rounded-full px-2.5 py-1 text-xs font-medium ${interview.status === "scheduled" ? "bg-blue-50 text-blue-800" : interview.status === "completed" ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-700"}`}>
+                  {interview.status.replaceAll("_", " ")}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {interviewsQuery.hasNextPage && (
+            <Button
+              type="button"
+              variant="outline"
+              className="mt-4"
+              disabled={interviewsQuery.isFetchingNextPage}
+              onClick={() => void interviewsQuery.fetchNextPage()}
+            >
+              {interviewsQuery.isFetchingNextPage ? "Loading…" : "Load more sessions"}
+            </Button>
+          )}
+        </>
+      )}
+
+      {applicationStatus === "interview" ? (
+        <div className="mt-6 border-t border-gray-100 pt-5">
+          <h3 className="text-sm font-semibold text-gray-900">Schedule an interview</h3>
+          <p className="mt-1 text-sm text-gray-600">Choose a future time and at least one workspace interviewer.</p>
+          {interviewersQuery.isLoading ? (
+            <p className="mt-3 text-sm text-gray-500" role="status">Loading available interviewers…</p>
+          ) : interviewersQuery.isError ? (
+            <div className="mt-3 flex flex-wrap items-center gap-3" role="alert">
+              <p className="text-sm text-red-800">We couldn’t load workspace interviewers.</p>
+              <Button type="button" variant="outline" onClick={() => void interviewersQuery.refetch()}>Try again</Button>
+            </div>
+          ) : !interviewersQuery.data?.items.length ? (
+            <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+              No interviewers are available. Ask a workspace admin to give a teammate the Interviewer role.
+            </p>
+          ) : (
+            <form className="mt-4 grid gap-4 sm:grid-cols-2" onSubmit={schedule}>
+              <label>
+                <span className="mb-1 block text-sm font-medium text-gray-700">Starts</span>
+                <input
+                  type="datetime-local"
+                  required
+                  value={scheduledStart}
+                  onChange={(event) => {
+                    setScheduledStart(event.target.value);
+                    setScheduleError(null);
+                  }}
+                  className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
+                />
+              </label>
+              <label>
+                <span className="mb-1 block text-sm font-medium text-gray-700">Ends</span>
+                <input
+                  type="datetime-local"
+                  required
+                  min={scheduledStart || undefined}
+                  value={scheduledEnd}
+                  onChange={(event) => {
+                    setScheduledEnd(event.target.value);
+                    setScheduleError(null);
+                  }}
+                  className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
+                />
+              </label>
+              <fieldset className="sm:col-span-2">
+                <legend className="mb-2 text-sm font-medium text-gray-700">Interviewers</legend>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {interviewersQuery.data.items.map((interviewer) => (
+                    <label key={interviewer.id} className="flex items-center gap-2 rounded-lg border border-gray-200 p-3 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={selectedInterviewers.includes(interviewer.id)}
+                        onChange={(event) => setSelectedInterviewers((current) => event.target.checked
+                          ? [...current, interviewer.id]
+                          : current.filter((id) => id !== interviewer.id))}
+                        className="h-4 w-4 rounded border-gray-300 text-sr-green focus:ring-sr-green"
+                      />
+                      <span>{interviewer.display_name}<span className="block text-xs text-gray-500">{interviewer.email}</span></span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              <div className="sm:col-span-2">
+                <Button type="submit" disabled={!validSchedule || scheduleMutation.isPending}>
+                  {scheduleMutation.isPending ? "Scheduling…" : "Schedule interview"}
+                </Button>
+              </div>
+            </form>
+          )}
+          {scheduleError && <p className="mt-3 text-sm text-red-800" role="alert">{scheduleError}</p>}
+          {scheduleMutation.isSuccess && <p className="mt-3 text-sm text-green-800" role="status">Interview scheduled.</p>}
+          {scheduleMutation.isError && <p className="mt-3 text-sm text-red-800" role="alert">We couldn’t schedule this interview. Check the time and interviewer availability, then try again.</p>}
+        </div>
+      ) : (
+        <p className="mt-5 border-t border-gray-100 pt-4 text-sm text-gray-600">
+          Move this application to the Interview stage to schedule a session.
+        </p>
+      )}
+    </section>
+  );
+}
+
 function formatFileSize(size: number): string {
   return size < 1024 * 1024
     ? `${Math.max(1, Math.round(size / 1024))} KB`
@@ -380,6 +564,12 @@ export default function ApplicationDetailsPage() {
           </section>
 
           <ApplicationFollowUpsSection applicationId={application.id} />
+
+          <ApplicationInterviewsSection
+            key={application.id}
+            applicationId={application.id}
+            applicationStatus={application.status}
+          />
 
           <section aria-labelledby="application-documents-heading" className="rounded-xl border border-gray-200 bg-white p-6">
             <h2 id="application-documents-heading" className="text-base font-semibold text-sr-text-blue">Resume and documents</h2>

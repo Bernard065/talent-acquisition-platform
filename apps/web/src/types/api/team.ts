@@ -27,6 +27,12 @@ export interface TeamMemberListResponse {
   items: TeamMember[];
 }
 
+export type Interviewer = TeamMember;
+
+export interface InterviewerListResponse {
+  items: Interviewer[];
+}
+
 export interface CreateTeamInvitationRequest {
   email: string;
   role: Exclude<TeamRole, "tenant_admin">;
