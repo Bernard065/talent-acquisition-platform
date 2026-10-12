@@ -7,6 +7,7 @@ import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { ApplicationDebriefSection } from "@/components/applications/application-debrief-section";
+import { ApplicationScreeningAssessmentSection } from "@/components/applications/application-screening-assessment-section";
 import { ApplicationStageControl } from "@/components/applications/application-stage-control";
 import { ApplicationOfferSection } from "@/components/applications/application-offer-section";
 import { ApplicationInterviewFeedbackSection } from "@/components/applications/application-interview-feedback-section";
@@ -648,6 +649,15 @@ export default function ApplicationDetailsPage() {
               <p role="status" className="mt-2 text-sm text-green-800">Application owner updated.</p>
             )}
           </section>
+
+          {canReviewInterviewFeedback && (
+            <ApplicationScreeningAssessmentSection
+              applicationId={application.id}
+              applicationStatus={application.status}
+              jobTitle={requisition?.title ?? "this role"}
+              jobDescription={requisition?.description}
+            />
+          )}
 
           <ApplicationFollowUpsSection applicationId={application.id} />
 

@@ -106,6 +106,33 @@ export interface ApplicationFollowUpListResponse {
   active_follow_up_id: string | null;
 }
 
+export type ScreeningRecommendation = "advance" | "hold" | "reject";
+
+export interface ScreeningCriterion {
+  criterion: string;
+  rating: number;
+  evidence: string | null;
+}
+
+export interface ApplicationScreeningAssessmentRequest {
+  overall_rating: number;
+  recommendation: ScreeningRecommendation;
+  criteria: ScreeningCriterion[];
+  summary: string;
+}
+
+export interface ApplicationScreeningAssessment extends ApplicationScreeningAssessmentRequest {
+  id: string;
+  application_id: string;
+  reviewer_display_name: string;
+  submitted_at: string;
+}
+
+export interface ApplicationScreeningAssessmentListResponse {
+  items: ApplicationScreeningAssessment[];
+  my_assessment_id: string | null;
+}
+
 export interface ApplicationFollowUpRequest {
   action: string;
   due_at: string;
