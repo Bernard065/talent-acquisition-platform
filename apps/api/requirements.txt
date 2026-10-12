@@ -44,9 +44,9 @@ boto3==1.43.106 \
     # via
     #   infisicalsdk
     #   tap-api
-botocore==1.43.106 \
-    --hash=sha256:006870b3b4e40547232ad12c3bb4faec91bbbe0659aafaa3b7fa48a112c4ee97 \
-    --hash=sha256:c1fb8818f9957cb5037f73db34ac1a12ba43562e31d6e7f9cb7e5fc64e1dba78
+botocore==1.43.110 \
+    --hash=sha256:888cd54d59502e2195dac30805e5c08dd1be5416932a3793373e81b8f463e006 \
+    --hash=sha256:9f5ae5685b4d7129e32f6084ae8683d5857a1d60d77528b8da77bb53b9dff48f
     # via
     #   boto3
     #   infisicalsdk
