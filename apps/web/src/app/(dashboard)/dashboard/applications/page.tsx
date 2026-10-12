@@ -233,7 +233,7 @@ function JobApplicationGroup({
               ))}
             </div>
             <div className="hidden overflow-x-auto sm:block">
-              <table className="w-full min-w-[760px] text-left text-sm">
+              <table className="w-full min-w-190 text-left text-sm">
                 <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                   <tr><th className="w-12 px-4 py-3">Select</th><th className="px-4 py-3">Candidate</th><th className="px-4 py-3">Applied</th><th className="px-4 py-3">Stage</th><th className="w-48 px-4 py-3">Actions</th></tr>
                 </thead>
@@ -641,7 +641,7 @@ export default function ApplicationsPage() {
                       <div className="min-w-0 flex-1">
                         <Link href={`/dashboard/applications/${application.id}`} className="block truncate text-sm font-semibold text-sr-text-blue hover:text-sr-green">{application.candidate_name}</Link>
                         {application.candidate_email && <p className="mt-0.5 break-all text-xs text-gray-500">{application.candidate_email}</p>}
-                        <p className="mt-2 break-words text-xs font-medium text-gray-700">{application.requisition_title}</p>
+                        <p className="mt-2 wrap-break-word text-xs font-medium text-gray-700">{application.requisition_title}</p>
                         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-600">
                           <span className="rounded-full bg-gray-100 px-2.5 py-1">{STAGES.find((stage) => stage.status === application.status)?.label ?? application.status}</span>
                           <span>Applied {formatAppliedDate(application.applied_at)}</span>
@@ -653,7 +653,7 @@ export default function ApplicationsPage() {
                 ))}
               </div>
               <div className="hidden overflow-x-auto rounded-xl border border-gray-200 bg-white sm:block">
-              <table className="w-full min-w-[780px] text-left text-sm">
+              <table className="w-full min-w-195 text-left text-sm">
                 <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                   <tr>
                     <th className="w-12 px-4 py-3">
@@ -721,7 +721,7 @@ export default function ApplicationsPage() {
                         renderApplication={(application) => (
                           <article
                             role="listitem"
-                            className="relative mb-2 h-[156px] overflow-hidden rounded-lg border border-gray-200 bg-white p-3 shadow-sm transition hover:border-sr-green/50 hover:shadow has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-sr-green"
+                            className="relative mb-2 h-39 overflow-hidden rounded-lg border border-gray-200 bg-white p-3 shadow-sm transition hover:border-sr-green/50 hover:shadow has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-sr-green"
                           >
                             <Link
                               aria-label={`Open ${application.candidate_name} application for ${application.requisition_title}`}

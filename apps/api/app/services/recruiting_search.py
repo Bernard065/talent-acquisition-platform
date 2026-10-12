@@ -7,8 +7,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import Select, and_, func, or_, select
+from sqlalchemy import Select, and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.functions import count
 
 from app.core.authorization import Role, TenantContext
 from app.db.models.application import Application
@@ -399,7 +400,7 @@ async def summarize_application_pipeline(
             filtered_applications.c.requisition_id,
             Requisition.title,
             filtered_applications.c.status,
-            func.count(),
+            count(),
         )
         .join(
             Requisition,
@@ -418,7 +419,7 @@ async def summarize_application_pipeline(
 
     jobs: dict[UUID, ApplicationPipelineJobSummary] = {}
     total_stage_counts = {application_status: 0 for application_status in ApplicationStatus}
-    for requisition_id, requisition_title, application_status, count in rows:
+    for requisition_id, requisition_title, application_status, application_count in rows:
         job = jobs.get(requisition_id)
         if job is None:
             job = ApplicationPipelineJobSummary(
@@ -428,9 +429,9 @@ async def summarize_application_pipeline(
                 stage_counts={status: 0 for status in ApplicationStatus},
             )
             jobs[requisition_id] = job
-        job.stage_counts[application_status] = count
-        job.total_count += count
-        total_stage_counts[application_status] += count
+        job.stage_counts[application_status] = application_count
+        job.total_count += application_count
+        total_stage_counts[application_status] += application_count
 
     return ApplicationPipelineSummary(
         total_count=sum(total_stage_counts.values()),
@@ -532,7 +533,7 @@ async def search_application_pipeline(
         filters=filters,
     ).with_only_columns(Application.id, Application.status).order_by(None).subquery()
     count_rows = await session.execute(
-        select(filtered_applications.c.status, func.count())
+        select(filtered_applications.c.status, count())
         .group_by(filtered_applications.c.status)
     )
     stage_counts = {application_status: 0 for application_status in ApplicationStatus}
