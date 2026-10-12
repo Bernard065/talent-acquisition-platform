@@ -1,6 +1,7 @@
 """Allow-listed, privacy-safe plain-text notification email templates."""
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from uuid import UUID
 
 from app.domains.notifications.enums import NotificationEventType
@@ -17,6 +18,21 @@ class NotificationEmailTemplate:
 
     subject: str
     text_body: str
+
+
+@dataclass(frozen=True, slots=True)
+class InterviewNotificationDetails:
+    """Current, tenant-verified data rendered into an interview email."""
+
+    role_title: str
+    scheduled_start_at: datetime
+    scheduled_end_at: datetime
+    interview_format: str | None
+    location: str | None
+    meeting_url: str | None
+    interview_url: str
+    role_url: str | None
+    is_candidate: bool
 
 
 _TEMPLATES: dict[tuple[NotificationEventType, str], NotificationEmailTemplate] = {
@@ -91,6 +107,27 @@ _TEMPLATES: dict[tuple[NotificationEventType, str], NotificationEmailTemplate] =
             "Sign in to the Talent Acquisition Platform for details."
         ),
     ),
+    (
+        NotificationEventType.INTERVIEW_SCHEDULED,
+        "interview_scheduled",
+    ): NotificationEmailTemplate(
+        subject="Interview scheduled",
+        text_body="An interview has been scheduled.",
+    ),
+    (
+        NotificationEventType.INTERVIEW_RESCHEDULED,
+        "interview_rescheduled",
+    ): NotificationEmailTemplate(
+        subject="Interview rescheduled",
+        text_body="An interview has been rescheduled.",
+    ),
+    (
+        NotificationEventType.INTERVIEW_CANCELLED,
+        "interview_cancelled",
+    ): NotificationEmailTemplate(
+        subject="Interview cancelled",
+        text_body="An interview has been cancelled.",
+    ),
 }
 
 
@@ -134,4 +171,63 @@ def render_notification_email(
         recipient_email=recipient_email,
         subject=template.subject,
         text_body=template.text_body,
+    )
+
+
+def render_interview_notification_email(
+    *,
+    notification_id: UUID,
+    idempotency_key: str,
+    recipient_email: str,
+    event_type: str,
+    template_key: str,
+    details: InterviewNotificationDetails,
+) -> EmailMessage:
+    """Render schedule details only from current, tenant-verified records."""
+    try:
+        normalized_event_type = NotificationEventType(event_type)
+    except ValueError as error:
+        raise UnsupportedNotificationTemplateError(
+            "Notification event and template key are not supported."
+        ) from error
+
+    template = resolve_notification_email_template(
+        event_type=normalized_event_type,
+        template_key=template_key,
+    )
+    start_at = details.scheduled_start_at.astimezone(UTC)
+    end_at = details.scheduled_end_at.astimezone(UTC)
+    lines = [
+        "Hello,",
+        "",
+        template.subject
+        + (f" for {details.role_title}." if details.role_title else "."),
+        "",
+        "When: "
+        f"{start_at.isoformat(timespec='minutes')} to "
+        f"{end_at.isoformat(timespec='minutes')} (UTC)",
+        f"Format: {details.interview_format or 'Not specified'}",
+    ]
+    if details.location:
+        lines.append(f"Location: {details.location}")
+    if (
+        details.meeting_url
+        and normalized_event_type is not NotificationEventType.INTERVIEW_CANCELLED
+    ):
+        lines.append(f"Join the interview: {details.meeting_url}")
+    lines.append("")
+
+    if details.is_candidate:
+        if details.role_url:
+            lines.extend((f"Job details: {details.role_url}", ""))
+        lines.append("Keep this email for the interview schedule and joining details.")
+    else:
+        lines.append(f"View interview details: {details.interview_url}")
+
+    return EmailMessage(
+        notification_id=notification_id,
+        idempotency_key=idempotency_key,
+        recipient_email=recipient_email,
+        subject=template.subject,
+        text_body="\n".join(lines),
     )

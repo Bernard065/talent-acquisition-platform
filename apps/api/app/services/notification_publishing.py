@@ -18,19 +18,21 @@ _NOTIFICATION_REQUESTED_EVENT = "notification.requested"
 def _deduplication_key(
     *,
     tenant_id: UUID,
-    recipient_user_id: UUID,
+    recipient_identity: str,
     notification_event_type: NotificationEventType,
     entity_type: str,
     entity_id: UUID,
+    occurrence_key: str | None = None,
 ) -> str:
     """Return a fixed-length, non-sensitive stable delivery identity."""
     identity = "|".join(
         (
             str(tenant_id),
-            str(recipient_user_id),
+            recipient_identity,
             notification_event_type.value,
             entity_type,
             str(entity_id),
+            *([occurrence_key] if occurrence_key is not None else []),
         )
     )
     return sha256(identity.encode("utf-8")).hexdigest()
@@ -40,20 +42,48 @@ def enqueue_notification_request(
     session: AsyncSession,
     *,
     context: TenantContext,
-    recipient_user_id: UUID,
+    recipient_user_id: UUID | None = None,
+    recipient_candidate_id: UUID | None = None,
     notification_event_type: NotificationEventType,
     entity_type: str,
     entity_id: UUID,
     template_key: str,
+    occurrence_key: int | None = None,
 ) -> None:
     """Queue one recipient-specific notification request in this transaction."""
+    if (recipient_user_id is None) == (recipient_candidate_id is None):
+        raise ValueError("Exactly one notification recipient must be provided.")
+
+    recipient_identity = (
+        str(recipient_user_id)
+        if recipient_user_id is not None
+        else f"candidate:{recipient_candidate_id}"
+    )
     deduplication_key = _deduplication_key(
         tenant_id=context.tenant_id,
-        recipient_user_id=recipient_user_id,
+        recipient_identity=recipient_identity,
         notification_event_type=notification_event_type,
         entity_type=entity_type,
         entity_id=entity_id,
+        occurrence_key=(
+            str(occurrence_key) if occurrence_key is not None else None
+        ),
     )
+
+    payload: dict[str, str] = {
+        "channel": NotificationChannel.EMAIL.value,
+        "notification_event_type": notification_event_type.value,
+        "entity_type": entity_type,
+        "entity_id": str(entity_id),
+        "template_key": template_key,
+        "notification_deduplication_key": deduplication_key,
+    }
+    if recipient_user_id is not None:
+        payload["recipient_user_id"] = str(recipient_user_id)
+    if recipient_candidate_id is not None:
+        payload["recipient_candidate_id"] = str(recipient_candidate_id)
+    if occurrence_key is not None:
+        payload["occurrence_key"] = str(occurrence_key)
 
     enqueue_outbox_event(
         session,
@@ -62,15 +92,7 @@ def enqueue_notification_request(
         aggregate_type=entity_type,
         aggregate_id=str(entity_id),
         deduplication_key=f"notification:{deduplication_key}",
-        payload={
-            "recipient_user_id": str(recipient_user_id),
-            "channel": NotificationChannel.EMAIL.value,
-            "notification_event_type": notification_event_type.value,
-            "entity_type": entity_type,
-            "entity_id": str(entity_id),
-            "template_key": template_key,
-            "notification_deduplication_key": deduplication_key,
-        },
+        payload=payload,
     )
 
 
