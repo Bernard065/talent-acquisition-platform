@@ -14,6 +14,8 @@ from app.api.v1.schemas.application_pipeline import (
     ApplicationStageTransitionRequest,
 )
 from app.api.v1.schemas.applications import (
+    ApplicationActivityItemResponse,
+    ApplicationActivityResponse,
     ApplicationCreateRequest,
     ApplicationListResponse,
     ApplicationPipelineItemResponse,
@@ -24,6 +26,7 @@ from app.api.v1.schemas.applications import (
 )
 from app.core.authorization import TenantContext
 from app.domains.candidates.enums import ApplicationStatus
+from app.services.application_activity import list_application_activity
 from app.services.application_pipeline import (
     TransitionApplicationStageCommand,
     transition_application_stage,
@@ -54,6 +57,39 @@ def _private_idempotency_response(
     response = idempotency_response(result)
     response.headers["Cache-Control"] = "private, no-store"
     return response
+
+
+@router.get(
+    "/{application_id}/activity",
+    response_model=ApplicationActivityResponse,
+    summary="Get application activity",
+)
+async def get_application_activity_endpoint(
+    application_id: UUID,
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+) -> ApplicationActivityResponse:
+    """Return the application stage history for its authorized workspace."""
+    items = await list_application_activity(
+        session,
+        context=context,
+        application_id=application_id,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return ApplicationActivityResponse(
+        items=[
+            ApplicationActivityItemResponse(
+                id=item.id,
+                from_status=item.from_status,
+                to_status=item.to_status,
+                rejection_reason=item.rejection_reason,
+                actor_display_name=item.actor_display_name,
+                transitioned_at=item.transitioned_at,
+            )
+            for item in items
+        ]
+    )
 
 
 @router.post(

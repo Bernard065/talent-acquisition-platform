@@ -31,6 +31,19 @@ export interface ApplicationResponse {
   version: number;
 }
 
+export interface ApplicationActivityItem {
+  id: string;
+  from_status: ApplicationStatus | null;
+  to_status: ApplicationStatus;
+  rejection_reason: ApplicationRejectionReason | null;
+  actor_display_name: string;
+  transitioned_at: string;
+}
+
+export interface ApplicationActivityResponse {
+  items: ApplicationActivityItem[];
+}
+
 export interface ApplicationListResponse {
   items: ApplicationResponse[];
   next_cursor?: string | null;
