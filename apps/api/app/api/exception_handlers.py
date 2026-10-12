@@ -22,6 +22,7 @@ from app.services.abuse_control import (
     AbuseControlUnavailableError,
 )
 from app.services.application_pipeline_errors import (
+    ApplicationAssigneeInvalidError,
     ApplicationPipelineAccessDeniedError,
     ApplicationRejectionReasonError,
     ApplicationVersionConflictError,
@@ -472,6 +473,18 @@ async def invalid_application_transition_request(
         request,
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         detail="Invalid application transition request.",
+    )
+
+
+async def invalid_application_assignment_request(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Handle attempts to assign an application to an ineligible user."""
+    return _error_response(
+        request,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail="The selected assignee is not an eligible member of this workspace.",
     )
 
 
@@ -1345,6 +1358,10 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         ApplicationRejectionReasonError,
         invalid_application_transition_request,
+    )
+    application.add_exception_handler(
+        ApplicationAssigneeInvalidError,
+        invalid_application_assignment_request,
     )
     application.add_exception_handler(StaleDataError, conflict)
     application.add_exception_handler(InvalidRequisitionCursorError, invalid_cursor)

@@ -59,6 +59,7 @@ from app.api.v1.recruiting_metrics import (
     router as recruiting_metrics_router,
 )
 from app.api.v1.requisitions import router as requisitions_router
+from app.api.v1.team import router as team_router
 from app.api.v1.webhooks import (
     router as webhooks_router,  # pyright: ignore[reportAttributeAccessIssue]
 )
@@ -444,6 +445,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application.include_router(
         applications_router,
+        prefix=active_settings.api_prefix,
+    )
+    application.include_router(
+        team_router,
         prefix=active_settings.api_prefix,
     )
 

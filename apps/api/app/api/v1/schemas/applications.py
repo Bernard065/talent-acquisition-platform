@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.domains.candidates.enums import (
     ApplicationRejectionReason,
@@ -28,6 +28,7 @@ class ApplicationResponse(BaseModel):
     id: UUID
     candidate_id: UUID
     requisition_id: UUID
+    assigned_to_user_id: UUID | None
     status: ApplicationStatus
     applied_at: datetime
     created_at: datetime
@@ -70,6 +71,8 @@ class ApplicationPipelineItemResponse(BaseModel):
     candidate_email: str | None
     requisition_id: UUID
     requisition_title: str
+    assigned_to_user_id: UUID | None
+    assigned_to_display_name: str | None
     status: ApplicationStatus
     applied_at: datetime
     version: int
@@ -98,3 +101,12 @@ class ApplicationPipelineSummaryResponse(BaseModel):
     total_count: int
     stage_counts: dict[ApplicationStatus, int]
     jobs: list[ApplicationPipelineJobSummaryResponse]
+
+
+class ApplicationAssignmentRequest(BaseModel):
+    """Set or clear the recruiter responsible for an application."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    assigned_to_user_id: UUID | None
+    expected_version: int = Field(ge=1)
