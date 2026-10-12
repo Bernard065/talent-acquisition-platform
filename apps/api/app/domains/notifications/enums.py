@@ -33,3 +33,4 @@ class NotificationEventType(StrEnum):
     INTERVIEW_SCHEDULED = "interview.scheduled"
     INTERVIEW_RESCHEDULED = "interview.rescheduled"
     INTERVIEW_CANCELLED = "interview.cancelled"
+    INTERVIEW_REMINDER = "interview.reminder"
