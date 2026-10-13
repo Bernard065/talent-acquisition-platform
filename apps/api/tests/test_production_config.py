@@ -45,6 +45,47 @@ def test_accepts_secure_production_configuration() -> None:
     assert settings.notification_email_provider == "resend"
 
 
+def test_accepts_mailjet_with_infisical_runtime_secrets() -> None:
+    settings = _settings(
+        notification_email_provider="mailjet",
+        notification_email_api_key_secret_name="tap_mailjet_public_key",  # noqa: S106
+        notification_email_secret_key_secret_name="tap_mailjet_private_key",  # noqa: S106
+    )
+
+    assert settings.notification_email_provider == "mailjet"
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        (
+            {"notification_email_api_key_secret_name": None},
+            "NOTIFICATION_EMAIL_API_KEY_SECRET_NAME is required",
+        ),
+        (
+            {"notification_email_secret_key_secret_name": None},
+            "NOTIFICATION_EMAIL_SECRET_KEY_SECRET_NAME is required",
+        ),
+        (
+            {"mailjet_api_key": "local-public-key"},
+            "MAILJET_API_KEY and MAILJET_SECRET_KEY are permitted only",
+        ),
+    ],
+)
+def test_production_requires_mailjet_keys_in_infisical(
+    overrides: dict[str, object],
+    message: str,
+) -> None:
+    configuration: dict[str, object] = {
+        "notification_email_provider": "mailjet",
+        "notification_email_api_key_secret_name": "tap_mailjet_public_key",
+        "notification_email_secret_key_secret_name": "tap_mailjet_private_key",
+    }
+    configuration.update(overrides)
+    with pytest.raises(ValidationError, match=message):
+        _settings(**configuration)
+
+
 @pytest.mark.parametrize(
     ("override", "message"),
     [
@@ -124,7 +165,7 @@ def test_production_rejects_local_logging_email_adapter() -> None:
     """The local logging adapter must never silently discard production mail."""
     with pytest.raises(
         ValidationError,
-        match="NOTIFICATION_EMAIL_PROVIDER=resend is required in production",
+        match="NOTIFICATION_EMAIL_PROVIDER=resend or mailjet is required in production",
     ):
         _settings(notification_email_provider="logging")
 

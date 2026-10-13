@@ -1,4 +1,4 @@
-"""Port for idempotent notification email delivery."""
+"""Port for notification email delivery."""
 
 from dataclasses import dataclass
 from datetime import timedelta
@@ -27,12 +27,12 @@ class EmailDeliveryError(Exception):
 
 
 class EmailSender(Protocol):
-    """Email provider contract with idempotent delivery semantics."""
+    """Email provider contract and safe retry-window description."""
 
     @property
     def idempotency_retry_window(self) -> timedelta | None:
-        """Latest safe retry age, or ``None`` when keys do not expire."""
+        """Latest safe retry age, or ``None`` when no age cutoff applies."""
         ...
 
     async def send(self, message: EmailMessage) -> str:
-        """Deliver once for the supplied idempotency key and return provider ID."""
+        """Send one message and return its provider ID."""

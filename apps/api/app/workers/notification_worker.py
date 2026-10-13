@@ -15,6 +15,7 @@ from app.core.logging import configure_logging
 from app.db.session import Database
 from app.infrastructure.calendar.infisical_vault import InfisicalCredentialVault
 from app.infrastructure.email.logging_sender import LoggingEmailSender
+from app.infrastructure.email.mailjet_sender import MailjetEmailSender
 from app.infrastructure.email.resend_sender import ResendEmailSender
 from app.services.email_sender import EmailSender
 from app.services.notification_action_item_digests import (
@@ -42,10 +43,15 @@ def _record_heartbeat(path: Path) -> None:
     path.touch(exist_ok=True)
 
 
-def _require_setting(value: str | None, *, name: str) -> str:
+def _require_setting(
+    value: str | None,
+    *,
+    name: str,
+    provider: str = "Resend",
+) -> str:
     """Require runtime configuration without including secret values in errors."""
     if value is None:
-        raise RuntimeError(f"{name} is required for Resend email delivery.")
+        raise RuntimeError(f"{name} is required for {provider} email delivery.")
     return value
 
 
@@ -59,6 +65,95 @@ async def _build_sender(
                 "NOTIFICATION_EMAIL_PROVIDER=resend is required in production."
             )
         return LoggingEmailSender(), None
+
+    if settings.notification_email_provider == "mailjet":
+        from_address = settings.notification_email_from_address
+        if from_address is None:
+            raise RuntimeError(
+                "NOTIFICATION_EMAIL_FROM_ADDRESS is required for Mailjet email delivery."
+            )
+
+        mailjet_api_key: SecretStr | None = None
+        mailjet_secret_key: SecretStr | None = None
+        if settings.credential_vault_provider == "infisical":
+            client_secret = settings.infisical_client_secret
+            if client_secret is None:
+                raise RuntimeError(
+                    "INFISICAL_CLIENT_SECRET is required for Mailjet email delivery."
+                )
+
+            api_key_secret_name = _require_setting(
+                settings.notification_email_api_key_secret_name,
+                name="NOTIFICATION_EMAIL_API_KEY_SECRET_NAME",
+                provider="Mailjet",
+            )
+            secret_key_secret_name = _require_setting(
+                settings.notification_email_secret_key_secret_name,
+                name="NOTIFICATION_EMAIL_SECRET_KEY_SECRET_NAME",
+                provider="Mailjet",
+            )
+            try:
+                vault = await InfisicalCredentialVault.from_universal_auth(
+                    project_id=_require_setting(
+                        settings.infisical_project_id,
+                        name="INFISICAL_PROJECT_ID",
+                        provider="Mailjet",
+                    ),
+                    environment_slug=settings.infisical_environment,
+                    client_id=_require_setting(
+                        settings.infisical_client_id,
+                        name="INFISICAL_CLIENT_ID",
+                        provider="Mailjet",
+                    ),
+                    client_secret=client_secret.get_secret_value(),
+                    host=str(settings.infisical_host),
+                )
+                mailjet_api_key = await vault.read_runtime_secret(
+                    secret_name=api_key_secret_name,
+                )
+                mailjet_secret_key = await vault.read_runtime_secret(
+                    secret_name=secret_key_secret_name,
+                )
+            except Exception as error:  # pylint: disable=broad-exception-caught
+                logger.error(
+                    "notification_email_credentials_unavailable",
+                    error_type=type(error).__name__,
+                )
+                raise RuntimeError(
+                    "Unable to initialize Mailjet credentials from Infisical."
+                ) from None
+        else:
+            if settings.app_env not in {"local", "test"}:
+                raise RuntimeError(
+                    "CREDENTIAL_VAULT_PROVIDER=infisical is required for "
+                    "Mailjet delivery outside local and test environments."
+                )
+            mailjet_api_key = settings.mailjet_api_key
+            mailjet_secret_key = settings.mailjet_secret_key
+
+        if mailjet_api_key is None or mailjet_secret_key is None:
+            raise RuntimeError(
+                "Mailjet API credentials are required for email delivery."
+            )
+
+        http_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(
+                connect=settings.notification_email_connect_timeout_seconds,
+                read=settings.notification_email_read_timeout_seconds,
+                write=settings.notification_email_read_timeout_seconds,
+                pool=settings.notification_email_connect_timeout_seconds,
+            ),
+            follow_redirects=False,
+        )
+        return (
+            MailjetEmailSender(
+                api_key=mailjet_api_key,
+                secret_key=mailjet_secret_key,
+                from_address=str(from_address),
+                http_client=http_client,
+            ),
+            http_client,
+        )
 
     if settings.notification_email_provider != "resend":
         raise RuntimeError("A supported notification email provider is required.")
@@ -98,7 +193,7 @@ async def _build_sender(
             client_secret=client_secret.get_secret_value(),
             host=str(settings.infisical_host),
         )
-        api_key: SecretStr = await vault.read_runtime_secret(
+        resend_api_key: SecretStr = await vault.read_runtime_secret(
             secret_name=secret_name,
         )
     except Exception as error:  # pylint: disable=broad-exception-caught
@@ -121,7 +216,7 @@ async def _build_sender(
     )
     return (
         ResendEmailSender(
-            api_key=api_key,
+            api_key=resend_api_key,
             from_address=str(from_address),
             http_client=http_client,
         ),
