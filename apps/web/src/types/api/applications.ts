@@ -164,6 +164,33 @@ export interface ApplicationScreeningAssessmentListResponse {
   rubric_version: number | null;
 }
 
+export interface ScreeningCriterionComparison {
+  criterion_id: string;
+  criterion: string;
+  average_rating: number | null;
+  assessment_count: number;
+}
+
+export interface ScreeningCandidateComparison {
+  application_id: string;
+  candidate_name: string;
+  applied_at: string;
+  current_rubric_review_count: number;
+  previous_rubric_review_count: number;
+  average_overall_rating: number | null;
+  advance_count: number;
+  hold_count: number;
+  reject_count: number;
+  criteria: ScreeningCriterionComparison[];
+}
+
+export interface ScreeningComparisonPageResponse {
+  rubric_version: number;
+  rubric: ScreeningRubricCriterion[];
+  items: ScreeningCandidateComparison[];
+  next_cursor: string | null;
+}
+
 export interface ApplicationFollowUpRequest {
   action: string;
   due_at: string;

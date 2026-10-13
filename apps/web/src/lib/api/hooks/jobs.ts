@@ -87,6 +87,9 @@ export function useReplaceJobScreeningRubric() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: jobQueryKeys.detail(id) }),
         queryClient.invalidateQueries({ queryKey: jobQueryKeys.lists() }),
+        queryClient.invalidateQueries({
+          queryKey: ["application-screening-assessments", "job-comparison"],
+        }),
       ]);
     },
     onError: async (_error, { id }) => {
