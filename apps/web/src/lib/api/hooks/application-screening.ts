@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
+import { applicationQueryKeys } from "./applications";
 import {
   listApplicationScreeningAssessments,
   submitApplicationScreeningAssessment,
@@ -32,9 +33,13 @@ export function useSubmitApplicationScreeningAssessment() {
       idempotencyKey: string;
     }) => submitApplicationScreeningAssessment(applicationId, assessment, idempotencyKey),
     onSuccess: async (_assessment, { applicationId }) => {
-      await queryClient.invalidateQueries({
-        queryKey: applicationScreeningQueryKeys.application(applicationId),
-      });
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: applicationScreeningQueryKeys.application(applicationId),
+        }),
+        queryClient.invalidateQueries({ queryKey: applicationQueryKeys.pipelines() }),
+        queryClient.invalidateQueries({ queryKey: applicationQueryKeys.pipelineSummaries() }),
+      ]);
     },
   });
 }

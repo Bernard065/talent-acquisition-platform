@@ -415,6 +415,7 @@ async def summarize_application_pipeline_endpoint(
     applied_before: datetime | None = None,
     mine: bool = False,
     follow_up: Annotated[Literal["due"] | None, Query()] = None,
+    needs_screening: bool = False,
 ) -> ApplicationPipelineSummaryResponse:
     """Return filtered counts per job without returning candidate records."""
     summary = await summarize_application_pipeline(
@@ -429,6 +430,7 @@ async def summarize_application_pipeline_endpoint(
             applied_before=applied_before,
             assigned_to_subject=context.subject if mine else None,
             follow_up_due=follow_up == "due",
+            needs_screening=needs_screening,
         ),
     )
     response.headers["Cache-Control"] = "private, no-store"
@@ -471,6 +473,7 @@ async def search_application_pipeline_endpoint(
     applied_before: datetime | None = None,
     mine: bool = False,
     follow_up: Annotated[Literal["due"] | None, Query()] = None,
+    needs_screening: bool = False,
 ) -> ApplicationPipelineListResponse:
     """Return application cards with tenant-scoped candidate and job labels."""
 
@@ -486,6 +489,7 @@ async def search_application_pipeline_endpoint(
             applied_before=applied_before,
             assigned_to_subject=context.subject if mine else None,
             follow_up_due=follow_up == "due",
+            needs_screening=needs_screening,
         ),
         limit=limit,
         cursor=cursor,
@@ -507,6 +511,7 @@ async def search_application_pipeline_endpoint(
                 status=record.application.status,
                 applied_at=record.application.applied_at,
                 version=record.application.version,
+                screening_progress=record.screening_progress,
             )
             for record in page.items
         ],

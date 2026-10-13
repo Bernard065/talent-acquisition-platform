@@ -31,7 +31,7 @@ const STAGES: { status: ApplicationStatus; label: string }[] = [
   { status: "withdrawn", label: "Withdrawn" },
 ];
 
-const APPLICATION_CARD_HEIGHT = 200;
+const APPLICATION_CARD_HEIGHT = 224;
 const VIRTUAL_LIST_OVERSCAN = 5;
 
 function formatAppliedDate(value: string): string {
@@ -67,6 +67,21 @@ function FollowUpIndicator({
       <span className="truncate">{action}</span>
     </span>
   );
+}
+
+function ScreeningProgressBadge({ progress }: { progress: ApplicationPipelineItem["screening_progress"] }) {
+  const label = progress === "complete"
+    ? "Complete"
+    : progress === "in_progress"
+      ? "In progress"
+      : "Not started";
+  const styles = progress === "complete"
+    ? "bg-emerald-50 text-emerald-800"
+    : progress === "in_progress"
+      ? "bg-amber-50 text-amber-900"
+      : "bg-gray-100 text-gray-700";
+
+  return <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${styles}`}>Screening: {label}</span>;
 }
 
 function VirtualizedApplicationLane({
@@ -227,7 +242,7 @@ function JobApplicationGroup({
                 </Button>
               )}
             </div>
-            <div className="space-y-2 sm:hidden">
+            <div className="space-y-2 xl:hidden">
               {applications.map((application) => (
                 <article key={application.id} className="rounded-lg border border-gray-200 p-3">
                   <div className="flex items-start gap-3">
@@ -244,6 +259,7 @@ function JobApplicationGroup({
                       {application.candidate_email && <p className="mt-0.5 break-all text-xs text-gray-500">{application.candidate_email}</p>}
                       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-600">
                         <span className="rounded-full bg-gray-100 px-2.5 py-1">{STAGES.find((stage) => stage.status === application.status)?.label ?? application.status}</span>
+                        <ScreeningProgressBadge progress={application.screening_progress} />
                         <span>Applied {formatAppliedDate(application.applied_at)}</span>
                       </div>
                       <p className="mt-1 text-xs text-gray-500">Owner: {application.assigned_to_display_name ?? "Unassigned"}</p>
@@ -254,10 +270,10 @@ function JobApplicationGroup({
                 </article>
               ))}
             </div>
-            <div className="hidden overflow-x-auto sm:block">
+            <div className="hidden overflow-x-auto xl:block">
               <table className="w-full min-w-190 text-left text-sm">
                 <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-                  <tr><th className="w-12 px-4 py-3">Select</th><th className="px-4 py-3">Candidate</th><th className="px-4 py-3">Owner</th><th className="px-4 py-3">Next action</th><th className="px-4 py-3">Applied</th><th className="px-4 py-3">Stage</th><th className="w-48 px-4 py-3">Actions</th></tr>
+                  <tr><th className="w-12 px-4 py-3">Select</th><th className="px-4 py-3">Candidate</th><th className="px-4 py-3">Owner</th><th className="px-4 py-3">Next action</th><th className="px-4 py-3">Applied</th><th className="px-4 py-3">Stage</th><th className="px-4 py-3">Screening</th><th className="w-48 px-4 py-3">Actions</th></tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {applications.map((application) => (
@@ -280,6 +296,7 @@ function JobApplicationGroup({
                       <td className="px-4 py-3"><FollowUpIndicator action={application.follow_up_action} dueAt={application.follow_up_due_at} /></td>
                       <td className="whitespace-nowrap px-4 py-3 text-gray-600">{formatAppliedDate(application.applied_at)}</td>
                       <td className="px-4 py-3"><span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">{STAGES.find((stage) => stage.status === application.status)?.label ?? application.status}</span></td>
+                      <td className="px-4 py-3"><ScreeningProgressBadge progress={application.screening_progress} /></td>
                       <td className="px-4 py-3">{renderStageActions(application)}</td>
                     </tr>
                   ))}
@@ -301,6 +318,7 @@ export default function ApplicationsPage() {
   const [selectedStatus, setSelectedStatus] = useState<ApplicationStatus | "">("");
   const [myApplicationsOnly, setMyApplicationsOnly] = useState(false);
   const [followUpDueOnly, setFollowUpDueOnly] = useState(false);
+  const [needsScreeningOnly, setNeedsScreeningOnly] = useState(false);
   const [appliedAfter, setAppliedAfter] = useState("");
   const [appliedBefore, setAppliedBefore] = useState("");
   const [view, setView] = useState<"jobs" | "board" | "table">("jobs");
@@ -322,6 +340,7 @@ export default function ApplicationsPage() {
     ...(selectedStatus ? { status: selectedStatus } : {}),
     ...(myApplicationsOnly ? { mine: true } : {}),
     ...(followUpDueOnly ? { follow_up: "due" as const } : {}),
+    ...(needsScreeningOnly ? { needs_screening: true } : {}),
     ...(!invalidDateRange && appliedAfter ? { applied_after: `${appliedAfter}T00:00:00Z` } : {}),
     ...(!invalidDateRange && appliedBefore ? { applied_before: `${appliedBefore}T23:59:59.999999Z` } : {}),
   };
@@ -497,26 +516,26 @@ export default function ApplicationsPage() {
           <h1 className="mt-1 text-2xl font-bold tracking-tight text-sr-text-blue">Applications</h1>
           <p className="mt-2 text-sm text-gray-600">Review candidates and track progress across your open roles.</p>
         </div>
-        <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600">
+        <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+          <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-gray-600">
             Search
-            <input id="application-search" type="search" value={searchQuery} onChange={(event) => { clearPipelineSelection(); setSearchQuery(event.target.value); }} placeholder="Candidate, email, or job" className="h-10 min-w-56 rounded-lg border border-gray-200 bg-white px-3 text-sm font-normal outline-none placeholder:text-gray-400 focus:border-sr-green focus:ring-2 focus:ring-sr-green/20" />
+            <input id="application-search" type="search" value={searchQuery} onChange={(event) => { clearPipelineSelection(); setSearchQuery(event.target.value); }} placeholder="Candidate, email, or job" className="h-10 w-full min-w-0 rounded-lg border border-gray-200 bg-white px-3 text-sm font-normal outline-none placeholder:text-gray-400 focus:border-sr-green focus:ring-2 focus:ring-sr-green/20" />
           </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600">
+          <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-gray-600">
             Job
-            <select id="application-job-filter" value={selectedRequisition} onChange={(event) => { clearPipelineSelection(); setSelectedRequisition(event.target.value); }} className="h-10 min-w-44 rounded-lg border border-gray-200 bg-white px-3 text-sm font-normal text-gray-700 outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20">
+            <select id="application-job-filter" value={selectedRequisition} onChange={(event) => { clearPipelineSelection(); setSelectedRequisition(event.target.value); }} className="h-10 w-full min-w-0 rounded-lg border border-gray-200 bg-white px-3 text-sm font-normal text-gray-700 outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20">
               <option value="">All jobs</option>
               {requisitions.map((requisition) => <option key={requisition.id} value={requisition.id}>{requisition.title}</option>)}
             </select>
           </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600">
+          <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-gray-600">
             Stage
-            <select value={selectedStatus} onChange={(event) => { clearPipelineSelection(); setSelectedStatus(event.target.value as ApplicationStatus | ""); }} className="h-10 min-w-36 rounded-lg border border-gray-200 bg-white px-3 text-sm font-normal text-gray-700 outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20">
+            <select value={selectedStatus} onChange={(event) => { clearPipelineSelection(); setSelectedStatus(event.target.value as ApplicationStatus | ""); }} className="h-10 w-full min-w-0 rounded-lg border border-gray-200 bg-white px-3 text-sm font-normal text-gray-700 outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20">
               <option value="">All stages</option>
               {STAGES.map((stage) => <option key={stage.status} value={stage.status}>{stage.label}</option>)}
             </select>
           </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600">
+          <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-gray-600">
             Assignment
             <select
               value={myApplicationsOnly ? "mine" : "all"}
@@ -524,13 +543,13 @@ export default function ApplicationsPage() {
                 clearPipelineSelection();
                 setMyApplicationsOnly(event.target.value === "mine");
               }}
-              className="h-10 min-w-40 rounded-lg border border-gray-200 bg-white px-3 text-sm font-normal text-gray-700 outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
+              className="h-10 w-full min-w-0 rounded-lg border border-gray-200 bg-white px-3 text-sm font-normal text-gray-700 outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
             >
               <option value="all">All applications</option>
               <option value="mine">My applications</option>
             </select>
           </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600">
+          <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-gray-600">
             Follow-up
             <select
               value={followUpDueOnly ? "due" : "all"}
@@ -538,19 +557,33 @@ export default function ApplicationsPage() {
                 clearPipelineSelection();
                 setFollowUpDueOnly(event.target.value === "due");
               }}
-              className="h-10 min-w-44 rounded-lg border border-gray-200 bg-white px-3 text-sm font-normal text-gray-700 outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
+              className="h-10 w-full min-w-0 rounded-lg border border-gray-200 bg-white px-3 text-sm font-normal text-gray-700 outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
             >
               <option value="all">All follow-ups</option>
               <option value="due">Due or overdue</option>
             </select>
           </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600">
-            Applied from
-            <input type="date" value={appliedAfter} onChange={(event) => { clearPipelineSelection(); setAppliedAfter(event.target.value); }} className="h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm font-normal text-gray-700" />
+          <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-gray-600">
+            Screening
+            <select
+              value={needsScreeningOnly ? "needs-screening" : "all"}
+              onChange={(event) => {
+                clearPipelineSelection();
+                setNeedsScreeningOnly(event.target.value === "needs-screening");
+              }}
+              className="h-10 w-full min-w-0 rounded-lg border border-gray-200 bg-white px-3 text-sm font-normal text-gray-700 outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
+            >
+              <option value="all">All statuses</option>
+              <option value="needs-screening">Needs screening</option>
+            </select>
           </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-gray-600">
+          <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-gray-600">
+            Applied from
+            <input type="date" value={appliedAfter} onChange={(event) => { clearPipelineSelection(); setAppliedAfter(event.target.value); }} className="h-10 w-full min-w-0 rounded-lg border border-gray-200 bg-white px-3 text-sm font-normal text-gray-700" />
+          </label>
+          <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-gray-600">
             Applied to
-            <input type="date" value={appliedBefore} onChange={(event) => { clearPipelineSelection(); setAppliedBefore(event.target.value); }} className="h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm font-normal text-gray-700" />
+            <input type="date" value={appliedBefore} onChange={(event) => { clearPipelineSelection(); setAppliedBefore(event.target.value); }} className="h-10 w-full min-w-0 rounded-lg border border-gray-200 bg-white px-3 text-sm font-normal text-gray-700" />
           </label>
         </div>
       </header>
@@ -651,11 +684,13 @@ export default function ApplicationsPage() {
         <div className="rounded-xl border border-gray-200 bg-white p-8 text-sm text-gray-500" aria-live="polite">
           Loading applications…
         </div>
-      ) : error && applications.length === 0 ? null : totalMatchingApplications === 0 && (debouncedSearchQuery || selectedRequisition || selectedStatus || appliedAfter || appliedBefore || myApplicationsOnly || followUpDueOnly) ? (
+      ) : error && applications.length === 0 ? null : totalMatchingApplications === 0 && (debouncedSearchQuery || selectedRequisition || selectedStatus || appliedAfter || appliedBefore || myApplicationsOnly || followUpDueOnly || needsScreeningOnly) ? (
         <div className="rounded-xl border border-dashed border-gray-300 bg-white p-12 text-center text-sm text-gray-600">
-          {followUpDueOnly && !debouncedSearchQuery && !selectedRequisition && !selectedStatus && !appliedAfter && !appliedBefore && !myApplicationsOnly
+          {needsScreeningOnly && !debouncedSearchQuery && !selectedRequisition && !selectedStatus && !appliedAfter && !appliedBefore && !myApplicationsOnly && !followUpDueOnly
+            ? "All active applications have a screening assessment."
+            : followUpDueOnly && !debouncedSearchQuery && !selectedRequisition && !selectedStatus && !appliedAfter && !appliedBefore && !myApplicationsOnly && !needsScreeningOnly
             ? "No follow-ups are due or overdue."
-            : myApplicationsOnly && !debouncedSearchQuery && !selectedRequisition && !selectedStatus && !appliedAfter && !appliedBefore && !followUpDueOnly
+            : myApplicationsOnly && !debouncedSearchQuery && !selectedRequisition && !selectedStatus && !appliedAfter && !appliedBefore && !followUpDueOnly && !needsScreeningOnly
             ? "No applications are assigned to you yet. Ask a teammate to assign one to you."
             : "No applications match these filters. Try changing the search or filter values."}
         </div>
@@ -686,7 +721,7 @@ export default function ApplicationsPage() {
           )}
           {view === "table" && (
             <>
-              <div className="space-y-2 sm:hidden">
+              <div className="space-y-2 xl:hidden">
                 {applications.map((application) => (
                   <article key={application.id} className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
                     <div className="flex items-start gap-3">
@@ -704,6 +739,7 @@ export default function ApplicationsPage() {
                         <p className="mt-2 wrap-break-word text-xs font-medium text-gray-700">{application.requisition_title}</p>
                         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-600">
                           <span className="rounded-full bg-gray-100 px-2.5 py-1">{STAGES.find((stage) => stage.status === application.status)?.label ?? application.status}</span>
+                          <ScreeningProgressBadge progress={application.screening_progress} />
                           <span>Applied {formatAppliedDate(application.applied_at)}</span>
                         </div>
                         <p className="mt-1 text-xs text-gray-500">Owner: {application.assigned_to_display_name ?? "Unassigned"}</p>
@@ -714,7 +750,7 @@ export default function ApplicationsPage() {
                   </article>
                 ))}
               </div>
-              <div className="hidden overflow-x-auto rounded-xl border border-gray-200 bg-white sm:block">
+              <div className="hidden overflow-x-auto rounded-xl border border-gray-200 bg-white xl:block">
               <table className="w-full min-w-195 text-left text-sm">
                 <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                   <tr>
@@ -734,6 +770,7 @@ export default function ApplicationsPage() {
                     <th className="px-4 py-3">Next action</th>
                     <th className="px-4 py-3">Applied</th>
                     <th className="px-4 py-3">Stage</th>
+                    <th className="px-4 py-3">Screening</th>
                     <th className="px-4 py-3">Actions</th>
                   </tr>
                 </thead>
@@ -759,6 +796,7 @@ export default function ApplicationsPage() {
                       <td className="px-4 py-3"><FollowUpIndicator action={application.follow_up_action} dueAt={application.follow_up_due_at} /></td>
                       <td className="whitespace-nowrap px-4 py-3 text-gray-600">{formatAppliedDate(application.applied_at)}</td>
                       <td className="px-4 py-3"><span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">{STAGES.find((stage) => stage.status === application.status)?.label ?? application.status}</span></td>
+                      <td className="px-4 py-3"><ScreeningProgressBadge progress={application.screening_progress} /></td>
                       <td className="w-44 px-4 py-3">{renderStageActions(application)}</td>
                     </tr>
                   ))}
@@ -769,7 +807,7 @@ export default function ApplicationsPage() {
           )}
           {view === "board" && (
             <>
-            <p className="mb-2 text-xs text-gray-500 sm:hidden">Swipe sideways to move between hiring stages.</p>
+            <p className="mb-2 text-xs text-gray-500 2xl:hidden">Swipe or scroll sideways to move between hiring stages.</p>
             <div className="snap-x snap-mandatory overflow-x-auto pb-3">
               <div className="grid min-w-[1680px] grid-cols-7 gap-3">
                 {STAGES.map((stage) => {
@@ -787,7 +825,7 @@ export default function ApplicationsPage() {
                         renderApplication={(application) => (
                           <article
                             role="listitem"
-                className="relative mb-2 h-48 overflow-hidden rounded-lg border border-gray-200 bg-white p-3 shadow-sm transition hover:border-sr-green/50 hover:shadow has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-sr-green"
+                className="relative mb-2 h-56 overflow-hidden rounded-lg border border-gray-200 bg-white p-3 shadow-sm transition hover:border-sr-green/50 hover:shadow has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-sr-green"
                           >
                             <Link
                               aria-label={`Open ${application.candidate_name} application for ${application.requisition_title}`}
@@ -807,6 +845,7 @@ export default function ApplicationsPage() {
                               <h3 className="truncate pr-7 text-sm font-semibold text-sr-text-blue">{application.candidate_name}</h3>
                               {application.candidate_email && <p className="mt-1 truncate text-xs text-gray-500">{application.candidate_email}</p>}
                               <p className="mt-2 truncate text-xs font-medium text-gray-700">{application.requisition_title}</p>
+                              <div className="mt-1"><ScreeningProgressBadge progress={application.screening_progress} /></div>
                               <p className="mt-1 text-xs text-gray-500">Applied {formatAppliedDate(application.applied_at)}</p>
                               <p className="mt-1 truncate text-xs text-gray-500">Owner: {application.assigned_to_display_name ?? "Unassigned"}</p>
                               <div className="mt-1 truncate"><FollowUpIndicator action={application.follow_up_action} dueAt={application.follow_up_due_at} /></div>
