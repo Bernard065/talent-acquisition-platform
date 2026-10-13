@@ -14,9 +14,13 @@ from sqlalchemy.sql.functions import count
 from app.core.authorization import Role, TenantContext
 from app.db.models.application import Application
 from app.db.models.application_follow_up import ApplicationFollowUp
+from app.db.models.application_screening_assessment import (
+    ApplicationScreeningAssessment,
+)
 from app.db.models.candidate import Candidate
 from app.db.models.identity import User
 from app.db.models.requisition import Requisition
+from app.domains.applications.screening import ApplicationScreeningProgress
 from app.domains.candidates.enums import (
     ApplicationStatus,
     CandidateConsentStatus,
@@ -58,6 +62,7 @@ class ApplicationSearchFilters:
     applied_before: datetime | None = None
     assigned_to_subject: str | None = None
     follow_up_due: bool = False
+    needs_screening: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +100,7 @@ class ApplicationPipelineRecord:
     assigned_to_display_name: str | None
     follow_up_action: str | None
     follow_up_due_at: datetime | None
+    screening_progress: ApplicationScreeningProgress
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,6 +131,23 @@ class ApplicationPipelineSummary:
     total_count: int
     stage_counts: dict[ApplicationStatus, int]
     jobs: list[ApplicationPipelineJobSummary]
+
+
+def _screening_progress_for_application(
+    *,
+    status: ApplicationStatus,
+    assessment_count: int,
+) -> ApplicationScreeningProgress:
+    """Derive inbox progress; one submitted scorecard completes screening."""
+    if assessment_count > 0:
+        return ApplicationScreeningProgress.COMPLETE
+    if status in {
+        ApplicationStatus.SCREENING,
+        ApplicationStatus.INTERVIEW,
+        ApplicationStatus.OFFER,
+    }:
+        return ApplicationScreeningProgress.IN_PROGRESS
+    return ApplicationScreeningProgress.NOT_STARTED
 
 
 def _require_recruiting_read_role(context: TenantContext) -> None:
@@ -549,6 +572,23 @@ def _application_search_statement(
         )
         statement = statement.where(due_follow_up.exists())
 
+    if filters.needs_screening:
+        submitted_assessment = select(ApplicationScreeningAssessment.id).where(
+            ApplicationScreeningAssessment.tenant_id == context.tenant_id,
+            ApplicationScreeningAssessment.application_id == Application.id,
+        )
+        statement = statement.where(
+            Application.status.in_(
+                {
+                    ApplicationStatus.APPLIED,
+                    ApplicationStatus.SCREENING,
+                    ApplicationStatus.INTERVIEW,
+                    ApplicationStatus.OFFER,
+                }
+            ),
+            ~submitted_assessment.exists(),
+        )
+
     if filters.status is not None:
         statement = statement.where(Application.status == filters.status)
 
@@ -608,6 +648,24 @@ async def search_application_pipeline(
             next_cursor=page.next_cursor,
             stage_counts=stage_counts,
         )
+
+    assessment_count_rows = await session.execute(
+        select(
+            ApplicationScreeningAssessment.application_id,
+            count(ApplicationScreeningAssessment.id),
+        )
+        .where(
+            ApplicationScreeningAssessment.tenant_id == context.tenant_id,
+            ApplicationScreeningAssessment.application_id.in_(
+                {application.id for application in page.items}
+            ),
+        )
+        .group_by(ApplicationScreeningAssessment.application_id)
+    )
+    assessment_counts = {
+        application_id: assessment_count
+        for application_id, assessment_count in assessment_count_rows
+    }
 
     candidate_ids = {application.candidate_id for application in page.items}
     requisition_ids = {application.requisition_id for application in page.items}
@@ -703,6 +761,10 @@ async def search_application_pipeline(
                     follow_ups[application.id][1]
                     if application.id in follow_ups
                     else None
+                ),
+                screening_progress=_screening_progress_for_application(
+                    status=application.status,
+                    assessment_count=assessment_counts.get(application.id, 0),
                 ),
             )
         )

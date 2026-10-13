@@ -9,3 +9,11 @@ class ScreeningRecommendation(StrEnum):
     ADVANCE = "advance"
     HOLD = "hold"
     REJECT = "reject"
+
+
+class ApplicationScreeningProgress(StrEnum):
+    """Recruiter inbox progress derived from submitted scorecards and stage."""
+
+    NOT_STARTED = "not_started"
+    IN_PROGRESS = "in_progress"
+    COMPLETE = "complete"

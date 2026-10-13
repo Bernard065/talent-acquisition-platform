@@ -5,6 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.domains.applications.screening import ApplicationScreeningProgress
 from app.domains.candidates.enums import (
     ApplicationRejectionReason,
     ApplicationStatus,
@@ -78,6 +79,7 @@ class ApplicationPipelineItemResponse(BaseModel):
     status: ApplicationStatus
     applied_at: datetime
     version: int
+    screening_progress: ApplicationScreeningProgress
 
 
 class ApplicationPipelineListResponse(BaseModel):
