@@ -14,6 +14,7 @@ import {
   createApplicationFollowUp,
   getApplicationActivity,
   getApplication,
+  getApplicationAnswers,
   getApplicationPipelineSummary,
   listApplicationPipeline,
   listApplicationFollowUps,
@@ -47,6 +48,7 @@ export const applicationQueryKeys = {
   pipelineSummary: (params: ApplicationFilterParams = {}) =>
     [...applicationQueryKeys.pipelineSummaries(), params] as const,
   detail: (id: string) => [...applicationQueryKeys.all, "detail", id] as const,
+  answers: (id: string) => [...applicationQueryKeys.all, "answers", id] as const,
   activity: (id: string) => [...applicationQueryKeys.all, "activity", id] as const,
   followUps: (id: string) => [...applicationQueryKeys.all, "follow-ups", id] as const,
 };
@@ -99,6 +101,15 @@ export function useApplication(id: string) {
   return useQuery({
     queryKey: applicationQueryKeys.detail(id),
     queryFn: ({ signal }) => getApplication(id, { signal }),
+    enabled: status === "authenticated" && Boolean(id),
+  });
+}
+
+export function useApplicationAnswers(id: string) {
+  const { status } = useSession();
+  return useQuery({
+    queryKey: applicationQueryKeys.answers(id),
+    queryFn: ({ signal }) => getApplicationAnswers(id, { signal }),
     enabled: status === "authenticated" && Boolean(id),
   });
 }

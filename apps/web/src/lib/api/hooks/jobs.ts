@@ -13,11 +13,14 @@ import {
   listJobPostings,
   publishJobPosting,
   unpublishJobPosting,
+  getJobApplicationQuestions,
+  replaceJobApplicationQuestions,
 } from "../services/jobs";
 import type { PaginationParams } from "../types";
 import type {
   CreateJobPostingRequest,
   ExpectedJobPostingVersionRequest,
+  ReplaceJobApplicationQuestionsRequest,
 } from "@/types/api/jobs";
 
 export const jobQueryKeys = {
@@ -25,7 +28,38 @@ export const jobQueryKeys = {
   lists: () => [...jobQueryKeys.all, "list"] as const,
   list: (params: PaginationParams = {}) => [...jobQueryKeys.lists(), params] as const,
   detail: (id: string) => [...jobQueryKeys.all, "detail", id] as const,
+  applicationQuestions: (id: string) => [...jobQueryKeys.all, "application-questions", id] as const,
 };
+
+export function useJobApplicationQuestions(id: string) {
+  const { status } = useSession();
+  return useQuery({
+    queryKey: jobQueryKeys.applicationQuestions(id),
+    queryFn: ({ signal }) => getJobApplicationQuestions(id, { signal }),
+    enabled: status === "authenticated" && Boolean(id),
+  });
+}
+
+export function useReplaceJobApplicationQuestions() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, request, idempotencyKey }: {
+      id: string;
+      request: ReplaceJobApplicationQuestionsRequest;
+      idempotencyKey: string;
+    }) => replaceJobApplicationQuestions(id, request, idempotencyKey),
+    onSuccess: async (result, { id }) => {
+      queryClient.setQueryData(jobQueryKeys.applicationQuestions(id), result);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: jobQueryKeys.detail(id) }),
+        queryClient.invalidateQueries({ queryKey: jobQueryKeys.lists() }),
+      ]);
+    },
+    onError: async (_error, { id }) => {
+      await queryClient.invalidateQueries({ queryKey: jobQueryKeys.applicationQuestions(id) });
+    },
+  });
+}
 
 export function useJobPostings(params: PaginationParams = {}) {
   const { status } = useSession();

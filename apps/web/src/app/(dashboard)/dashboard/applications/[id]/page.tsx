@@ -13,6 +13,7 @@ import { ApplicationOfferSection } from "@/components/applications/application-o
 import { ApplicationInterviewFeedbackSection } from "@/components/applications/application-interview-feedback-section";
 import {
   useApplication,
+  useApplicationAnswers,
   useApplicationActivity,
   useAssignApplication,
   useApplicationFollowUps,
@@ -518,6 +519,7 @@ export default function ApplicationDetailsPage() {
   const { data: session, status: sessionStatus } = useSession();
   const { id } = useParams<{ id: string }>();
   const applicationQuery = useApplication(id);
+  const answersQuery = useApplicationAnswers(id);
   const activityQuery = useApplicationActivity(id);
   const teamMembersQuery = useTeamMembers();
   const assignmentMutation = useAssignApplication();
@@ -745,9 +747,29 @@ export default function ApplicationDetailsPage() {
                   : "We couldn’t prepare the document preview. Please try again."}
               </p>
             )}
-            <p className="mt-4 border-t border-gray-100 pt-4 text-sm text-gray-600">
-              Cover letters and written application answers are not currently collected by the application form.
-            </p>
+            <section aria-labelledby="application-answers-heading" className="mt-5 border-t border-gray-100 pt-5">
+              <h3 id="application-answers-heading" className="text-sm font-semibold text-sr-text-blue">Application answers</h3>
+              {answersQuery.isLoading ? (
+                <p className="mt-3 text-sm text-gray-500" aria-live="polite">Loading application answers…</p>
+              ) : answersQuery.isError ? (
+                <div role="alert" className="mt-3 flex flex-wrap items-center gap-3">
+                  <p className="text-sm text-red-800">We couldn’t load the candidate’s answers.</p>
+                  <Button type="button" variant="outline" onClick={() => void answersQuery.refetch()}>Try again</Button>
+                </div>
+              ) : answersQuery.data?.items.length ? (
+                <dl className="mt-3 divide-y divide-gray-100">
+                  {answersQuery.data.items.map((answer) => (
+                    <div key={answer.question_id} className="grid gap-1 py-3 first:pt-0 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)] sm:gap-5">
+                      <dt className="text-sm font-medium text-gray-700">{answer.prompt}</dt>
+                      <dd className="whitespace-pre-wrap wrap-break-word text-sm leading-6 text-gray-900">{answer.answer}</dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : (
+                <p className="mt-3 text-sm text-gray-600">No additional application questions were answered for this application.</p>
+              )}
+              <p className="mt-3 text-xs text-gray-500">Cover letters are not currently collected by the application form.</p>
+            </section>
           </section>
 
           {canReviewInterviewFeedback && (

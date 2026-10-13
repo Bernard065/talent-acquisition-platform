@@ -30,6 +30,7 @@ from app.api.v1.schemas.applications import (
     ApplicationPipelineSummaryResponse,
     ApplicationResponse,
 )
+from app.api.v1.schemas.job_application_questions import ApplicationAnswersResponse
 from app.core.authorization import TenantContext
 from app.domains.candidates.enums import ApplicationStatus
 from app.services.application_activity import list_application_activity
@@ -67,6 +68,29 @@ router = APIRouter(prefix="/applications", tags=["Applications"])
 
 CallerContext = Annotated[TenantContext, Depends(get_tenant_context)]
 DatabaseSession = Annotated[AsyncSession, Depends(get_db_session)]
+
+
+@router.get(
+    "/{application_id}/answers",
+    response_model=ApplicationAnswersResponse,
+    summary="Get answers submitted with an application",
+)
+async def get_application_answers_endpoint(
+    application_id: UUID,
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+) -> ApplicationAnswersResponse:
+    """Return question snapshots and answers to authorized recruiting staff."""
+    application = await get_application(
+        session,
+        context=context,
+        application_id=application_id,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return ApplicationAnswersResponse.model_validate(
+        {"items": application.answers}
+    )
 
 
 def _private_idempotency_response(

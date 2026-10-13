@@ -190,6 +190,7 @@ from app.services.outbox_inspection_errors import (
     OutboxInspectionAccessDeniedError,
 )
 from app.services.public_application_errors import (
+    PublicApplicationAnswersInvalidError,
     PublicApplicationJobNotFoundError,
     PublicApplicationResumeRejectedError,
     PublicApplicationResumeScanProofError,
@@ -1071,6 +1072,20 @@ async def public_application_resume_rejected(
     return response
 
 
+async def public_application_answers_invalid(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Reject missing or stale public application answers safely."""
+    response = _error_response(
+        request,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        detail="Please review the required application questions and try again.",
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 async def public_application_resume_scan_proof_invalid(
     request: Request,
     _: Exception,
@@ -1521,6 +1536,10 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         PublicApplicationResumeRejectedError,
         public_application_resume_rejected,
+    )
+    application.add_exception_handler(
+        PublicApplicationAnswersInvalidError,
+        public_application_answers_invalid,
     )
     application.add_exception_handler(
         PublicApplicationResumeScanProofError,

@@ -1,5 +1,6 @@
 """Anonymous public job application HTTP endpoints."""
 
+import json
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from typing import Annotated, Any
@@ -292,6 +293,7 @@ async def submit_public_application_endpoint(
             "challenge_token",
             "resume",
             "resume_scan_token",
+            "answers",
         }
         if set(form.keys()) - allowed_fields:
             raise HTTPException(
@@ -316,6 +318,20 @@ async def submit_public_application_endpoint(
             for key in allowed_fields - {"resume", "resume_scan_token"}
             if form.get(key) is not None
         }
+        raw_answers = form.get("answers")
+        if raw_answers is not None:
+            if not isinstance(raw_answers, str):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail="Invalid application submission.",
+                )
+            try:
+                values["answers"] = json.loads(raw_answers)
+            except json.JSONDecodeError as error:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail="Invalid application submission.",
+                ) from error
         if values.get("privacy_consent") == "true":
             values["privacy_consent"] = True
         candidate_resume = form.get("resume")
@@ -474,6 +490,9 @@ async def submit_public_application_endpoint(
                 resume_content_type=resume_content_type,
                 resume_content=resume_content,
                 resume_scan_token=resume_scan_token_value,
+                answers=tuple(
+                    answer.model_dump(mode="json") for answer in payload.answers
+                ),
             ),
             storage=storage,
         )

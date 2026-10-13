@@ -1,4 +1,4 @@
-import { get, post, type RequestOptions } from "../client";
+import { get, post, put, type RequestOptions } from "../client";
 import type { PaginationParams } from "../types";
 import type {
   JobPostingResponse,
@@ -7,6 +7,8 @@ import type {
   ExpectedJobPostingVersionRequest,
   PublicJobDetailResponse,
   PublicJobListResponse,
+  JobApplicationQuestionsResponse,
+  ReplaceJobApplicationQuestionsRequest,
 } from "@/types/api";
 
 export async function listJobPostings(
@@ -60,6 +62,29 @@ export async function unpublishJobPosting(
     ...options,
     idempotencyKey,
   });
+}
+
+export async function getJobApplicationQuestions(
+  id: string,
+  options?: RequestOptions,
+): Promise<JobApplicationQuestionsResponse> {
+  return get<JobApplicationQuestionsResponse>(
+    `/job-postings/${id}/application-questions`,
+    options,
+  );
+}
+
+export async function replaceJobApplicationQuestions(
+  id: string,
+  body: ReplaceJobApplicationQuestionsRequest,
+  idempotencyKey: string,
+  options?: RequestOptions,
+): Promise<JobApplicationQuestionsResponse> {
+  return put<JobApplicationQuestionsResponse>(
+    `/job-postings/${id}/application-questions`,
+    body,
+    { ...options, idempotencyKey },
+  );
 }
 
 // ---------------------------------------------------------------------------

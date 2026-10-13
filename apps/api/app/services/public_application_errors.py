@@ -5,6 +5,10 @@ class PublicApplicationJobNotFoundError(LookupError):
     """Raised when a job is not currently eligible for public applications."""
 
 
+class PublicApplicationAnswersInvalidError(ValueError):
+    """Raised when submitted answers do not match the current job questions."""
+
+
 class PublicApplicationResumeRejectedError(ValueError):
     """Raised when an uploaded résumé fails the malware scan."""
 

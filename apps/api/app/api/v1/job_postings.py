@@ -10,6 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_db_session, get_tenant_context
 from app.api.idempotency import IdempotencyKey, idempotency_response
+from app.api.v1.schemas.job_application_questions import (
+    ApplicationQuestionDefinition,
+    JobApplicationQuestionsResponse,
+    ReplaceApplicationQuestionsRequest,
+)
 from app.api.v1.schemas.job_postings import (
     CreateJobPostingRequest,
     ExpectedJobPostingVersionRequest,
@@ -26,6 +31,7 @@ from app.services.job_postings import (
     get_job_posting,
     list_job_postings,
     publish_job_posting,
+    replace_job_application_questions,
     unpublish_job_posting,
 )
 
@@ -40,6 +46,80 @@ def _private_response(result: IdempotencyResult) -> JSONResponse:
 
 
 _PRIVATE_NO_STORE = "private, no-store"
+
+
+@router.get(
+    "/job-postings/{job_posting_id}/application-questions",
+    response_model=JobApplicationQuestionsResponse,
+    summary="Get job application questions",
+)
+async def get_job_application_questions_endpoint(
+    job_posting_id: UUID,
+    response: Response,
+    tenant_context: Annotated[TenantContext, Depends(get_tenant_context)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> JobApplicationQuestionsResponse:
+    """Return question configuration for an authorized workspace member."""
+    posting = await get_job_posting(
+        session=session,
+        context=tenant_context,
+        job_posting_id=job_posting_id,
+    )
+    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
+    return JobApplicationQuestionsResponse(
+        items=[
+            ApplicationQuestionDefinition.model_validate(item)
+            for item in posting.application_questions
+        ],
+        version=posting.version,
+    )
+
+
+@router.put(
+    "/job-postings/{job_posting_id}/application-questions",
+    response_model=JobApplicationQuestionsResponse,
+    summary="Replace job application questions",
+)
+async def replace_job_application_questions_endpoint(
+    job_posting_id: UUID,
+    payload: ReplaceApplicationQuestionsRequest,
+    tenant_context: Annotated[TenantContext, Depends(get_tenant_context)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Replace a job's question set without losing write ordering."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        posting = await replace_job_application_questions(
+            session,
+            context=tenant_context,
+            job_posting_id=job_posting_id,
+            expected_version=payload.expected_version,
+            questions=[
+                question.model_dump(mode="json")
+                for question in payload.questions
+            ],
+        )
+        return (
+            status.HTTP_200_OK,
+            JobApplicationQuestionsResponse(
+                items=[
+                    ApplicationQuestionDefinition.model_validate(item)
+                    for item in posting.application_questions
+                ],
+                version=posting.version,
+            ).model_dump(mode="json"),
+        )
+
+    result = await execute_idempotently(
+        session,
+        context=tenant_context,
+        key=idempotency_key,
+        operation_name=f"job_posting.application_questions.replace:{job_posting_id}",
+        payload={"job_posting_id": str(job_posting_id), **payload.model_dump(mode="json")},
+        operation=operation,
+    )
+    return _private_response(result)
 
 
 @router.get(
