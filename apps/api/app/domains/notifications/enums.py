@@ -9,6 +9,13 @@ class NotificationChannel(StrEnum):
     EMAIL = "email"
 
 
+class NotificationDigestFrequency(StrEnum):
+    """Cadence for an action-item digest category."""
+
+    DAILY = "daily"
+    WEEKLY = "weekly"
+
+
 class NotificationStatus(StrEnum):
     """Lifecycle state of one notification delivery intent."""
 
@@ -34,3 +41,7 @@ class NotificationEventType(StrEnum):
     INTERVIEW_RESCHEDULED = "interview.rescheduled"
     INTERVIEW_CANCELLED = "interview.cancelled"
     INTERVIEW_REMINDER = "interview.reminder"
+    OVERDUE_FOLLOW_UP_DIGEST = "action_item.overdue_follow_up_digest"
+    PENDING_INTERVIEW_FEEDBACK_DIGEST = (
+        "action_item.pending_interview_feedback_digest"
+    )

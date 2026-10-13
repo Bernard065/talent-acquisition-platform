@@ -3,6 +3,7 @@
 import asyncio
 import os
 import socket
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import httpx
@@ -16,6 +17,9 @@ from app.infrastructure.calendar.infisical_vault import InfisicalCredentialVault
 from app.infrastructure.email.logging_sender import LoggingEmailSender
 from app.infrastructure.email.resend_sender import ResendEmailSender
 from app.services.email_sender import EmailSender
+from app.services.notification_action_item_digests import (
+    enqueue_action_item_digests,
+)
 from app.services.notification_delivery import (
     NotificationDeliveryPolicy,
     process_pending_notifications,
@@ -145,18 +149,35 @@ async def main() -> None:
     )
 
     logger.info("notification_worker_started", worker_id=worker_id)
+    last_digest_date: date | None = None
 
     try:
         sender, http_client = await _build_sender(settings)
 
         while True:
             try:
+                current_time = datetime.now(UTC)
+                digest_date = None
+                digest_enqueued_count = 0
                 async with database.session_factory() as session:
                     intent_result = await process_notification_request_events(
                         session,
                         worker_id=worker_id,
                         policy=outbox_policy,
                     )
+                    if session.in_transaction():
+                        await session.commit()
+                    if (
+                        current_time.hour >= settings.notification_digest_send_hour_utc
+                        and last_digest_date != current_time.date()
+                    ):
+                        digest_enqueued_count = await enqueue_action_item_digests(
+                            session,
+                            now=current_time,
+                        )
+                        digest_date = current_time.date()
+                        if session.in_transaction():
+                            await session.commit()
                     delivered_count = await process_pending_notifications(
                         session,
                         worker_id=worker_id,
@@ -165,6 +186,8 @@ async def main() -> None:
                         web_app_base_url=str(settings.web_app_base_url),
                     )
 
+                if digest_date is not None:
+                    last_digest_date = digest_date
                 _record_heartbeat(settings.notification_worker_heartbeat_path)
 
                 logger.info(
@@ -173,6 +196,7 @@ async def main() -> None:
                     intents_claimed=intent_result.claimed,
                     intents_processed=intent_result.processed,
                     intents_dead_lettered=intent_result.dead_lettered,
+                    digests_enqueued=digest_enqueued_count,
                     delivered_count=delivered_count,
                 )
 

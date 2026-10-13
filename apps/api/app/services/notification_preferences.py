@@ -12,6 +12,7 @@ from app.db.models.notification import NotificationPreference
 from app.db.transactions import transactional
 from app.domains.notifications.enums import (
     NotificationChannel,
+    NotificationDigestFrequency,
     NotificationEventType,
 )
 from app.services.audit import record_audit_event
@@ -28,6 +29,7 @@ class NotificationPreferenceView:
     event_type: NotificationEventType
     channel: NotificationChannel
     enabled: bool
+    digest_frequency: NotificationDigestFrequency
     version: int
     updated_at: datetime | None
 
@@ -68,6 +70,7 @@ def _view(
             event_type=event_type,
             channel=channel,
             enabled=True,
+            digest_frequency=NotificationDigestFrequency.DAILY,
             version=0,
             updated_at=None,
         )
@@ -76,6 +79,7 @@ def _view(
         event_type=event_type,
         channel=channel,
         enabled=preference.enabled,
+        digest_frequency=NotificationDigestFrequency(preference.digest_frequency),
         version=preference.version,
         updated_at=preference.updated_at,
     )
@@ -120,6 +124,7 @@ async def update_notification_preference(
     event_type: NotificationEventType,
     channel: NotificationChannel,
     enabled: bool,
+    digest_frequency: NotificationDigestFrequency = NotificationDigestFrequency.DAILY,
     expected_version: int,
 ) -> NotificationPreferenceView:
     """
@@ -158,11 +163,16 @@ async def update_notification_preference(
                 event_type=event_type.value,
                 channel=channel,
                 enabled=enabled,
+                digest_frequency=digest_frequency.value,
             )
             session.add(preference)
             await session.flush()
-        elif preference.enabled != enabled:
+        elif (
+            preference.enabled != enabled
+            or preference.digest_frequency != digest_frequency.value
+        ):
             preference.enabled = enabled
+            preference.digest_frequency = digest_frequency.value
             await session.flush()
 
         record_audit_event(
@@ -175,6 +185,7 @@ async def update_notification_preference(
                 "event_type": event_type.value,
                 "channel": channel.value,
                 "enabled": preference.enabled,
+                "digest_frequency": preference.digest_frequency,
                 "version": preference.version,
             },
         )

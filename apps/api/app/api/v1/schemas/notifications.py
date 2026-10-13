@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.domains.notifications.enums import (
     NotificationChannel,
+    NotificationDigestFrequency,
     NotificationEventType,
 )
 
@@ -17,6 +18,7 @@ class UpdateNotificationPreferenceRequest(BaseModel):
 
     enabled: bool
     expected_version: int = Field(ge=0)
+    digest_frequency: NotificationDigestFrequency = NotificationDigestFrequency.DAILY
 
 
 class NotificationPreferenceResponse(BaseModel):
@@ -27,5 +29,6 @@ class NotificationPreferenceResponse(BaseModel):
     event_type: NotificationEventType
     channel: NotificationChannel
     enabled: bool
+    digest_frequency: NotificationDigestFrequency
     version: int
     updated_at: datetime | None

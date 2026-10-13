@@ -16,3 +16,22 @@ export interface NotificationActionItem {
 export interface NotificationActionItemsResponse {
   items: NotificationActionItem[];
 }
+
+export type NotificationPreferenceEventType =
+  | "action_item.overdue_follow_up_digest"
+  | "action_item.pending_interview_feedback_digest";
+
+export interface NotificationPreference {
+  event_type: string;
+  channel: "email";
+  enabled: boolean;
+  digest_frequency: "daily" | "weekly";
+  version: number;
+  updated_at: string | null;
+}
+
+export interface UpdateNotificationPreferenceRequest {
+  enabled: boolean;
+  digest_frequency: "daily" | "weekly";
+  expected_version: number;
+}

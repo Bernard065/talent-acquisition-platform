@@ -20,11 +20,21 @@ from app.services.notification_intents import NotificationIntentWorkerResult
 from app.workers import notification_worker
 
 
+class FakeSession:
+    """Minimal session behavior needed by the worker lifecycle."""
+
+    def in_transaction(self) -> bool:
+        return False
+
+    async def commit(self) -> None:
+        return None
+
+
 class FakeSessionContext:
     """Minimal async session context manager for the worker loop."""
 
-    async def __aenter__(self) -> object:
-        return object()
+    async def __aenter__(self) -> FakeSession:
+        return FakeSession()
 
     async def __aexit__(
         self,
@@ -290,6 +300,15 @@ async def test_worker_closes_http_and_database_on_shutdown(
     monkeypatch.setattr(notification_worker, "configure_logging", lambda _: None)
     monkeypatch.setattr(notification_worker, "Database", FakeDatabase)
     monkeypatch.setattr(notification_worker, "logger", logger)
+
+    async def enqueue_digests(*_: object, **__: object) -> int:
+        return 0
+
+    monkeypatch.setattr(
+        notification_worker,
+        "enqueue_action_item_digests",
+        enqueue_digests,
+    )
     heartbeats: list[Path] = []
     monkeypatch.setattr(
         notification_worker,
@@ -357,6 +376,15 @@ async def test_empty_poll_heartbeats_then_sleeps(
     monkeypatch.setattr(notification_worker, "configure_logging", lambda _: None)
     monkeypatch.setattr(notification_worker, "Database", FakeDatabase)
     monkeypatch.setattr(notification_worker, "logger", logger)
+
+    async def enqueue_digests(*_: object, **__: object) -> int:
+        return 0
+
+    monkeypatch.setattr(
+        notification_worker,
+        "enqueue_action_item_digests",
+        enqueue_digests,
+    )
     heartbeats: list[Path] = []
     monkeypatch.setattr(
         notification_worker,
