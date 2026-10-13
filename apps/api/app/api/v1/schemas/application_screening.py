@@ -101,3 +101,36 @@ class ApplicationScreeningAssessmentListResponse(BaseModel):
     my_assessment_id: UUID | None
     rubric: list[ScreeningRubricCriterion] = Field(default_factory=list)
     rubric_version: int | None = None
+
+
+class ScreeningCriterionComparison(BaseModel):
+    """Aggregated scores for one current rubric criterion."""
+
+    criterion_id: UUID
+    criterion: str
+    average_rating: float | None
+    assessment_count: int
+
+
+class ScreeningCandidateComparison(BaseModel):
+    """Summary of submitted screening reviews for one candidate."""
+
+    application_id: UUID
+    candidate_name: str
+    applied_at: datetime
+    current_rubric_review_count: int
+    previous_rubric_review_count: int
+    average_overall_rating: float | None
+    advance_count: int
+    hold_count: int
+    reject_count: int
+    criteria: list[ScreeningCriterionComparison]
+
+
+class ScreeningComparisonPageResponse(BaseModel):
+    """Candidate comparison page for a posting's current screening rubric."""
+
+    rubric_version: int
+    rubric: list[ScreeningRubricCriterion]
+    items: list[ScreeningCandidateComparison]
+    next_cursor: str | None

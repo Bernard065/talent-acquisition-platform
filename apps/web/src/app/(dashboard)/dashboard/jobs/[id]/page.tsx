@@ -26,6 +26,9 @@ export default function JobPostingPage() {
   const canManageApplicationQuestions = session?.roles?.some((role) =>
     role === "tenant_admin" || role === "recruiter" || role === "hiring_manager",
   ) ?? false;
+  const canReviewScreening = session?.roles?.some((role) =>
+    role === "tenant_admin" || role === "recruiter" || role === "people_operations",
+  ) ?? false;
 
   function changePublication() {
     if (!posting) return;
@@ -76,15 +79,22 @@ export default function JobPostingPage() {
                     .filter(Boolean).join(" · ")}
                 </p>
               </div>
-              {posting.status !== "expired" && (
-          <Button onClick={changePublication} disabled={isSaving}>
-                  {isSaving
-                    ? "Saving…"
-                    : posting.status === "published"
-                      ? "Unpublish job"
-                      : "Publish job"}
-                </Button>
-              )}
+              <div className="flex flex-wrap gap-2">
+                {canReviewScreening && (
+                  <Button asChild variant="outline">
+                    <Link href={`/dashboard/jobs/${posting.id}/screening`}>Compare screening</Link>
+                  </Button>
+                )}
+                {posting.status !== "expired" && (
+                  <Button onClick={changePublication} disabled={isSaving}>
+                    {isSaving
+                      ? "Saving…"
+                      : posting.status === "published"
+                        ? "Unpublish job"
+                        : "Publish job"}
+                  </Button>
+                )}
+              </div>
             </div>
 
             <dl className="mt-8 grid gap-5 border-t border-gray-100 pt-6 sm:grid-cols-3">

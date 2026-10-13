@@ -3,7 +3,7 @@
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +13,9 @@ from app.api.v1.schemas.application_screening import (
     ApplicationScreeningAssessmentCreateRequest,
     ApplicationScreeningAssessmentListResponse,
     ApplicationScreeningAssessmentResponse,
+    ScreeningCandidateComparison,
+    ScreeningComparisonPageResponse,
+    ScreeningCriterionComparison,
     ScreeningCriterionResponse,
     ScreeningRubricCriterion,
 )
@@ -23,6 +26,7 @@ from app.db.models.application_screening_assessment import (
 from app.services.application_screening import (
     CreateApplicationScreeningAssessmentCommand,
     ScreeningCriterionCommand,
+    get_job_screening_comparison,
     list_application_screening_assessments,
     submit_application_screening_assessment,
 )
@@ -85,6 +89,57 @@ async def list_screening_assessments_endpoint(
         my_assessment_id=my_assessment_id,
         rubric=[ScreeningRubricCriterion.model_validate(item) for item in rubric],
         rubric_version=rubric_version,
+    )
+
+
+@router.get(
+    "/job-postings/{job_posting_id}/screening-comparison",
+    response_model=ScreeningComparisonPageResponse,
+    summary="Compare candidates currently in screening for a job",
+)
+async def screening_comparison_endpoint(
+    job_posting_id: UUID,
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+    limit: int = Query(default=50, ge=1, le=100),
+    cursor: str | None = Query(default=None, min_length=1, max_length=2048),
+) -> ScreeningComparisonPageResponse:
+    page = await get_job_screening_comparison(
+        session,
+        context=context,
+        job_posting_id=job_posting_id,
+        limit=limit,
+        cursor=cursor,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return ScreeningComparisonPageResponse(
+        rubric_version=page.rubric_version,
+        rubric=[ScreeningRubricCriterion.model_validate(item) for item in page.rubric],
+        items=[
+            ScreeningCandidateComparison(
+                application_id=item.application_id,
+                candidate_name=item.candidate_name,
+                applied_at=item.applied_at,
+                current_rubric_review_count=item.current_rubric_review_count,
+                previous_rubric_review_count=item.previous_rubric_review_count,
+                average_overall_rating=item.average_overall_rating,
+                advance_count=item.advance_count,
+                hold_count=item.hold_count,
+                reject_count=item.reject_count,
+                criteria=[
+                    ScreeningCriterionComparison(
+                        criterion_id=criterion.criterion_id,
+                        criterion=criterion.criterion,
+                        average_rating=criterion.average_rating,
+                        assessment_count=criterion.assessment_count,
+                    )
+                    for criterion in item.criteria
+                ],
+            )
+            for item in page.items
+        ],
+        next_cursor=page.next_cursor,
     )
 
 
