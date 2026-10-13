@@ -15,6 +15,7 @@ import type {
   ApplicationRejectionReason,
   ApplicationPipelineListResponse,
   ApplicationPipelineSummaryResponse,
+  ApplicationAnswersResponse,
 } from "@/types/api";
 
 export interface ApplicationSearchParams extends PaginationParams {
@@ -66,6 +67,13 @@ export async function getApplication(
   options?: RequestOptions,
 ): Promise<ApplicationResponse> {
   return get<ApplicationResponse>(`/applications/${id}`, options);
+}
+
+export async function getApplicationAnswers(
+  id: string,
+  options?: RequestOptions,
+): Promise<ApplicationAnswersResponse> {
+  return get<ApplicationAnswersResponse>(`/applications/${id}/answers`, options);
 }
 
 export async function getApplicationActivity(

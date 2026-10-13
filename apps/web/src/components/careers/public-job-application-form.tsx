@@ -8,6 +8,7 @@ import {
   useSubmitPublicJobApplication,
 } from "@/lib/api/hooks/public-applications";
 import { TurnstileChallenge } from "@/components/careers/turnstile-challenge";
+import type { ApplicationQuestionDefinition } from "@/types/api/jobs";
 
 const turnstileRequired = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
 
@@ -17,6 +18,7 @@ type FormValues = {
   phone: string;
   location: string;
   privacyConsent: boolean;
+  answers: Record<string, string>;
 };
 
 const MAX_RESUME_BYTES = 10 * 1024 * 1024;
@@ -37,6 +39,7 @@ const initialValues: FormValues = {
   phone: "",
   location: "",
   privacyConsent: false,
+  answers: {},
 };
 
 function getSubmissionError(error: unknown): string {
@@ -75,9 +78,11 @@ function getSubmissionError(error: unknown): string {
 export function PublicJobApplicationForm({
   publicJobId,
   jobTitle,
+  questions,
 }: {
   publicJobId: string;
   jobTitle: string;
+  questions: ApplicationQuestionDefinition[];
 }) {
   const [values, setValues] = useState(initialValues);
   const [emailIsValid, setEmailIsValid] = useState(false);
@@ -98,6 +103,7 @@ export function PublicJobApplicationForm({
     values.email.trim().length > 0 &&
     emailIsValid &&
     values.privacyConsent &&
+    questions.every((question) => !question.is_required || Boolean(values.answers[question.id]?.trim())) &&
     (!turnstileRequired || Boolean(challengeToken) || Boolean(resumeScanToken)) &&
     (!resume || Boolean(resumeScanToken));
 
@@ -183,6 +189,11 @@ export function PublicJobApplicationForm({
     formData.set("email", values.email.trim());
     if (values.phone.trim()) formData.set("phone", values.phone.trim());
     if (values.location.trim()) formData.set("location", values.location.trim());
+    const answers = questions.flatMap((question) => {
+      const answer = values.answers[question.id]?.trim();
+      return answer ? [{ question_id: question.id, answer }] : [];
+    });
+    formData.set("answers", JSON.stringify(answers));
     formData.set("privacy_consent", "true");
     if (!resumeScanToken && challengeToken) formData.set("challenge_token", challengeToken);
     if (resume && resumeScanToken) {
@@ -301,6 +312,60 @@ export function PublicJobApplicationForm({
             className="h-11 w-full rounded-lg border border-gray-300 px-3 text-gray-900 outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
           />
         </div>
+
+        {questions.length > 0 && (
+          <div className="sm:col-span-2 border-t border-gray-100 pt-6">
+            <h2 className="text-base font-semibold text-gray-900">Application questions</h2>
+            <p className="mt-1 text-sm text-gray-600">Your answers will be shared with the hiring team for this role.</p>
+            <div className="mt-5 space-y-5">
+              {questions.map((question, index) => {
+                const labelId = `application-question-${question.id}`;
+                return (
+                  <div key={question.id}>
+                    <label htmlFor={labelId} className="mb-1.5 block text-sm font-medium text-gray-700">
+                      {index + 1}. {question.prompt}
+                      {question.is_required ? <span aria-hidden="true"> *</span> : <span className="font-normal text-gray-500"> (optional)</span>}
+                    </label>
+                    {question.question_type === "long_text" ? (
+                      <textarea
+                        id={labelId}
+                        rows={4}
+                        maxLength={5000}
+                        required={question.is_required}
+                        value={values.answers[question.id] ?? ""}
+                        onChange={(event) => updateField("answers", { ...values.answers, [question.id]: event.target.value })}
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
+                      />
+                    ) : question.question_type === "single_choice" || question.question_type === "yes_no" ? (
+                      <select
+                        id={labelId}
+                        required={question.is_required}
+                        value={values.answers[question.id] ?? ""}
+                        onChange={(event) => updateField("answers", { ...values.answers, [question.id]: event.target.value })}
+                        className="h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-gray-900 outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
+                      >
+                        <option value="">Select an answer</option>
+                        {(question.question_type === "yes_no" ? ["yes", "no"] : question.options).map((option) => (
+                          <option key={option} value={option}>{option === "yes" ? "Yes" : option === "no" ? "No" : option}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        id={labelId}
+                        type="text"
+                        maxLength={500}
+                        required={question.is_required}
+                        value={values.answers[question.id] ?? ""}
+                        onChange={(event) => updateField("answers", { ...values.answers, [question.id]: event.target.value })}
+                        className="h-11 w-full rounded-lg border border-gray-300 px-3 text-gray-900 outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <div className="sm:col-span-2">
           <label htmlFor="application-resume" className="mb-1.5 block text-sm font-medium text-gray-700">

@@ -31,7 +31,7 @@ export default async function ApplyPage({
   let job;
 
   try {
-    job = await getPublicJob(id, { next: { revalidate: 60 } });
+    job = await getPublicJob(id, { next: { revalidate: 0 } });
   } catch (error) {
     if (error instanceof ApiError && (error.isNotFound || error.isValidationError)) {
       notFound();
@@ -71,7 +71,11 @@ export default async function ApplyPage({
             Share your contact information with the hiring team.
           </p>
         </div>
-        <PublicJobApplicationForm publicJobId={job.public_id} jobTitle={job.title} />
+        <PublicJobApplicationForm
+          publicJobId={job.public_id}
+          jobTitle={job.title}
+          questions={job.application_questions}
+        />
       </main>
     </div>
   );
