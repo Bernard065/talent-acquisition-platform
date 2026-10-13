@@ -10,6 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_db_session, get_tenant_context
 from app.api.idempotency import IdempotencyKey, idempotency_response
+from app.api.v1.schemas.application_screening import (
+    ReplaceScreeningRubricRequest,
+    ScreeningRubricCriterion,
+    ScreeningRubricResponse,
+)
 from app.api.v1.schemas.job_application_questions import (
     ApplicationQuestionDefinition,
     JobApplicationQuestionsResponse,
@@ -22,6 +27,7 @@ from app.api.v1.schemas.job_postings import (
     JobPostingResponse,
 )
 from app.core.authorization import TenantContext
+from app.db.models.job_posting import JobPosting
 from app.domains.job_postings.enums import EmploymentType, JobPostingStatus
 from app.services.idempotency import IdempotencyResult, execute_idempotently
 from app.services.job_postings import (
@@ -32,6 +38,7 @@ from app.services.job_postings import (
     list_job_postings,
     publish_job_posting,
     replace_job_application_questions,
+    replace_job_screening_rubric,
     unpublish_job_posting,
 )
 
@@ -46,6 +53,13 @@ def _private_response(result: IdempotencyResult) -> JSONResponse:
 
 
 _PRIVATE_NO_STORE = "private, no-store"
+
+
+def _screening_rubric_response(posting: JobPosting) -> ScreeningRubricResponse:
+    return ScreeningRubricResponse(
+        items=[ScreeningRubricCriterion.model_validate(item) for item in posting.screening_rubric],
+        version=posting.screening_rubric_version,
+    )
 
 
 @router.get(
@@ -116,6 +130,62 @@ async def replace_job_application_questions_endpoint(
         context=tenant_context,
         key=idempotency_key,
         operation_name=f"job_posting.application_questions.replace:{job_posting_id}",
+        payload={"job_posting_id": str(job_posting_id), **payload.model_dump(mode="json")},
+        operation=operation,
+    )
+    return _private_response(result)
+
+
+@router.get(
+    "/job-postings/{job_posting_id}/screening-rubric",
+    response_model=ScreeningRubricResponse,
+    summary="Get a job's screening rubric",
+)
+async def get_job_screening_rubric_endpoint(
+    job_posting_id: UUID,
+    response: Response,
+    tenant_context: Annotated[TenantContext, Depends(get_tenant_context)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> ScreeningRubricResponse:
+    """Return the current shared rubric to an authorized workspace member."""
+    posting = await get_job_posting(
+        session=session,
+        context=tenant_context,
+        job_posting_id=job_posting_id,
+    )
+    response.headers["Cache-Control"] = _PRIVATE_NO_STORE
+    return _screening_rubric_response(posting)
+
+
+@router.put(
+    "/job-postings/{job_posting_id}/screening-rubric",
+    response_model=ScreeningRubricResponse,
+    summary="Replace a job's screening rubric",
+)
+async def replace_job_screening_rubric_endpoint(
+    job_posting_id: UUID,
+    payload: ReplaceScreeningRubricRequest,
+    tenant_context: Annotated[TenantContext, Depends(get_tenant_context)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Replace shared criteria used by all screening reviewers for a job."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        posting = await replace_job_screening_rubric(
+            session,
+            context=tenant_context,
+            job_posting_id=job_posting_id,
+            expected_version=payload.expected_version,
+            items=[item.model_dump(mode="json") for item in payload.items],
+        )
+        return status.HTTP_200_OK, _screening_rubric_response(posting).model_dump(mode="json")
+
+    result = await execute_idempotently(
+        session,
+        context=tenant_context,
+        key=idempotency_key,
+        operation_name=f"job_posting.screening_rubric.replace:{job_posting_id}",
         payload={"job_posting_id": str(job_posting_id), **payload.model_dump(mode="json")},
         operation=operation,
     )

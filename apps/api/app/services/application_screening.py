@@ -13,6 +13,7 @@ from app.db.models.application_screening_assessment import (
     ApplicationScreeningAssessment,
 )
 from app.db.models.identity import User
+from app.db.models.job_posting import JobPosting
 from app.db.transactions import transactional
 from app.domains.applications.screening import ScreeningRecommendation
 from app.domains.candidates.enums import ApplicationStatus
@@ -32,9 +33,9 @@ _MAX_CRITERIA = 10
 
 @dataclass(frozen=True, slots=True)
 class ScreeningCriterionCommand:
-    """One normalized requirement score submitted by a reviewer."""
+    """One configured rubric criterion's score submitted by a reviewer."""
 
-    criterion: str
+    criterion_id: UUID
     rating: int
     evidence: str | None = None
 
@@ -45,6 +46,7 @@ class CreateApplicationScreeningAssessmentCommand:
 
     overall_rating: int
     recommendation: ScreeningRecommendation
+    rubric_version: int
     criteria: tuple[ScreeningCriterionCommand, ...]
     summary: str
 
@@ -58,20 +60,41 @@ def _require_screening_role(context: TenantContext) -> None:
 
 def _normalize_command(
     command: CreateApplicationScreeningAssessmentCommand,
+    *,
+    rubric: list[dict[str, object]],
 ) -> tuple[list[dict[str, object]], str]:
     if not 1 <= command.overall_rating <= 5:
         raise ApplicationScreeningValidationError(
             "Overall rating must be between 1 and 5."
         )
-    if not 1 <= len(command.criteria) <= _MAX_CRITERIA:
+    if not rubric:
+        raise ApplicationScreeningConflictError(
+            "Ask a workspace admin or recruiter to configure this job's screening rubric first."
+        )
+    if not 1 <= len(rubric) <= _MAX_CRITERIA:
+        raise ApplicationScreeningValidationError("The job screening rubric is invalid.")
+
+    submitted_by_id = {str(item.criterion_id): item for item in command.criteria}
+    rubric_by_id = {
+        str(item.get("id")): item
+        for item in rubric
+        if isinstance(item, dict) and item.get("id") is not None
+    }
+    if (
+        len(submitted_by_id) != len(command.criteria)
+        or set(submitted_by_id) != set(rubric_by_id)
+    ):
         raise ApplicationScreeningValidationError(
-            "Provide between 1 and 10 job requirement criteria."
+            "Submit a rating for each current job rubric criterion."
         )
 
     criteria: list[dict[str, object]] = []
-    seen_names: set[str] = set()
-    for item in command.criteria:
-        criterion = item.criterion.strip()
+    for criterion_id, rubric_item in rubric_by_id.items():
+        item = submitted_by_id[criterion_id]
+        criterion_value = rubric_item.get("criterion")
+        guidance_value = rubric_item.get("guidance")
+        criterion = criterion_value.strip() if isinstance(criterion_value, str) else ""
+        guidance = guidance_value.strip() if isinstance(guidance_value, str) else None
         evidence = item.evidence.strip() if item.evidence else None
         if not criterion:
             raise ApplicationScreeningValidationError(
@@ -85,15 +108,11 @@ def _normalize_command(
             raise ApplicationScreeningValidationError(
                 "Requirement ratings must be between 1 and 5."
             )
-        normalized_name = criterion.casefold()
-        if normalized_name in seen_names:
-            raise ApplicationScreeningValidationError(
-                "Each job requirement must be listed only once."
-            )
-        seen_names.add(normalized_name)
         criteria.append(
             {
+                "criterion_id": criterion_id,
                 "criterion": criterion,
+                "guidance": guidance or None,
                 "rating": item.rating,
                 "evidence": evidence or None,
             }
@@ -116,18 +135,32 @@ async def list_application_screening_assessments(
     *,
     context: TenantContext,
     application_id: UUID,
-) -> tuple[list[tuple[ApplicationScreeningAssessment, str]], UUID | None]:
+) -> tuple[
+    list[tuple[ApplicationScreeningAssessment, str]],
+    UUID | None,
+    list[dict[str, object]],
+    int | None,
+]:
     """List submitted assessments without exposing another reviewer's draft."""
     _require_screening_role(context)
     async with transactional(session):
-        application_exists = await session.scalar(
-            select(Application.id).where(
+        application = await session.scalar(
+            select(Application).where(
                 Application.id == application_id,
                 Application.tenant_id == context.tenant_id,
             )
         )
-        if application_exists is None:
+        if application is None:
             raise ApplicationNotFoundError("Application was not found.")
+
+        posting = await session.scalar(
+            select(JobPosting)
+            .where(
+                JobPosting.tenant_id == context.tenant_id,
+                JobPosting.requisition_id == application.requisition_id,
+            )
+            .order_by(JobPosting.created_at.desc(), JobPosting.id.desc())
+        )
 
         reviewer_user_id = await session.scalar(
             select(User.id).where(
@@ -164,7 +197,12 @@ async def list_application_screening_assessments(
             ),
             None,
         )
-        return assessments, my_assessment_id
+        return (
+            assessments,
+            my_assessment_id,
+            posting.screening_rubric if posting is not None else [],
+            posting.screening_rubric_version if posting is not None else None,
+        )
 
 
 async def submit_application_screening_assessment(
@@ -176,7 +214,7 @@ async def submit_application_screening_assessment(
 ) -> tuple[ApplicationScreeningAssessment, str]:
     """Record one immutable assessment while the application is in screening."""
     _require_screening_role(context)
-    criteria, summary = _normalize_command(command)
+    summary = command.summary.strip()
 
     try:
         async with transactional(session):
@@ -195,6 +233,29 @@ async def submit_application_screening_assessment(
                     "Move the application to Screening before submitting an assessment."
                 )
 
+            posting = await session.scalar(
+                select(JobPosting)
+                .where(
+                    JobPosting.tenant_id == context.tenant_id,
+                    JobPosting.requisition_id == application.requisition_id,
+                )
+                .order_by(JobPosting.created_at.desc(), JobPosting.id.desc())
+                .limit(1)
+                .with_for_update()
+            )
+            if posting is None:
+                raise ApplicationScreeningConflictError(
+                    "A job posting is required before this application can be screened."
+                )
+            if posting.screening_rubric_version != command.rubric_version:
+                raise ApplicationScreeningConflictError(
+                    "The job screening rubric changed. Reload it before submitting your assessment."
+                )
+            criteria, summary = _normalize_command(
+                command,
+                rubric=posting.screening_rubric,
+            )
+
             reviewer = await session.scalar(
                 select(User).where(
                     User.tenant_id == context.tenant_id,
@@ -212,6 +273,7 @@ async def submit_application_screening_assessment(
                 reviewer_user_id=reviewer.id,
                 overall_rating=command.overall_rating,
                 recommendation=command.recommendation,
+                rubric_version=posting.screening_rubric_version,
                 criteria=criteria,
                 summary=summary,
             )
