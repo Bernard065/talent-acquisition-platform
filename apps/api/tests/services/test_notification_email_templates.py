@@ -4,9 +4,13 @@ from uuid import uuid4
 
 import pytest
 
-from app.domains.notifications.enums import NotificationEventType
+from app.domains.notifications.enums import (
+    NotificationDigestFrequency,
+    NotificationEventType,
+)
 from app.services.notification_email_templates import (
     UnsupportedNotificationTemplateError,
+    render_action_item_digest_email,
     render_notification_email,
 )
 
@@ -140,3 +144,67 @@ def test_template_does_not_expose_workflow_identifiers_or_candidate_data() -> No
     assert candidate_email not in content
     assert "compensation" not in content.lower()
     assert "feedback" not in content.lower()
+
+
+@pytest.mark.parametrize(
+    ("frequency", "subject"),
+    [
+        (NotificationDigestFrequency.DAILY, "Your daily recruiting action items"),
+        (NotificationDigestFrequency.WEEKLY, "Your weekly recruiting action items"),
+    ],
+)
+def test_renders_action_item_digest_with_counts_and_workspace_links(
+    frequency: NotificationDigestFrequency,
+    subject: str,
+) -> None:
+    """Digest emails use the selected cadence and contain actionable links only."""
+    message = render_action_item_digest_email(
+        notification_id=uuid4(),
+        idempotency_key="digest-key",
+        recipient_email="recruiter@example.test",
+        overdue_follow_up_count=2,
+        pending_feedback_count=1,
+        frequency=frequency,
+        web_app_base_url="https://workspace.example.test/",
+    )
+
+    assert message.subject == subject
+    assert message.text_body == (
+        f"Hello,\n\nHere is your {frequency.value} recruiting action summary:\n\n"
+        "- 2 overdue follow-ups: https://workspace.example.test/dashboard/applications\n"
+        "- Feedback is pending for 1 interview: "
+        "https://workspace.example.test/dashboard/interviews\n\n"
+        "Sign in to your workspace to review and complete these actions."
+    )
+
+
+def test_action_item_digest_does_not_include_candidate_or_interview_details() -> None:
+    """Digest templates include counts but omit candidate PII and interview IDs."""
+    message = render_action_item_digest_email(
+        notification_id=uuid4(),
+        idempotency_key="digest-key",
+        recipient_email="recruiter@example.test",
+        overdue_follow_up_count=1,
+        pending_feedback_count=1,
+        frequency=NotificationDigestFrequency.DAILY,
+        web_app_base_url="https://workspace.example.test",
+    )
+
+    content = f"{message.subject}\n{message.text_body}"
+    assert "@" not in content
+    assert "candidate name" not in content.lower()
+    assert "interview id" not in content.lower()
+
+
+def test_action_item_digest_rejects_negative_counts() -> None:
+    """Invalid counts fail before an email can be sent."""
+    with pytest.raises(ValueError, match="Digest counts cannot be negative"):
+        render_action_item_digest_email(
+            notification_id=uuid4(),
+            idempotency_key="digest-key",
+            recipient_email="recruiter@example.test",
+            overdue_follow_up_count=-1,
+            pending_feedback_count=0,
+            frequency=NotificationDigestFrequency.DAILY,
+            web_app_base_url="https://workspace.example.test",
+        )
