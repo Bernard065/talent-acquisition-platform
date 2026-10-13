@@ -296,12 +296,19 @@ class Settings(BaseSettings):
         ge=10,
         le=900,
     )
-    notification_email_provider: Literal["logging", "resend"] = "logging"
+    notification_email_provider: Literal["logging", "resend", "mailjet"] = "logging"
     notification_email_api_key_secret_name: str | None = Field(
         default=None,
         min_length=1,
         max_length=255,
     )
+    notification_email_secret_key_secret_name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=255,
+    )
+    mailjet_api_key: SecretStr | None = None
+    mailjet_secret_key: SecretStr | None = None
     notification_email_from_address: EmailStr | None = None
     notification_email_connect_timeout_seconds: float = Field(
         default=3.0,
@@ -641,8 +648,13 @@ class Settings(BaseSettings):
                     "CREDENTIAL_VAULT_PROVIDER=infisical."
                 )
 
-        if self.app_env == "production" and self.notification_email_provider != "resend":
-            raise ValueError("NOTIFICATION_EMAIL_PROVIDER=resend is required in production.")
+        if self.app_env == "production" and self.notification_email_provider not in {
+            "resend",
+            "mailjet",
+        }:
+            raise ValueError(
+                "NOTIFICATION_EMAIL_PROVIDER=resend or mailjet is required in production."
+            )
 
         if self.notification_email_provider == "resend":
             if self.credential_vault_provider != "infisical":
@@ -659,6 +671,45 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "NOTIFICATION_EMAIL_FROM_ADDRESS is required when "
                     "NOTIFICATION_EMAIL_PROVIDER=resend."
+                )
+
+        if self.notification_email_provider == "mailjet":
+            if self.notification_email_from_address is None:
+                raise ValueError(
+                    "NOTIFICATION_EMAIL_FROM_ADDRESS is required when "
+                    "NOTIFICATION_EMAIL_PROVIDER=mailjet."
+                )
+
+            direct_credentials_configured = (
+                self.mailjet_api_key is not None or self.mailjet_secret_key is not None
+            )
+            if self.app_env not in {"local", "test"} and direct_credentials_configured:
+                raise ValueError(
+                    "MAILJET_API_KEY and MAILJET_SECRET_KEY are permitted only "
+                    "in local and test environments."
+                )
+
+            if self.credential_vault_provider == "infisical":
+                if not self.notification_email_api_key_secret_name:
+                    raise ValueError(
+                        "NOTIFICATION_EMAIL_API_KEY_SECRET_NAME is required when "
+                        "Mailjet credentials are stored in Infisical."
+                    )
+                if not self.notification_email_secret_key_secret_name:
+                    raise ValueError(
+                        "NOTIFICATION_EMAIL_SECRET_KEY_SECRET_NAME is required when "
+                        "Mailjet credentials are stored in Infisical."
+                    )
+            elif self.app_env in {"local", "test"}:
+                if self.mailjet_api_key is None or self.mailjet_secret_key is None:
+                    raise ValueError(
+                        "MAILJET_API_KEY and MAILJET_SECRET_KEY are required for "
+                        "local Mailjet delivery, or configure Infisical."
+                    )
+            else:
+                raise ValueError(
+                    "CREDENTIAL_VAULT_PROVIDER=infisical is required for "
+                    "Mailjet delivery outside local and test environments."
                 )
 
         if self.calendar_oauth_provider == "google":
