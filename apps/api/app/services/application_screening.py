@@ -1,9 +1,10 @@
 """Tenant-scoped recruiter screening scorecards."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +13,7 @@ from app.db.models.application import Application
 from app.db.models.application_screening_assessment import (
     ApplicationScreeningAssessment,
 )
+from app.db.models.candidate import Candidate
 from app.db.models.identity import User
 from app.db.models.job_posting import JobPosting
 from app.db.transactions import transactional
@@ -24,6 +26,7 @@ from app.services.application_screening_errors import (
 )
 from app.services.audit import record_audit_event
 from app.services.candidate_errors import ApplicationNotFoundError
+from app.services.recruiting_search import decode_search_cursor, encode_search_cursor
 
 _SCREENING_ROLES = frozenset(
     {Role.TENANT_ADMIN, Role.RECRUITER, Role.PEOPLE_OPERATIONS}
@@ -51,10 +54,205 @@ class CreateApplicationScreeningAssessmentCommand:
     summary: str
 
 
+@dataclass(frozen=True, slots=True)
+class ScreeningCriterionComparisonRecord:
+    criterion_id: UUID
+    criterion: str
+    average_rating: float | None
+    assessment_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class ScreeningCandidateComparisonRecord:
+    application_id: UUID
+    candidate_name: str
+    applied_at: datetime
+    current_rubric_review_count: int
+    previous_rubric_review_count: int
+    average_overall_rating: float | None
+    advance_count: int
+    hold_count: int
+    reject_count: int
+    criteria: list[ScreeningCriterionComparisonRecord]
+
+
+@dataclass(frozen=True, slots=True)
+class ScreeningComparisonPage:
+    rubric: list[dict[str, object]]
+    rubric_version: int
+    items: list[ScreeningCandidateComparisonRecord]
+    next_cursor: str | None
+
+
 def _require_screening_role(context: TenantContext) -> None:
     if context.roles.isdisjoint(_SCREENING_ROLES):
         raise ApplicationScreeningAccessDeniedError(
             "Caller is not permitted to review applications."
+        )
+
+
+async def get_job_screening_comparison(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    job_posting_id: UUID,
+    limit: int,
+    cursor: str | None,
+) -> ScreeningComparisonPage:
+    """Summarize Screening applications against the posting's active rubric."""
+    _require_screening_role(context)
+    async with transactional(session):
+        posting = await session.scalar(
+            select(JobPosting).where(
+                JobPosting.id == job_posting_id,
+                JobPosting.tenant_id == context.tenant_id,
+            )
+        )
+        if posting is None:
+            raise ApplicationNotFoundError("Job posting was not found.")
+
+        applications_statement = (
+            select(Application, Candidate.full_name)
+            .join(Candidate, Candidate.id == Application.candidate_id)
+            .where(
+                Application.tenant_id == context.tenant_id,
+                Application.requisition_id == posting.requisition_id,
+                Application.status == ApplicationStatus.SCREENING,
+                Candidate.tenant_id == context.tenant_id,
+            )
+            .order_by(Application.applied_at.desc(), Application.id.desc())
+        )
+        if cursor:
+            cursor_timestamp, cursor_id = decode_search_cursor(cursor)
+            applications_statement = applications_statement.where(
+                or_(
+                    Application.applied_at < cursor_timestamp,
+                    and_(
+                        Application.applied_at == cursor_timestamp,
+                        Application.id < cursor_id,
+                    ),
+                )
+            )
+
+        page_rows = (
+            await session.execute(applications_statement.limit(limit + 1))
+        ).all()
+        has_more = len(page_rows) > limit
+        page_rows = page_rows[:limit]
+        application_ids = [application.id for application, _ in page_rows]
+
+        assessment_rows: list[ApplicationScreeningAssessment] = []
+        if application_ids:
+            assessment_rows = list(
+                (
+                    await session.scalars(
+                        select(ApplicationScreeningAssessment).where(
+                            ApplicationScreeningAssessment.tenant_id
+                            == context.tenant_id,
+                            ApplicationScreeningAssessment.application_id.in_(
+                                application_ids
+                            ),
+                        )
+                    )
+                ).all()
+            )
+
+        current_rubric = posting.screening_rubric
+        rubric_by_id: dict[UUID, str] = {}
+        for item in current_rubric:
+            try:
+                criterion_id = UUID(str(item.get("id")))
+            except (ValueError, TypeError):
+                continue
+            criterion = item.get("criterion")
+            if isinstance(criterion, str) and criterion.strip():
+                rubric_by_id[criterion_id] = criterion
+
+        assessments_by_application: dict[UUID, list[ApplicationScreeningAssessment]] = {}
+        for assessment in assessment_rows:
+            assessments_by_application.setdefault(assessment.application_id, []).append(
+                assessment
+            )
+
+        records: list[ScreeningCandidateComparisonRecord] = []
+        for application, candidate_name in page_rows:
+            assessments = assessments_by_application.get(application.id, [])
+            current_assessments = [
+                assessment
+                for assessment in assessments
+                if assessment.rubric_version == posting.screening_rubric_version
+            ]
+            prior_count = len(assessments) - len(current_assessments)
+            overall_ratings = [
+                assessment.overall_rating for assessment in current_assessments
+            ]
+            criterion_ratings: dict[UUID, list[int]] = {
+                criterion_id: [] for criterion_id in rubric_by_id
+            }
+            for assessment in current_assessments:
+                for value in assessment.criteria:
+                    try:
+                        criterion_id = UUID(str(value.get("criterion_id")))
+                    except (ValueError, TypeError):
+                        continue
+                    rating = value.get("rating")
+                    if criterion_id in criterion_ratings and isinstance(rating, int):
+                        criterion_ratings[criterion_id].append(rating)
+
+            records.append(
+                ScreeningCandidateComparisonRecord(
+                    application_id=application.id,
+                    candidate_name=candidate_name,
+                    applied_at=application.applied_at,
+                    current_rubric_review_count=len(current_assessments),
+                    previous_rubric_review_count=prior_count,
+                    average_overall_rating=(
+                        sum(overall_ratings) / len(overall_ratings)
+                        if overall_ratings
+                        else None
+                    ),
+                    advance_count=sum(
+                        assessment.recommendation.value == "advance"
+                        for assessment in current_assessments
+                    ),
+                    hold_count=sum(
+                        assessment.recommendation.value == "hold"
+                        for assessment in current_assessments
+                    ),
+                    reject_count=sum(
+                        assessment.recommendation.value == "reject"
+                        for assessment in current_assessments
+                    ),
+                    criteria=[
+                        ScreeningCriterionComparisonRecord(
+                            criterion_id=criterion_id,
+                            criterion=criterion,
+                            average_rating=(
+                                sum(criterion_ratings[criterion_id])
+                                / len(criterion_ratings[criterion_id])
+                                if criterion_ratings[criterion_id]
+                                else None
+                            ),
+                            assessment_count=len(criterion_ratings[criterion_id]),
+                        )
+                        for criterion_id, criterion in rubric_by_id.items()
+                    ],
+                )
+            )
+
+        next_cursor = None
+        if has_more and page_rows:
+            last_application = page_rows[-1][0]
+            next_cursor = encode_search_cursor(
+                timestamp=last_application.applied_at,
+                record_id=last_application.id,
+            )
+
+        return ScreeningComparisonPage(
+            rubric=current_rubric,
+            rubric_version=posting.screening_rubric_version,
+            items=records,
+            next_cursor=next_cursor,
         )
 
 
