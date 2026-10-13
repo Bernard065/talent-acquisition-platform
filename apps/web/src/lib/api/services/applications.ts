@@ -26,6 +26,7 @@ export interface ApplicationSearchParams extends PaginationParams {
   applied_before?: string;
   mine?: boolean;
   follow_up?: "due";
+  needs_screening?: boolean;
 }
 
 export type ApplicationFilterParams = Omit<ApplicationSearchParams, "cursor" | "limit">;

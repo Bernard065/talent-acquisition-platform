@@ -64,7 +64,10 @@ export interface ApplicationPipelineItem {
   status: ApplicationStatus;
   applied_at: string;
   version: number;
+  screening_progress: ApplicationScreeningProgress;
 }
+
+export type ApplicationScreeningProgress = "not_started" | "in_progress" | "complete";
 
 export interface ApplicationAssignmentRequest {
   assigned_to_user_id: string | null;
