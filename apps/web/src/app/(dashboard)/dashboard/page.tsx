@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { getUserFirstName } from "@/lib/user-display-name";
+import { ActionNotifications } from "@/components/dashboard/action-notifications";
 
 export default function DashboardPage() {
   const { data: session } = useSession();
@@ -19,6 +20,8 @@ export default function DashboardPage() {
           Manage hiring requests and move approved roles into recruiting.
         </p>
       </header>
+
+      <ActionNotifications />
 
       <section aria-labelledby="get-started-heading">
         <h2 id="get-started-heading" className="text-lg font-semibold text-sr-text-blue">

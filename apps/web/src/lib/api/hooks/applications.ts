@@ -7,6 +7,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
+import { notificationQueryKeys } from "./notifications";
 import {
   createApplication,
   assignApplication,
@@ -141,6 +142,7 @@ function useInvalidateFollowUps() {
       queryClient.invalidateQueries({ queryKey: applicationQueryKeys.followUps(id) }),
       queryClient.invalidateQueries({ queryKey: applicationQueryKeys.pipelines() }),
       queryClient.invalidateQueries({ queryKey: applicationQueryKeys.pipelineSummaries() }),
+      queryClient.invalidateQueries({ queryKey: notificationQueryKeys.actionItems }),
     ]);
   };
 }
@@ -201,6 +203,7 @@ export function useAssignApplication() {
         queryClient.invalidateQueries({ queryKey: applicationQueryKeys.lists() }),
         queryClient.invalidateQueries({ queryKey: applicationQueryKeys.pipelines() }),
         queryClient.invalidateQueries({ queryKey: applicationQueryKeys.pipelineSummaries() }),
+        queryClient.invalidateQueries({ queryKey: notificationQueryKeys.actionItems }),
       ]);
     },
   });
