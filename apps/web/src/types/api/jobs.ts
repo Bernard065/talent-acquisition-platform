@@ -6,6 +6,25 @@ export type EmploymentType =
   | "internship";
 
 export type JobPostingStatus = "draft" | "published" | "unpublished" | "expired";
+export type ApplicationQuestionType = "short_text" | "long_text" | "yes_no" | "single_choice";
+
+export interface ApplicationQuestionDefinition {
+  id: string;
+  prompt: string;
+  question_type: ApplicationQuestionType;
+  is_required: boolean;
+  options: string[];
+}
+
+export interface JobApplicationQuestionsResponse {
+  items: ApplicationQuestionDefinition[];
+  version: number;
+}
+
+export interface ReplaceJobApplicationQuestionsRequest {
+  expected_version: number;
+  questions: ApplicationQuestionDefinition[];
+}
 
 export interface CreateJobPostingRequest {
   employment_type: EmploymentType;
@@ -57,6 +76,7 @@ export interface PublicJobSummaryResponse {
 
 export interface PublicJobDetailResponse extends PublicJobSummaryResponse {
   description: string | null;
+  application_questions: ApplicationQuestionDefinition[];
 }
 
 export interface PublicJobListResponse {

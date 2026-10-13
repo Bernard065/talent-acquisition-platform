@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { JobStatusBadge } from "@/components/jobs/job-status-badge";
+import { ApplicationQuestionEditor } from "@/components/jobs/application-question-editor";
 import {
   useJobPosting,
   usePublishJobPosting,
@@ -13,7 +14,7 @@ import {
 
 export default function JobPostingPage() {
   const { id } = useParams<{ id: string }>();
-  const { status: sessionStatus } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const postingQuery = useJobPosting(id);
   const publishMutation = usePublishJobPosting();
   const unpublishMutation = useUnpublishJobPosting();
@@ -21,6 +22,9 @@ export default function JobPostingPage() {
   const isLoading = sessionStatus !== "authenticated" || postingQuery.isLoading;
   const isSaving = publishMutation.isPending || unpublishMutation.isPending;
   const error = publishMutation.error ?? unpublishMutation.error;
+  const canManageApplicationQuestions = session?.roles?.some((role) =>
+    role === "tenant_admin" || role === "recruiter" || role === "hiring_manager",
+  ) ?? false;
 
   function changePublication() {
     if (!posting) return;
@@ -103,6 +107,10 @@ export default function JobPostingPage() {
               </div>
             </dl>
           </section>
+
+          {canManageApplicationQuestions && (
+            <ApplicationQuestionEditor jobPostingId={posting.id} />
+          )}
 
           <section className="rounded-xl border border-gray-200 bg-white p-6 sm:p-8">
             <h2 className="text-lg font-semibold text-sr-text-blue">Job description</h2>
