@@ -37,6 +37,7 @@ from app.services.object_storage import (
     ObjectStorageError,
 )
 from app.services.public_application_errors import (
+    PublicApplicationAnswersInvalidError,
     PublicApplicationJobNotFoundError,
 )
 from app.services.public_application_resumes import (
@@ -61,6 +62,7 @@ class SubmitPublicApplicationCommand:
     resume_content_type: str | None = None
     resume_content: bytes | None = None
     resume_scan_token: str | None = None
+    answers: tuple[dict[str, object], ...] = ()
 
     def __post_init__(self) -> None:
         if not self.full_name.strip():
@@ -235,7 +237,8 @@ async def _create_application_if_missing(
     context: TenantContext,
     candidate: Candidate,
     requisition: Requisition,
-) -> bool:
+    answers: list[dict[str, object]],
+) -> Application | None:
     """
     Create a first application or silently accept a duplicate submission.
 
@@ -255,7 +258,7 @@ async def _create_application_if_missing(
             session.add(application)
             await session.flush()
     except IntegrityError:
-        return False
+        return None
 
     session.add(
         ApplicationStageHistory(
@@ -278,7 +281,59 @@ async def _create_application_if_missing(
             "source": "public_job",
         },
     )
-    return True
+    return application
+
+
+def _snapshot_public_application_answers(
+    *,
+    questions: list[dict[str, object]],
+    submitted_answers: tuple[dict[str, object], ...],
+) -> list[dict[str, object]]:
+    """Validate answers against the current job questions and retain a snapshot."""
+    questions_by_id = {
+        str(question.get("id")): question
+        for question in questions
+        if isinstance(question, dict) and question.get("id") is not None
+    }
+    answers_by_id: dict[str, str] = {}
+    for answer in submitted_answers:
+        question_id = str(answer.get("question_id", ""))
+        value = answer.get("answer")
+        if question_id not in questions_by_id or not isinstance(value, str):
+            raise PublicApplicationAnswersInvalidError
+        if question_id in answers_by_id:
+            raise PublicApplicationAnswersInvalidError
+        answers_by_id[question_id] = value.strip()
+
+    snapshots: list[dict[str, object]] = []
+    for question in questions:
+        question_id = str(question.get("id", ""))
+        prompt = question.get("prompt")
+        question_type = question.get("question_type")
+        answer_text = answers_by_id.get(question_id, "")
+        if not isinstance(prompt, str) or not isinstance(question_type, str):
+            raise PublicApplicationAnswersInvalidError
+        if not answer_text:
+            if question.get("is_required") is True:
+                raise PublicApplicationAnswersInvalidError
+            continue
+        if question_type == "short_text" and len(answer_text) > 500:
+            raise PublicApplicationAnswersInvalidError
+        if question_type == "yes_no" and answer_text not in {"yes", "no"}:
+            raise PublicApplicationAnswersInvalidError
+        if question_type == "single_choice":
+            options = question.get("options")
+            if not isinstance(options, list) or answer_text not in options:
+                raise PublicApplicationAnswersInvalidError
+        snapshots.append(
+            {
+                "question_id": question_id,
+                "prompt": prompt,
+                "question_type": question_type,
+                "answer": answer_text,
+            }
+        )
+    return snapshots
 
 
 async def _store_public_resume(
@@ -417,10 +472,14 @@ async def submit_public_application(
     new and duplicate submissions.
     """
     async with transactional(session):
-        _, requisition = await _load_public_job_for_submission(
+        posting, requisition = await _load_public_job_for_submission(
             session,
             context=context,
             public_job_id=public_job_id,
+        )
+        answer_snapshots = _snapshot_public_application_answers(
+            questions=posting.application_questions,
+            submitted_answers=command.answers,
         )
         resume_scan: ClaimedResumeScan | None = None
         if command.resume_content is not None:
@@ -454,13 +513,14 @@ async def submit_public_application(
             # Do not restart processing after consent withdrawal. The public
             # caller still receives the same generic acknowledgement.
             return
-        application_created = await _create_application_if_missing(
+        application = await _create_application_if_missing(
             session,
             context=context,
             candidate=candidate,
             requisition=requisition,
+            answers=answer_snapshots,
         )
-        if command.resume_content is not None and application_created:
+        if command.resume_content is not None and application is not None:
             if storage is None:
                 raise CandidateDocumentVerificationError("Document storage service is unavailable.")
             if resume_scan is None:

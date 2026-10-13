@@ -1,9 +1,11 @@
 """Strict anonymous request contracts for public job applications."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.api.v1.schemas.job_application_questions import ApplicationAnswerInput
 
 
 class SubmitPublicApplicationRequest(BaseModel):
@@ -18,6 +20,14 @@ class SubmitPublicApplicationRequest(BaseModel):
     source_reference: str | None = Field(default=None, max_length=100)
     privacy_consent: Literal[True]
     challenge_token: str | None = Field(default=None, max_length=2_048)
+    answers: list[ApplicationAnswerInput] = Field(default_factory=list, max_length=10)
+
+    @model_validator(mode="after")
+    def validate_answer_ids(self) -> Self:
+        question_ids = [answer.question_id for answer in self.answers]
+        if len(question_ids) != len(set(question_ids)):
+            raise ValueError("Each application question may be answered once.")
+        return self
 
 
 class PublicApplicationAcceptedResponse(BaseModel):

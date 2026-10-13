@@ -688,6 +688,44 @@ async def get_job_posting(
     return posting
 
 
+async def replace_job_application_questions(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    job_posting_id: UUID,
+    expected_version: int,
+    questions: list[dict[str, object]],
+) -> JobPosting:
+    """Replace a posting's question set with version and role checks."""
+    _require_management_role(context)
+
+    if len(questions) > 10:
+        raise JobPostingValidationError("A job may have at most 10 application questions.")
+
+    async with transactional(session):
+        posting = await _load_job_posting(
+            session,
+            context=context,
+            job_posting_id=job_posting_id,
+        )
+        _validate_expected_version(
+            actual_version=posting.version,
+            expected_version=expected_version,
+        )
+        posting.application_questions = questions
+        await session.flush()
+        record_audit_event(
+            session,
+            context=context,
+            action="job_posting.application_questions_updated",
+            entity_type="job_posting",
+            entity_id=str(posting.id),
+            details={"question_count": len(questions)},
+        )
+
+    return posting
+
+
 async def list_job_postings(
     session: AsyncSession,
     *,

@@ -3,8 +3,9 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
+from app.api.v1.schemas.job_application_questions import ApplicationQuestionDefinition
 from app.domains.job_postings.enums import EmploymentType
 
 
@@ -27,6 +28,7 @@ class PublicJobDetailResponse(PublicJobSummaryResponse):
     """Candidate-safe detail for one currently visible public job."""
 
     description: str | None
+    application_questions: list[ApplicationQuestionDefinition] = Field(default_factory=list)
 
 
 class PublicJobListResponse(BaseModel):
