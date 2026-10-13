@@ -14,6 +14,7 @@ import pytest
 from pydantic import SecretStr
 
 from app.core.config import Settings
+from app.infrastructure.email.mailjet_sender import MailjetEmailSender
 from app.infrastructure.email.resend_sender import ResendEmailSender
 from app.services.email_sender import EmailMessage
 from app.services.notification_intents import NotificationIntentWorkerResult
@@ -211,6 +212,67 @@ async def test_builds_resend_sender_from_infisical_without_live_calls(
     assert request["headers"]["Authorization"] == "Bearer re_test_api_key_not_for_logs"
     await http_client.aclose()
     assert client.closed is True
+
+
+@pytest.mark.asyncio
+async def test_builds_mailjet_sender_from_local_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Local Mailjet configuration uses secret values without Infisical."""
+    settings = _settings().model_copy(
+        update={
+            "notification_email_provider": "mailjet",
+            "notification_email_from_address": "notifications@example.com",
+            "mailjet_api_key": SecretStr("mailjet-public-key"),
+            "mailjet_secret_key": SecretStr("mailjet-private-key"),
+        }
+    )
+    monkeypatch.setattr(notification_worker.httpx, "AsyncClient", FakeHttpClient)
+
+    sender, http_client = await notification_worker._build_sender(settings)
+
+    assert isinstance(sender, MailjetEmailSender)
+    assert http_client is FakeHttpClient.instances[0]
+    assert http_client.kwargs["follow_redirects"] is False
+    assert http_client.kwargs["timeout"].connect == 3.0
+    await http_client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_builds_mailjet_sender_from_two_infisical_secrets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mailjet public and private keys are resolved by configured secret names."""
+    settings = _settings().model_copy(
+        update={
+            "notification_email_provider": "mailjet",
+            "notification_email_api_key_secret_name": "tap_mailjet_public",
+            "notification_email_secret_key_secret_name": "tap_mailjet_private",
+            "notification_email_from_address": "notifications@example.com",
+            "credential_vault_provider": "infisical",
+            "infisical_client_id": "worker-client-id",
+            "infisical_client_secret": SecretStr("infisical-client-secret"),
+            "infisical_project_id": "project-id",
+            "infisical_environment": "production",
+        }
+    )
+    vault = FakeVault()
+    monkeypatch.setattr(
+        notification_worker.InfisicalCredentialVault,
+        "from_universal_auth",
+        lambda **_: _async_value(vault),
+    )
+    monkeypatch.setattr(notification_worker.httpx, "AsyncClient", FakeHttpClient)
+
+    sender, http_client = await notification_worker._build_sender(settings)
+
+    assert isinstance(sender, MailjetEmailSender)
+    assert vault.requested_names == ["tap_mailjet_public", "tap_mailjet_private"]
+    await http_client.aclose()
+
+
+async def _async_value(value: FakeVault) -> FakeVault:
+    return value
 
 
 @pytest.mark.asyncio
