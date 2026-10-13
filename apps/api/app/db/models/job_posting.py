@@ -13,6 +13,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -118,6 +119,12 @@ class JobPosting(Base):
             values_callable=lambda values: [value.value for value in values],
         ),
         nullable=False,
+    )
+    application_questions: Mapped[list[dict[str, object]]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=text("'[]'::jsonb"),
     )
 
     status: Mapped[JobPostingStatus] = mapped_column(
