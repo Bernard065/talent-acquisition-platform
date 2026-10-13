@@ -9,3 +9,4 @@ export * from "./interviews";
 export * from "./offers";
 export * from "./public-applications";
 export * from "./documents";
+export * from "./notifications";

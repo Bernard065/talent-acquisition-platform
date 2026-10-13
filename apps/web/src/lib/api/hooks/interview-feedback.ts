@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
+import { notificationQueryKeys } from "./notifications";
 import {
   createInterviewFeedbackDraft,
   getMyInterviewFeedback,
@@ -52,6 +53,7 @@ function useInvalidateInterviewFeedback() {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: interviewFeedbackQueryKeys.mine(sessionId) }),
       queryClient.invalidateQueries({ queryKey: interviewFeedbackQueryKeys.applications() }),
+      queryClient.invalidateQueries({ queryKey: notificationQueryKeys.actionItems }),
     ]);
   };
 }
