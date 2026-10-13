@@ -7,7 +7,6 @@ export interface StatCardData {
   isDown?: boolean;
   icon: React.ReactNode;
 }
-
 export interface ActivityItem {
   id: string;
   text: string;
@@ -35,11 +34,4 @@ export interface IntegrationItem {
   description: string;
   connected: boolean;
   category: string;
-}
-
-export interface NotificationItem {
-  id: string;
-  title: string;
-  description: string;
-  enabled: boolean;
 }

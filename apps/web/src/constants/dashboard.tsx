@@ -1,4 +1,4 @@
-import type { StatCardData, ActivityItem, InterviewItem, IntegrationItem, NotificationItem } from "@/types/dashboard";
+import type { StatCardData, ActivityItem, InterviewItem, IntegrationItem } from "@/types/dashboard";
 import { Users, BriefcaseBusiness, Clock3, CalendarDays } from "@/components/icons";
 
 export const STATS_DATA: StatCardData[] = [
@@ -39,7 +39,6 @@ export const STATS_DATA: StatCardData[] = [
     icon: <CalendarDays className="w-5 h-5" aria-hidden="true" />,
   },
 ];
-
 export const RECENT_ACTIVITIES: ActivityItem[] = [
   { id: "act-1", text: "Emily Rodriguez was hired for Senior UX Designer", time: "1 hour ago", dotColor: "bg-emerald-500", dotRing: "ring-emerald-50" },
   { id: "act-2", text: "James Wilson applied for Backend Engineer", time: "2 hours ago", dotColor: "bg-blue-500", dotRing: "ring-blue-50" },
@@ -63,13 +62,4 @@ export const INITIAL_INTEGRATIONS: IntegrationItem[] = [
   { id: "google-calendar", name: "Google Calendar", description: "Sync interview schedules automatically", connected: true, category: "Scheduling" },
   { id: "linkedin", name: "LinkedIn Recruiter", description: "Import candidate profiles directly", connected: false, category: "Sourcing" },
   { id: "greenhouse", name: "Greenhouse", description: "ATS integration for pipeline management", connected: false, category: "Applicant Tracking" },
-];
-
-export const INITIAL_NOTIFICATIONS: NotificationItem[] = [
-  { id: "new-applications", title: "New Applications", description: "Get notified when candidates apply", enabled: true },
-  { id: "interview-reminders", title: "Interview Reminders", description: "Receive reminders 30 min before interviews", enabled: true },
-  { id: "stage-changes", title: "Stage Changes", description: "Alerts when candidates move between stages", enabled: true },
-  { id: "weekly-reports", title: "Weekly Reports", description: "Receive weekly hiring pipeline summary", enabled: false },
-  { id: "team-mentions", title: "Team Mentions", description: "Notifications when you're mentioned in notes", enabled: true },
-  { id: "candidate-messages", title: "Candidate Messages", description: "Alerts for new candidate messages", enabled: false },
 ];
