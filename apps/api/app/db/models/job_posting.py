@@ -126,6 +126,17 @@ class JobPosting(Base):
         default=list,
         server_default=text("'[]'::jsonb"),
     )
+    screening_rubric: Mapped[list[dict[str, object]]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+    )
+    screening_rubric_version: Mapped[int] = mapped_column(
+        nullable=False,
+        default=1,
+        server_default=text("1"),
+    )
 
     status: Mapped[JobPostingStatus] = mapped_column(
         Enum(
