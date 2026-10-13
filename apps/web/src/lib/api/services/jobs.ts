@@ -10,6 +10,10 @@ import type {
   JobApplicationQuestionsResponse,
   ReplaceJobApplicationQuestionsRequest,
 } from "@/types/api";
+import type {
+  ReplaceScreeningRubricRequest,
+  ScreeningRubricResponse,
+} from "@/types/api";
 
 export async function listJobPostings(
   params?: PaginationParams,
@@ -82,6 +86,26 @@ export async function replaceJobApplicationQuestions(
 ): Promise<JobApplicationQuestionsResponse> {
   return put<JobApplicationQuestionsResponse>(
     `/job-postings/${id}/application-questions`,
+    body,
+    { ...options, idempotencyKey },
+  );
+}
+
+export async function getJobScreeningRubric(
+  id: string,
+  options?: RequestOptions,
+): Promise<ScreeningRubricResponse> {
+  return get<ScreeningRubricResponse>(`/job-postings/${id}/screening-rubric`, options);
+}
+
+export async function replaceJobScreeningRubric(
+  id: string,
+  body: ReplaceScreeningRubricRequest,
+  idempotencyKey: string,
+  options?: RequestOptions,
+): Promise<ScreeningRubricResponse> {
+  return put<ScreeningRubricResponse>(
+    `/job-postings/${id}/screening-rubric`,
     body,
     { ...options, idempotencyKey },
   );

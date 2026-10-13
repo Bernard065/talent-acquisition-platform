@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { JobStatusBadge } from "@/components/jobs/job-status-badge";
 import { ApplicationQuestionEditor } from "@/components/jobs/application-question-editor";
+import { ScreeningRubricEditor } from "@/components/jobs/screening-rubric-editor";
 import {
   useJobPosting,
   usePublishJobPosting,
@@ -109,7 +110,10 @@ export default function JobPostingPage() {
           </section>
 
           {canManageApplicationQuestions && (
-            <ApplicationQuestionEditor jobPostingId={posting.id} />
+            <>
+              <ApplicationQuestionEditor jobPostingId={posting.id} />
+              <ScreeningRubricEditor jobPostingId={posting.id} />
+            </>
           )}
 
           <section className="rounded-xl border border-gray-200 bg-white p-6 sm:p-8">

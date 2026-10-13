@@ -111,8 +111,32 @@ export interface ApplicationFollowUpListResponse {
 
 export type ScreeningRecommendation = "advance" | "hold" | "reject";
 
-export interface ScreeningCriterion {
+export interface ScreeningRubricCriterion {
+  id: string;
   criterion: string;
+  guidance: string | null;
+}
+
+export interface ScreeningRubricResponse {
+  items: ScreeningRubricCriterion[];
+  version: number;
+}
+
+export interface ReplaceScreeningRubricRequest {
+  expected_version: number;
+  items: ScreeningRubricCriterion[];
+}
+
+export interface ScreeningCriterion {
+  criterion_id?: string | null;
+  criterion: string;
+  guidance?: string | null;
+  rating: number;
+  evidence: string | null;
+}
+
+export interface ScreeningCriterionInput {
+  criterion_id: string;
   rating: number;
   evidence: string | null;
 }
@@ -120,11 +144,13 @@ export interface ScreeningCriterion {
 export interface ApplicationScreeningAssessmentRequest {
   overall_rating: number;
   recommendation: ScreeningRecommendation;
-  criteria: ScreeningCriterion[];
+  rubric_version: number;
+  criteria: ScreeningCriterionInput[];
   summary: string;
 }
 
-export interface ApplicationScreeningAssessment extends ApplicationScreeningAssessmentRequest {
+export interface ApplicationScreeningAssessment extends Omit<ApplicationScreeningAssessmentRequest, "criteria"> {
+  criteria: ScreeningCriterion[];
   id: string;
   application_id: string;
   reviewer_display_name: string;
@@ -134,6 +160,8 @@ export interface ApplicationScreeningAssessment extends ApplicationScreeningAsse
 export interface ApplicationScreeningAssessmentListResponse {
   items: ApplicationScreeningAssessment[];
   my_assessment_id: string | null;
+  rubric: ScreeningRubricCriterion[];
+  rubric_version: number | null;
 }
 
 export interface ApplicationFollowUpRequest {

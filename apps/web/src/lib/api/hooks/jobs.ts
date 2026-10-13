@@ -15,6 +15,8 @@ import {
   unpublishJobPosting,
   getJobApplicationQuestions,
   replaceJobApplicationQuestions,
+  getJobScreeningRubric,
+  replaceJobScreeningRubric,
 } from "../services/jobs";
 import type { PaginationParams } from "../types";
 import type {
@@ -22,6 +24,7 @@ import type {
   ExpectedJobPostingVersionRequest,
   ReplaceJobApplicationQuestionsRequest,
 } from "@/types/api/jobs";
+import type { ReplaceScreeningRubricRequest } from "@/types/api/applications";
 
 export const jobQueryKeys = {
   all: ["job-postings"] as const,
@@ -29,6 +32,7 @@ export const jobQueryKeys = {
   list: (params: PaginationParams = {}) => [...jobQueryKeys.lists(), params] as const,
   detail: (id: string) => [...jobQueryKeys.all, "detail", id] as const,
   applicationQuestions: (id: string) => [...jobQueryKeys.all, "application-questions", id] as const,
+  screeningRubric: (id: string) => [...jobQueryKeys.all, "screening-rubric", id] as const,
 };
 
 export function useJobApplicationQuestions(id: string) {
@@ -57,6 +61,36 @@ export function useReplaceJobApplicationQuestions() {
     },
     onError: async (_error, { id }) => {
       await queryClient.invalidateQueries({ queryKey: jobQueryKeys.applicationQuestions(id) });
+    },
+  });
+}
+
+export function useJobScreeningRubric(id: string) {
+  const { status } = useSession();
+  return useQuery({
+    queryKey: jobQueryKeys.screeningRubric(id),
+    queryFn: ({ signal }) => getJobScreeningRubric(id, { signal }),
+    enabled: status === "authenticated" && Boolean(id),
+  });
+}
+
+export function useReplaceJobScreeningRubric() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, request, idempotencyKey }: {
+      id: string;
+      request: ReplaceScreeningRubricRequest;
+      idempotencyKey: string;
+    }) => replaceJobScreeningRubric(id, request, idempotencyKey),
+    onSuccess: async (result, { id }) => {
+      queryClient.setQueryData(jobQueryKeys.screeningRubric(id), result);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: jobQueryKeys.detail(id) }),
+        queryClient.invalidateQueries({ queryKey: jobQueryKeys.lists() }),
+      ]);
+    },
+    onError: async (_error, { id }) => {
+      await queryClient.invalidateQueries({ queryKey: jobQueryKeys.screeningRubric(id) });
     },
   });
 }

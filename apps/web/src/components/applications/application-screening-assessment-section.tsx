@@ -26,17 +26,6 @@ const ratingLabels = [
   "5 · Exceptional match",
 ];
 
-interface CriterionDraft {
-  key: string;
-  criterion: string;
-  rating: string;
-  evidence: string;
-}
-
-function newCriterion(key: string): CriterionDraft {
-  return { key, criterion: "", rating: "3", evidence: "" };
-}
-
 function formatSubmittedAt(value: string): string {
   return new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
@@ -58,7 +47,7 @@ export function ApplicationScreeningAssessmentSection({
 }) {
   const assessmentsQuery = useApplicationScreeningAssessments(applicationId);
   const submitMutation = useSubmitApplicationScreeningAssessment();
-  const [criteria, setCriteria] = useState<CriterionDraft[]>([newCriterion("requirement-1")]);
+  const [criteria, setCriteria] = useState<Record<string, { rating: string; evidence: string }>>({});
   const [overallRating, setOverallRating] = useState("3");
   const [recommendation, setRecommendation] = useState<ScreeningRecommendation>("advance");
   const [summary, setSummary] = useState("");
@@ -66,24 +55,22 @@ export function ApplicationScreeningAssessmentSection({
   const hasMyAssessment = Boolean(
     assessmentsQuery.data?.my_assessment_id,
   );
+  const rubric = assessmentsQuery.data?.rubric ?? [];
+  const rubricVersion = assessmentsQuery.data?.rubric_version;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormError("");
 
-    const normalizedCriteria = criteria.map((item) => ({
-      criterion: item.criterion.trim(),
-      rating: Number(item.rating),
-      evidence: item.evidence.trim() || null,
+    if (!rubric.length || rubricVersion === null || rubricVersion === undefined) {
+      setFormError("A job screening rubric must be configured before submitting an assessment.");
+      return;
+    }
+    const normalizedCriteria = rubric.map((item) => ({
+      criterion_id: item.id,
+      rating: Number(criteria[item.id]?.rating ?? "3"),
+      evidence: criteria[item.id]?.evidence.trim() || null,
     }));
-    if (normalizedCriteria.some((item) => !item.criterion)) {
-      setFormError("Add a name for each requirement you assess.");
-      return;
-    }
-    if (new Set(normalizedCriteria.map((item) => item.criterion.toLowerCase())).size !== normalizedCriteria.length) {
-      setFormError("Each job requirement can only be assessed once.");
-      return;
-    }
 
     try {
       await submitMutation.mutateAsync({
@@ -91,6 +78,7 @@ export function ApplicationScreeningAssessmentSection({
         assessment: {
           overall_rating: Number(overallRating),
           recommendation,
+          rubric_version: rubricVersion,
           criteria: normalizedCriteria,
           summary: summary.trim(),
         },
@@ -101,10 +89,15 @@ export function ApplicationScreeningAssessmentSection({
     }
   }
 
-  function updateCriterion(key: string, field: keyof Omit<CriterionDraft, "key">, value: string) {
-    setCriteria((current) => current.map((item) =>
-      item.key === key ? { ...item, [field]: value } : item,
-    ));
+  function updateCriterion(id: string, field: "rating" | "evidence", value: string) {
+    setCriteria((current) => ({
+      ...current,
+      [id]: {
+        rating: current[id]?.rating ?? "3",
+        evidence: current[id]?.evidence ?? "",
+        [field]: value,
+      },
+    }));
   }
 
   return (
@@ -212,71 +205,52 @@ export function ApplicationScreeningAssessmentSection({
               <div>
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <h3 className="text-sm font-semibold text-gray-800">Requirement assessment</h3>
-                    <p className="mt-1 text-xs text-gray-500">Add requirements from the job description and the candidate evidence for each.</p>
+                    <h3 className="text-sm font-semibold text-gray-800">Shared job criteria</h3>
+                    <p className="mt-1 text-xs text-gray-500">All reviewers use the rubric configured for this job.</p>
                   </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={criteria.length >= 10}
-                    onClick={() => setCriteria((current) => [...current, newCriterion(crypto.randomUUID())])}
-                  >
-                    Add requirement
-                  </Button>
                 </div>
-                <div className="space-y-4">
-                  {criteria.map((item, index) => (
-                    <fieldset key={item.key} className="rounded-lg border border-gray-200 p-4">
-                      <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Requirement {index + 1}</legend>
-                      <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_13rem]">
-                        <label className="block text-sm font-medium text-gray-700">
-                          Job requirement
-                          <input
-                            required
-                            maxLength={200}
-                            value={item.criterion}
-                            onChange={(event) => updateCriterion(item.key, "criterion", event.target.value)}
-                            placeholder="e.g. 3+ years of product design experience"
-                            className="mt-2 h-10 w-full rounded-lg border border-gray-200 px-3 text-sm font-normal outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
+                {rubric.length ? (
+                  <div className="space-y-4">
+                    {rubric.map((item, index) => (
+                      <fieldset key={item.id} className="rounded-lg border border-gray-200 p-4">
+                        <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Criterion {index + 1}</legend>
+                        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_13rem]">
+                          <div>
+                            <p className="text-sm font-semibold text-gray-900">{item.criterion}</p>
+                            {item.guidance && <p className="mt-1 text-sm text-gray-600">{item.guidance}</p>}
+                          </div>
+                          <label className="block text-sm font-medium text-gray-700">
+                            Match
+                            <select
+                              value={criteria[item.id]?.rating ?? "3"}
+                              onChange={(event) => updateCriterion(item.id, "rating", event.target.value)}
+                              className="mt-2 h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm font-normal outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
+                            >
+                              {ratingLabels.map((label, ratingIndex) => (
+                                <option key={label} value={ratingIndex + 1}>{label}</option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                        <label className="mt-4 block text-sm font-medium text-gray-700">
+                          Evidence from the application
+                          <textarea
+                            maxLength={2000}
+                            rows={2}
+                            value={criteria[item.id]?.evidence ?? ""}
+                            onChange={(event) => updateCriterion(item.id, "evidence", event.target.value)}
+                            placeholder="What in the résumé or application supports this rating?"
+                            className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-normal outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
                           />
                         </label>
-                        <label className="block text-sm font-medium text-gray-700">
-                          Match
-                          <select
-                            value={item.rating}
-                            onChange={(event) => updateCriterion(item.key, "rating", event.target.value)}
-                            className="mt-2 h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm font-normal outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
-                          >
-                            {ratingLabels.map((label, ratingIndex) => (
-                              <option key={label} value={ratingIndex + 1}>{label}</option>
-                            ))}
-                          </select>
-                        </label>
-                      </div>
-                      <label className="mt-4 block text-sm font-medium text-gray-700">
-                        Evidence from the application
-                        <textarea
-                          maxLength={2000}
-                          rows={2}
-                          value={item.evidence}
-                          onChange={(event) => updateCriterion(item.key, "evidence", event.target.value)}
-                          placeholder="What in the resume or application supports this rating?"
-                          className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-normal outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
-                        />
-                      </label>
-                      {criteria.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => setCriteria((current) => current.filter((criterion) => criterion.key !== item.key))}
-                          className="mt-3 cursor-pointer text-sm font-medium text-red-700 hover:text-red-900"
-                        >
-                          Remove requirement
-                        </button>
-                      )}
-                    </fieldset>
-                  ))}
-                </div>
+                      </fieldset>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                    No screening rubric is configured for this job. Ask a recruiter or hiring manager to add shared criteria on the job posting before submitting an assessment.
+                  </p>
+                )}
               </div>
 
               <label className="block text-sm font-medium text-gray-700">
@@ -296,7 +270,7 @@ export function ApplicationScreeningAssessmentSection({
               {formError && <p role="alert" className="text-sm text-red-800">{formError}</p>}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-xs text-gray-500">Submitted assessments are visible to recruiting teammates and cannot be edited.</p>
-                <Button type="submit" disabled={submitMutation.isPending || !summary.trim() || criteria.some((item) => !item.criterion.trim())}>
+                <Button type="submit" disabled={submitMutation.isPending || !summary.trim() || rubric.length === 0}>
                   {submitMutation.isPending ? "Submitting…" : "Submit screening assessment"}
                 </Button>
               </div>
