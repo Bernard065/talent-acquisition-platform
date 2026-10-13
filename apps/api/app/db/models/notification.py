@@ -38,6 +38,10 @@ class NotificationPreference(Base):
             "channel",
             name="uq_notification_preferences_tenant_user_event_channel",
         ),
+        CheckConstraint(
+            "digest_frequency in ('daily', 'weekly')",
+            name="ck_notification_preferences_digest_frequency",
+        ),
         Index(
             "ix_notification_preferences_tenant_user",
             "tenant_id",
@@ -77,6 +81,12 @@ class NotificationPreference(Base):
         nullable=False,
         default=True,
         server_default=text("true"),
+    )
+    digest_frequency: Mapped[str] = mapped_column(
+        String(10),
+        nullable=False,
+        default="daily",
+        server_default="daily",
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

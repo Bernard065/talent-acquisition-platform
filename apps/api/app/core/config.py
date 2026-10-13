@@ -278,6 +278,11 @@ class Settings(BaseSettings):
         ge=1,
         le=100,
     )
+    notification_digest_send_hour_utc: int = Field(
+        default=6,
+        ge=0,
+        le=23,
+    )
     notification_worker_id: str | None = Field(
         default=None,
         min_length=1,

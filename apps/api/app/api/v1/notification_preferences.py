@@ -81,6 +81,7 @@ async def update_notification_preference_endpoint(
             event_type=event_type,
             channel=channel,
             enabled=payload.enabled,
+            digest_frequency=payload.digest_frequency,
             expected_version=payload.expected_version,
         )
         return (
