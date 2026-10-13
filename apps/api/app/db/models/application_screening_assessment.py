@@ -78,6 +78,7 @@ class ApplicationScreeningAssessment(Base):
     )
     criteria: Mapped[list[dict[str, object]]] = mapped_column(JSONB, nullable=False)
     summary: Mapped[str] = mapped_column(Text, nullable=False)
+    rubric_version: Mapped[int | None] = mapped_column(nullable=True)
     submitted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("CURRENT_TIMESTAMP")
     )

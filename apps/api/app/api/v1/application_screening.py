@@ -14,6 +14,7 @@ from app.api.v1.schemas.application_screening import (
     ApplicationScreeningAssessmentListResponse,
     ApplicationScreeningAssessmentResponse,
     ScreeningCriterionResponse,
+    ScreeningRubricCriterion,
 )
 from app.core.authorization import TenantContext
 from app.db.models.application_screening_assessment import (
@@ -54,6 +55,7 @@ def _assessment_response(
             for item in assessment.criteria
         ],
         summary=assessment.summary,
+        rubric_version=assessment.rubric_version,
         submitted_at=assessment.submitted_at,
     )
 
@@ -69,7 +71,7 @@ async def list_screening_assessments_endpoint(
     session: DatabaseSession,
     response: Response,
 ) -> ApplicationScreeningAssessmentListResponse:
-    rows, my_assessment_id = await list_application_screening_assessments(
+    rows, my_assessment_id, rubric, rubric_version = await list_application_screening_assessments(
         session,
         context=context,
         application_id=application_id,
@@ -81,6 +83,8 @@ async def list_screening_assessments_endpoint(
             for assessment, display_name in rows
         ],
         my_assessment_id=my_assessment_id,
+        rubric=[ScreeningRubricCriterion.model_validate(item) for item in rubric],
+        rubric_version=rubric_version,
     )
 
 
@@ -106,9 +110,10 @@ async def submit_screening_assessment_endpoint(
                 command=CreateApplicationScreeningAssessmentCommand(
                     overall_rating=payload.overall_rating,
                     recommendation=payload.recommendation,
+                    rubric_version=payload.rubric_version,
                     criteria=tuple(
                         ScreeningCriterionCommand(
-                            criterion=item.criterion,
+                            criterion_id=item.criterion_id,
                             rating=item.rating,
                             evidence=item.evidence,
                         )

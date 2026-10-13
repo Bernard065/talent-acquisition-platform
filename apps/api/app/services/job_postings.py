@@ -726,6 +726,82 @@ async def replace_job_application_questions(
     return posting
 
 
+async def replace_job_screening_rubric(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    job_posting_id: UUID,
+    expected_version: int,
+    items: list[dict[str, object]],
+) -> JobPosting:
+    """Replace the shared screening rubric for a job posting."""
+    _require_management_role(context)
+    if len(items) > 10:
+        raise JobPostingValidationError(
+            "A screening rubric may have at most 10 criteria."
+        )
+
+    normalized_items: list[dict[str, object]] = []
+    seen_ids: set[str] = set()
+    seen_labels: set[str] = set()
+    for item in items:
+        criterion_id = item.get("id")
+        criterion = item.get("criterion")
+        guidance = item.get("guidance")
+        if not isinstance(criterion_id, str) or not isinstance(criterion, str):
+            raise JobPostingValidationError("Screening rubric criteria are invalid.")
+        normalized_criterion = criterion.strip()
+        normalized_guidance = guidance.strip() if isinstance(guidance, str) else None
+        if not normalized_criterion or len(normalized_criterion) > 200:
+            raise JobPostingValidationError(
+                "Screening rubric criteria must contain 1 to 200 characters."
+            )
+        if normalized_guidance is not None and len(normalized_guidance) > 1000:
+            raise JobPostingValidationError(
+                "Screening rubric guidance must not exceed 1000 characters."
+            )
+        if criterion_id in seen_ids or normalized_criterion.casefold() in seen_labels:
+            raise JobPostingValidationError(
+                "Screening rubric criteria must be unique."
+            )
+        seen_ids.add(criterion_id)
+        seen_labels.add(normalized_criterion.casefold())
+        normalized_items.append(
+            {
+                "id": criterion_id,
+                "criterion": normalized_criterion,
+                "guidance": normalized_guidance or None,
+            }
+        )
+
+    async with transactional(session):
+        posting = await _load_job_posting(
+            session,
+            context=context,
+            job_posting_id=job_posting_id,
+        )
+        if posting.screening_rubric_version != expected_version:
+            raise JobPostingVersionConflictError(
+                "The screening rubric has changed. Reload it and try again."
+            )
+        posting.screening_rubric = normalized_items
+        posting.screening_rubric_version += 1
+        await session.flush()
+        record_audit_event(
+            session,
+            context=context,
+            action="job_posting.screening_rubric_updated",
+            entity_type="job_posting",
+            entity_id=str(posting.id),
+            details={
+                "rubric_version": posting.screening_rubric_version,
+                "criterion_count": len(normalized_items),
+            },
+        )
+
+    return posting
+
+
 async def list_job_postings(
     session: AsyncSession,
     *,
