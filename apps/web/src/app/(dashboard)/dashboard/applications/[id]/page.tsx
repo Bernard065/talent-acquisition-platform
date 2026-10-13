@@ -560,144 +560,113 @@ export default function ApplicationDetailsPage() {
         </section>
       ) : (
         <>
-          <header className="flex flex-col gap-4 rounded-xl border border-gray-200 bg-white p-6 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-500">Application</p>
-              <h1 className="mt-1 text-2xl font-bold tracking-tight text-sr-text-blue">
-                {candidate?.full_name ?? "Candidate unavailable"}
-              </h1>
-              <p className="mt-2 text-sm text-gray-600">
-                {requisition?.title ?? "Job unavailable"}
-                {requisition?.department ? ` · ${requisition.department}` : ""}
-              </p>
-            </div>
-            <ApplicationStageControl
-              applicationId={application.id}
-              status={application.status}
-              version={application.version}
-            />
-          </header>
-
-          <div className="grid gap-6 lg:grid-cols-2">
-            <section aria-labelledby="candidate-profile-heading" className="rounded-xl border border-gray-200 bg-white p-6">
-              <h2 id="candidate-profile-heading" className="text-base font-semibold text-sr-text-blue">Candidate profile</h2>
-              {candidate ? (
-                <dl className="mt-5 grid gap-x-6 gap-y-5 sm:grid-cols-2">
-                  <Detail label="Full name" value={candidate.full_name} />
-                  <Detail label="Email" value={candidate.email} />
-                  <Detail label="Phone" value={candidate.phone} />
-                  <Detail label="Location" value={candidate.location} />
-                  <Detail label="Source" value={candidate.source.replaceAll("_", " ")} />
-                </dl>
-              ) : (
-                <p className="mt-3 text-sm text-gray-600">The candidate profile is unavailable or has been removed.</p>
-              )}
-            </section>
-
-            <section aria-labelledby="application-info-heading" className="rounded-xl border border-gray-200 bg-white p-6">
-              <h2 id="application-info-heading" className="text-base font-semibold text-sr-text-blue">Application details</h2>
-              <dl className="mt-5 grid gap-x-6 gap-y-5 sm:grid-cols-2">
-                <Detail label="Current stage" value={STATUS_LABELS[application.status]} />
-                <Detail label="Applied" value={formatDate(application.applied_at)} />
-                <Detail label="Last updated" value={formatDate(application.updated_at)} />
-                <Detail label="Job status" value={requisition?.status.replaceAll("_", " ")} />
-              </dl>
-            </section>
-          </div>
-
-          <section aria-labelledby="application-owner-heading" className="rounded-xl border border-gray-200 bg-white p-6">
-            <h2 id="application-owner-heading" className="text-base font-semibold text-sr-text-blue">Application owner</h2>
-            <p className="mt-1 text-sm text-gray-600">Assign a teammate to take responsibility for this application.</p>
-            <label className="mt-4 block max-w-md">
-              <span className="mb-1 block text-sm font-medium text-gray-700">Assigned recruiter</span>
-              <select
-                value={application.assigned_to_user_id ?? ""}
-                disabled={teamMembersQuery.isLoading || teamMembersQuery.isError || assignmentMutation.isPending}
-                onChange={(event) => assignmentMutation.mutate({
-                  id: application.id,
-                  assignment: {
-                    assigned_to_user_id: event.target.value || null,
-                    expected_version: application.version,
-                  },
-                  idempotencyKey: crypto.randomUUID(),
-                })}
-                className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20 disabled:cursor-not-allowed disabled:bg-gray-50"
-              >
-                <option value="">Unassigned</option>
-                {teamMembersQuery.data?.items.map((member) => (
-                  <option key={member.id} value={member.id}>{member.display_name} · {member.email}</option>
-                ))}
-                {application.assigned_to_user_id && !assignedMember && (
-                  <option value={application.assigned_to_user_id}>Current assignee (not eligible for new assignments)</option>
-                )}
-              </select>
-            </label>
-            {teamMembersQuery.isError && (
-              <div role="alert" className="mt-2 flex flex-wrap items-center gap-3">
-                <p className="text-sm text-red-800">We couldn’t load workspace teammates.</p>
-                <Button type="button" variant="outline" onClick={() => void teamMembersQuery.refetch()}>
-                  Try again
-                </Button>
+          <section aria-labelledby="application-summary-heading" className="rounded-xl border border-gray-200 bg-white p-5 sm:p-6">
+            <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-gray-500">Candidate information</p>
+                <h1 id="application-summary-heading" className="mt-1 wrap-break-word text-2xl font-bold tracking-tight text-sr-text-blue sm:text-3xl">
+                  {candidate?.full_name ?? "Candidate unavailable"}
+                </h1>
+                <p className="mt-2 wrap-break-word text-sm text-gray-600">
+                  {requisition?.title ?? "Job unavailable"}
+                  {requisition?.department ? ` · ${requisition.department}` : ""}
+                </p>
               </div>
-            )}
-            {assignmentMutation.isError && (
-              <p role="alert" className="mt-2 text-sm text-red-800">
-                We couldn’t update the application owner. The application may have changed; reload and try again.
-              </p>
-            )}
-            {assignmentMutation.isSuccess && (
-              <p role="status" className="mt-2 text-sm text-green-800">Application owner updated.</p>
-            )}
+              <div className="flex flex-col gap-1 xl:items-end">
+                <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Current stage</span>
+                <ApplicationStageControl
+                  applicationId={application.id}
+                  status={application.status}
+                  version={application.version}
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 grid gap-6 border-t border-gray-100 pt-6 lg:grid-cols-2">
+              <section aria-labelledby="candidate-contact-heading" className="min-w-0">
+                <h2 id="candidate-contact-heading" className="text-sm font-semibold text-sr-text-blue">Contact details</h2>
+                {candidate ? (
+                  <dl className="mt-4 grid gap-x-6 gap-y-4 sm:grid-cols-2">
+                    <Detail label="Email" value={candidate.email} />
+                    <Detail label="Phone" value={candidate.phone} />
+                    <Detail label="Location" value={candidate.location} />
+                    <Detail label="Source" value={candidate.source.replaceAll("_", " ")} />
+                  </dl>
+                ) : (
+                  <p className="mt-3 text-sm text-gray-600">The candidate profile is unavailable or has been removed.</p>
+                )}
+              </section>
+
+              <section aria-labelledby="application-info-heading" className="min-w-0">
+                <h2 id="application-info-heading" className="text-sm font-semibold text-sr-text-blue">Application summary</h2>
+                <dl className="mt-4 grid gap-x-6 gap-y-4 sm:grid-cols-2">
+                  <Detail label="Job title" value={requisition?.title} />
+                  <Detail label="Application date" value={formatDate(application.applied_at)} />
+                  <Detail label="Last updated" value={formatDate(application.updated_at)} />
+                  <Detail label="Job status" value={requisition?.status.replaceAll("_", " ")} />
+                </dl>
+                <label className="mt-5 block max-w-lg">
+                  <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500">Assigned recruiter</span>
+                  <select
+                    value={application.assigned_to_user_id ?? ""}
+                    disabled={teamMembersQuery.isLoading || teamMembersQuery.isError || assignmentMutation.isPending}
+                    onChange={(event) => assignmentMutation.mutate({
+                      id: application.id,
+                      assignment: {
+                        assigned_to_user_id: event.target.value || null,
+                        expected_version: application.version,
+                      },
+                      idempotencyKey: crypto.randomUUID(),
+                    })}
+                    className="h-10 w-full min-w-0 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20 disabled:cursor-not-allowed disabled:bg-gray-50"
+                  >
+                    <option value="">Unassigned</option>
+                    {teamMembersQuery.data?.items.map((member) => (
+                      <option key={member.id} value={member.id}>{member.display_name} · {member.email}</option>
+                    ))}
+                    {application.assigned_to_user_id && !assignedMember && (
+                      <option value={application.assigned_to_user_id}>Current assignee (not eligible for new assignments)</option>
+                    )}
+                  </select>
+                </label>
+                {teamMembersQuery.isError && (
+                  <div role="alert" className="mt-2 flex flex-wrap items-center gap-3">
+                    <p className="text-sm text-red-800">We couldn’t load workspace teammates.</p>
+                    <Button type="button" variant="outline" onClick={() => void teamMembersQuery.refetch()}>
+                      Try again
+                    </Button>
+                  </div>
+                )}
+                {assignmentMutation.isError && (
+                  <p role="alert" className="mt-2 text-sm text-red-800">
+                    We couldn’t update the application owner. The application may have changed; reload and try again.
+                  </p>
+                )}
+                {assignmentMutation.isSuccess && (
+                  <p role="status" className="mt-2 text-sm text-green-800">Application owner updated.</p>
+                )}
+              </section>
+            </div>
           </section>
 
-          {canReviewInterviewFeedback && (
-            <ApplicationScreeningAssessmentSection
-              applicationId={application.id}
-              applicationStatus={application.status}
-              jobTitle={requisition?.title ?? "this role"}
-              jobDescription={requisition?.description}
-            />
-          )}
-
-          <ApplicationFollowUpsSection applicationId={application.id} />
-
-          <ApplicationInterviewsSection
-            key={application.id}
-            applicationId={application.id}
-            applicationStatus={application.status}
-          />
-
-          {canReviewInterviewFeedback && (
-            <ApplicationInterviewFeedbackSection applicationId={application.id} />
-          )}
-
-          <ApplicationDebriefSection
-            application={application}
-            canReview={canReviewInterviewFeedback}
-          />
-
-          {canReviewInterviewFeedback && (
-            <ApplicationOfferSection
-              applicationId={application.id}
-              applicationStatus={application.status}
-            />
-          )}
-
-          <section aria-labelledby="application-documents-heading" className="rounded-xl border border-gray-200 bg-white p-6">
-            <h2 id="application-documents-heading" className="text-base font-semibold text-sr-text-blue">Resume and documents</h2>
+          <section aria-labelledby="application-documents-heading" className="rounded-xl border border-gray-200 bg-white p-5 sm:p-6">
+            <div>
+              <h2 id="application-documents-heading" className="text-base font-semibold text-sr-text-blue">Résumé and application</h2>
+              <p className="mt-1 text-sm text-gray-600">Review the résumé and other files submitted by the candidate.</p>
+            </div>
             {documentsQuery.isLoading ? (
-              <p className="mt-3 text-sm text-gray-500" aria-live="polite">Loading candidate documents…</p>
+              <p className="mt-4 text-sm text-gray-500" aria-live="polite">Loading candidate documents…</p>
             ) : documentsQuery.isError ? (
-              <div role="alert" className="mt-3">
+              <div role="alert" className="mt-4">
                 <p className="text-sm text-red-800">We couldn’t load documents for this candidate.</p>
                 <Button className="mt-2" variant="outline" onClick={() => void documentsQuery.refetch()}>Try again</Button>
               </div>
             ) : !documentsQuery.data?.length ? (
-              <p className="mt-3 text-sm text-gray-600">No resume or other documents have been uploaded with this application.</p>
+              <p className="mt-4 text-sm text-gray-600">No résumé or other documents have been uploaded with this application.</p>
             ) : (
               <ul className="mt-4 divide-y divide-gray-100">
                 {documentsQuery.data.map((document) => (
-                  <li key={document.id} className="flex flex-col gap-3 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
+                  <li key={document.id} className="flex min-w-0 flex-col gap-3 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0 flex-1">
                       <p className="break-all text-sm font-medium text-gray-900">{document.original_filename}</p>
                       <p className="mt-1 text-xs text-gray-500">
@@ -776,7 +745,43 @@ export default function ApplicationDetailsPage() {
                   : "We couldn’t prepare the document preview. Please try again."}
               </p>
             )}
+            <p className="mt-4 border-t border-gray-100 pt-4 text-sm text-gray-600">
+              Cover letters and written application answers are not currently collected by the application form.
+            </p>
           </section>
+
+          {canReviewInterviewFeedback && (
+            <ApplicationScreeningAssessmentSection
+              applicationId={application.id}
+              applicationStatus={application.status}
+              jobTitle={requisition?.title ?? "this role"}
+              jobDescription={requisition?.description}
+            />
+          )}
+
+          <ApplicationFollowUpsSection applicationId={application.id} />
+
+          <ApplicationInterviewsSection
+            key={application.id}
+            applicationId={application.id}
+            applicationStatus={application.status}
+          />
+
+          {canReviewInterviewFeedback && (
+            <ApplicationInterviewFeedbackSection applicationId={application.id} />
+          )}
+
+          <ApplicationDebriefSection
+            application={application}
+            canReview={canReviewInterviewFeedback}
+          />
+
+          {canReviewInterviewFeedback && (
+            <ApplicationOfferSection
+              applicationId={application.id}
+              applicationStatus={application.status}
+            />
+          )}
 
           <section aria-labelledby="application-activity-heading" className="rounded-xl border border-gray-200 bg-white p-6">
             <div className="flex flex-wrap items-start justify-between gap-3">
