@@ -4,7 +4,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-from app.domains.notifications.enums import NotificationEventType
+from app.domains.notifications.enums import (
+    NotificationDigestFrequency,
+    NotificationEventType,
+)
 from app.services.email_sender import EmailMessage
 
 
@@ -236,5 +239,54 @@ def render_interview_notification_email(
         idempotency_key=idempotency_key,
         recipient_email=recipient_email,
         subject=template.subject,
+        text_body="\n".join(lines),
+    )
+
+
+def render_action_item_digest_email(
+    *,
+    notification_id: UUID,
+    idempotency_key: str,
+    recipient_email: str,
+    overdue_follow_up_count: int,
+    pending_feedback_count: int,
+    frequency: NotificationDigestFrequency,
+    web_app_base_url: str,
+) -> EmailMessage:
+    """Render a privacy-minimal digest with authenticated workspace links."""
+    if overdue_follow_up_count < 0 or pending_feedback_count < 0:
+        raise ValueError("Digest counts cannot be negative.")
+
+    base_url = web_app_base_url.rstrip("/")
+    subject = (
+        "Your weekly recruiting action items"
+        if frequency is NotificationDigestFrequency.WEEKLY
+        else "Your daily recruiting action items"
+    )
+    lines = [
+        "Hello,",
+        "",
+        f"Here is your {frequency.value} recruiting action summary:",
+        "",
+    ]
+    if overdue_follow_up_count:
+        follow_up_word = "follow-up" if overdue_follow_up_count == 1 else "follow-ups"
+        lines.append(
+            f"- {overdue_follow_up_count} overdue {follow_up_word}: "
+            f"{base_url}/dashboard/applications"
+        )
+    if pending_feedback_count:
+        feedback_word = "interview" if pending_feedback_count == 1 else "interviews"
+        lines.append(
+            f"- Feedback is pending for {pending_feedback_count} {feedback_word}: "
+            f"{base_url}/dashboard/interviews"
+        )
+    lines.extend(("", "Sign in to your workspace to review and complete these actions."))
+
+    return EmailMessage(
+        notification_id=notification_id,
+        idempotency_key=idempotency_key,
+        recipient_email=recipient_email,
+        subject=subject,
         text_body="\n".join(lines),
     )

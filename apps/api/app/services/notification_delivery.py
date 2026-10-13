@@ -8,12 +8,13 @@ from uuid import UUID
 from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.authorization import TenantContext
 from app.db.models.application import Application
 from app.db.models.candidate import Candidate
-from app.db.models.identity import User
+from app.db.models.identity import User, UserRoleAssignment
 from app.db.models.interview import InterviewParticipant, InterviewSession
 from app.db.models.job_posting import JobPosting
-from app.db.models.notification import Notification
+from app.db.models.notification import Notification, NotificationPreference
 from app.db.models.requisition import Requisition
 from app.db.transactions import transactional
 from app.domains.candidates.enums import CandidatePrivacyStatus
@@ -23,13 +24,19 @@ from app.domains.interviews.enums import (
 )
 from app.domains.job_postings.enums import JobPostingStatus
 from app.domains.notifications.enums import (
+    NotificationDigestFrequency,
     NotificationEventType,
     NotificationStatus,
 )
 from app.services.email_sender import EmailDeliveryError, EmailMessage, EmailSender
+from app.services.notification_action_items import (
+    NotificationActionItemRecord,
+    list_notification_action_items,
+)
 from app.services.notification_email_templates import (
     InterviewNotificationDetails,
     UnsupportedNotificationTemplateError,
+    render_action_item_digest_email,
     render_interview_notification_email,
     render_notification_email,
 )
@@ -51,6 +58,20 @@ DEFAULT_NOTIFICATION_DELIVERY_POLICY = NotificationDeliveryPolicy()
 
 class StaleInterviewNotificationError(Exception):
     """An interview change superseded a notification before delivery."""
+
+
+class StaleActionItemDigestError(Exception):
+    """A daily digest no longer contains any enabled action items."""
+
+
+_ACTION_ITEM_DIGEST_FREQUENCIES = {
+    "action_item.daily_digest": NotificationDigestFrequency.DAILY,
+    "action_item.weekly_digest": NotificationDigestFrequency.WEEKLY,
+}
+_OVERDUE_FOLLOW_UP_DIGEST = NotificationEventType.OVERDUE_FOLLOW_UP_DIGEST
+_PENDING_FEEDBACK_DIGEST = (
+    NotificationEventType.PENDING_INTERVIEW_FEEDBACK_DIGEST
+)
 
 
 def _now() -> datetime:
@@ -240,6 +261,7 @@ async def cancel_stale_notification(
     *,
     notification_id: UUID,
     worker_id: str,
+    failure_code: str = "interview_event_superseded",
 ) -> None:
     """Cancel a leased message whose interview state has since changed."""
     async with transactional(session):
@@ -252,7 +274,7 @@ async def cancel_stale_notification(
         notification.cancelled_at = _now()
         notification.locked_at = None
         notification.locked_by = None
-        notification.last_error_code = "interview_event_superseded"
+        notification.last_error_code = failure_code
         await session.flush()
 
 
@@ -424,6 +446,14 @@ async def _render_delivery_message(
     web_app_base_url: str,
 ) -> EmailMessage:
     """Render static notices or authorized, current interview schedule details."""
+    if notification.event_type in _ACTION_ITEM_DIGEST_FREQUENCIES:
+        return await _render_action_item_digest(
+            session,
+            notification=notification,
+            recipient_email=recipient_email,
+            web_app_base_url=web_app_base_url,
+        )
+
     try:
         event_type = NotificationEventType(notification.event_type)
     except ValueError:
@@ -454,6 +484,126 @@ async def _render_delivery_message(
         event_type=notification.event_type,
         template_key=notification.template_key,
         details=details,
+    )
+
+
+async def _render_action_item_digest(
+    session: AsyncSession,
+    *,
+    notification: Notification,
+    recipient_email: str,
+    web_app_base_url: str,
+) -> EmailMessage:
+    """Re-resolve the recipient's enabled items immediately before delivery."""
+    user_id = notification.recipient_user_id
+    if (
+        notification.entity_type != "action_item_digest"
+        or user_id is None
+        or notification.entity_id != user_id
+    ):
+        raise UnsupportedNotificationTemplateError(
+            "Daily action digest recipient is invalid."
+        )
+
+    user = await session.scalar(
+        select(User).where(
+            User.id == user_id,
+            User.tenant_id == notification.tenant_id,
+        )
+    )
+    if user is None:
+        raise UnsupportedNotificationTemplateError(
+            "Daily action digest recipient is unavailable."
+        )
+
+    preference_rows = await session.execute(
+        select(
+            NotificationPreference.event_type,
+            NotificationPreference.enabled,
+            NotificationPreference.digest_frequency,
+        ).where(
+            NotificationPreference.tenant_id == notification.tenant_id,
+            NotificationPreference.user_id == user_id,
+            NotificationPreference.channel == notification.channel,
+            NotificationPreference.event_type.in_(
+                [
+                    _OVERDUE_FOLLOW_UP_DIGEST.value,
+                    _PENDING_FEEDBACK_DIGEST.value,
+                ]
+            ),
+        )
+    )
+    enabled_preferences: dict[
+        str, tuple[bool, NotificationDigestFrequency]
+    ] = {
+        event_type: (enabled, NotificationDigestFrequency(frequency))
+        for event_type, enabled, frequency in preference_rows.all()
+    }
+    digest_frequency = _ACTION_ITEM_DIGEST_FREQUENCIES[notification.event_type]
+    if not any(
+        enabled_preferences.get(
+            event_type.value,
+            (True, NotificationDigestFrequency.DAILY),
+        )[0]
+        and enabled_preferences.get(
+            event_type.value,
+            (True, NotificationDigestFrequency.DAILY),
+        )[1]
+        is digest_frequency
+        for event_type in (_OVERDUE_FOLLOW_UP_DIGEST, _PENDING_FEEDBACK_DIGEST)
+    ):
+        raise StaleActionItemDigestError
+
+    role_rows = await session.scalars(
+        select(UserRoleAssignment.role).where(
+            UserRoleAssignment.user_id == user_id,
+        )
+    )
+    context = TenantContext(
+        tenant_id=notification.tenant_id,
+        subject=user.external_subject,
+        roles=frozenset(role_rows),
+        request_id="notification-digest-delivery",
+    )
+    items = await list_notification_action_items(session, context=context)
+    enabled_items: list[NotificationActionItemRecord] = [
+        item
+        for item in items
+        if (
+            enabled_preferences.get(
+                (
+                    _OVERDUE_FOLLOW_UP_DIGEST.value
+                    if item.kind == "overdue_follow_up"
+                    else _PENDING_FEEDBACK_DIGEST.value
+                ),
+                (True, NotificationDigestFrequency.DAILY),
+            )[0]
+            and enabled_preferences.get(
+                (
+                    _OVERDUE_FOLLOW_UP_DIGEST.value
+                    if item.kind == "overdue_follow_up"
+                    else _PENDING_FEEDBACK_DIGEST.value
+                ),
+                (True, NotificationDigestFrequency.DAILY),
+            )[1]
+            is digest_frequency
+        )
+    ]
+    overdue_count = sum(item.kind == "overdue_follow_up" for item in enabled_items)
+    feedback_count = sum(
+        item.kind == "pending_interview_feedback" for item in enabled_items
+    )
+    if overdue_count + feedback_count == 0:
+        raise StaleActionItemDigestError
+
+    return render_action_item_digest_email(
+        notification_id=notification.id,
+        idempotency_key=notification.deduplication_key,
+        recipient_email=recipient_email,
+        overdue_follow_up_count=overdue_count,
+        pending_feedback_count=feedback_count,
+        frequency=digest_frequency,
+        web_app_base_url=web_app_base_url,
     )
 
 
@@ -519,6 +669,16 @@ async def process_pending_notifications(
                 session,
                 notification_id=notification.id,
                 worker_id=worker_id,
+            )
+            continue
+        except StaleActionItemDigestError:
+            if session.in_transaction():
+                await session.commit()
+            await cancel_stale_notification(
+                session,
+                notification_id=notification.id,
+                worker_id=worker_id,
+                failure_code="action_item_digest_no_longer_needed",
             )
             continue
 
