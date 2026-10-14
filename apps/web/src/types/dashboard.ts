@@ -27,11 +27,3 @@ export interface InterviewItem {
 }
 
 export type SettingsTab = "profile" | "integrations" | "notifications";
-
-export interface IntegrationItem {
-  id: string;
-  name: string;
-  description: string;
-  connected: boolean;
-  category: string;
-}

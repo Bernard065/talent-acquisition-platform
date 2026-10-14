@@ -1,4 +1,4 @@
-import type { StatCardData, ActivityItem, InterviewItem, IntegrationItem } from "@/types/dashboard";
+import type { StatCardData, ActivityItem, InterviewItem } from "@/types/dashboard";
 import { Users, BriefcaseBusiness, Clock3, CalendarDays } from "@/components/icons";
 
 export const STATS_DATA: StatCardData[] = [
@@ -53,13 +53,4 @@ export const UPCOMING_INTERVIEWS: InterviewItem[] = [
   { id: "int-2", initials: "MK", name: "Mike Kumar", role: "Data Scientist", datetime: "Today, 4:30 PM", type: "Culture Fit", avatarBg: "bg-purple-50 text-purple-700", badgeStyle: "bg-purple-50 text-purple-700 border-purple-200/60" },
   { id: "int-3", initials: "AJ", name: "Alex Johnson", role: "DevOps Engineer", datetime: "Tomorrow, 10:00 AM", type: "Technical", avatarBg: "bg-blue-50 text-blue-700", badgeStyle: "bg-blue-50 text-blue-700 border-blue-200/60" },
   { id: "int-4", initials: "RB", name: "Rachel Brown", role: "Product Manager", datetime: "Tomorrow, 1:00 PM", type: "Final Round", avatarBg: "bg-amber-50 text-amber-800", badgeStyle: "bg-emerald-50 text-emerald-700 border-emerald-200/60" },
-];
-
-export const INITIAL_INTEGRATIONS: IntegrationItem[] = [
-  { id: "bamboohr", name: "BambooHR", description: "Sync employee data and onboarding workflows", connected: true, category: "HRIS & Onboarding" },
-  { id: "workday", name: "Workday", description: "Enterprise HR management and analytics", connected: false, category: "Enterprise HCM" },
-  { id: "slack", name: "Slack", description: "Get hiring notifications in your Slack channels", connected: true, category: "Communication" },
-  { id: "google-calendar", name: "Google Calendar", description: "Sync interview schedules automatically", connected: true, category: "Scheduling" },
-  { id: "linkedin", name: "LinkedIn Recruiter", description: "Import candidate profiles directly", connected: false, category: "Sourcing" },
-  { id: "greenhouse", name: "Greenhouse", description: "ATS integration for pipeline management", connected: false, category: "Applicant Tracking" },
 ];

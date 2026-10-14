@@ -76,6 +76,9 @@ from app.db.session import Database
 from app.domains.calendar.enums import CalendarProvider
 from app.infrastructure.calendar.google_oauth import GoogleCalendarOAuthProvider
 from app.infrastructure.calendar.infisical_vault import InfisicalCredentialVault
+from app.infrastructure.calendar.redis_oauth_state import (
+    RedisCalendarOAuthStateStore,
+)
 from app.infrastructure.hris.infisical_vault import (
     InfisicalHrisCredentialVault,
 )
@@ -103,6 +106,7 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     settings: Settings = application.state.settings
     application.state.calendar_credential_vault = None
     application.state.calendar_credential_resolver = None
+    application.state.calendar_oauth_state_store = None
     application.state.hris_credential_vault = None
     application.state.webhook_signing_secret_vault = None
     application.state.calendar_oauth_providers = {}
@@ -111,6 +115,7 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
     application.state.tracing_runtime = None
 
     oauth_http_client: httpx.AsyncClient | None = None
+    calendar_oauth_state_store: RedisCalendarOAuthStateStore | None = None
     captcha_http_client: httpx.AsyncClient | None = None
     captcha_secret_key: SecretStr | None = None
     metrics_server: HTTPServer | None = None
@@ -212,6 +217,10 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
             ),
             follow_redirects=False,
         )
+        calendar_oauth_state_store = RedisCalendarOAuthStateStore.from_url(
+            settings.redis_url,
+        )
+        application.state.calendar_oauth_state_store = calendar_oauth_state_store
 
         application.state.calendar_oauth_providers = {
             CalendarProvider.GOOGLE: GoogleCalendarOAuthProvider(
@@ -286,6 +295,9 @@ async def lifespan(application: FastAPI) -> AsyncGenerator[None, None]:
 
         if oauth_http_client is not None:
             await oauth_http_client.aclose()
+
+        if calendar_oauth_state_store is not None:
+            await calendar_oauth_state_store.close()
 
         if tracing_runtime is not None:
             tracing_runtime.shutdown()

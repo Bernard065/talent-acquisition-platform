@@ -203,6 +203,25 @@ async def begin_calendar_authorization(
     )
 
 
+async def list_calendar_connections(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+) -> list[CalendarConnection]:
+    """List only the authenticated user's calendar connection metadata."""
+    _require_connection_access(context)
+    owner = await _current_tenant_user(session, context=context)
+    result = await session.scalars(
+        select(CalendarConnection)
+        .where(
+            CalendarConnection.tenant_id == context.tenant_id,
+            CalendarConnection.owner_user_id == owner.id,
+        )
+        .order_by(CalendarConnection.provider)
+    )
+    return list(result.all())
+
+
 async def complete_calendar_authorization(
     session: AsyncSession,
     *,
