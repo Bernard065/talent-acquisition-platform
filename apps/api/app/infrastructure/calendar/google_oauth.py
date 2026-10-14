@@ -106,6 +106,7 @@ class GoogleCalendarOAuthProvider:
             "code_challenge": request.code_challenge,
             "code_challenge_method": "S256",
             "include_granted_scopes": "true",
+            "prompt": "consent",
             "redirect_uri": request.redirect_uri,
             "response_type": "code",
             "scope": " ".join(self._scopes),

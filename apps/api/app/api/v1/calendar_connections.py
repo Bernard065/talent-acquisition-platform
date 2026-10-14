@@ -24,6 +24,7 @@ from app.domains.calendar.enums import CalendarProvider
 from app.services.calendar_connections import (
     begin_calendar_authorization,
     complete_calendar_authorization,
+    list_calendar_connections,
 )
 from app.services.calendar_credentials import CalendarCredentialVault
 from app.services.calendar_oauth import (
@@ -50,6 +51,22 @@ CredentialVault = Annotated[
     CalendarCredentialVault,
     Depends(get_calendar_credential_vault),
 ]
+
+
+@router.get(
+    "",
+    response_model=list[CalendarConnectionResponse],
+    summary="List the caller's calendar connections",
+)
+async def list_calendar_connections_endpoint(
+    response: Response,
+    context: CallerContext,
+    session: DatabaseSession,
+) -> list[CalendarConnectionResponse]:
+    """Return safe metadata for the authenticated user's connections only."""
+    connections = await list_calendar_connections(session, context=context)
+    response.headers["Cache-Control"] = "private, no-store"
+    return [CalendarConnectionResponse.model_validate(item) for item in connections]
 
 
 def _redirect_uri_for_provider(
