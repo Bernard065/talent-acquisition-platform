@@ -6,12 +6,16 @@ import { ApiError } from "@/lib/api/errors";
 import {
   useBeginCalendarAuthorization,
   useCalendarConnections,
+  useDisconnectCalendar,
 } from "@/lib/api/hooks/calendar-connections";
 
 export function IntegrationsTab() {
   const connectionsQuery = useCalendarConnections();
   const authorizationMutation = useBeginCalendarAuthorization();
+  const disconnectMutation = useDisconnectCalendar();
   const [isConnecting, setIsConnecting] = useState(false);
+  const [disconnectCleanupNeedsRetry, setDisconnectCleanupNeedsRetry] = useState(false);
+  const [showDisconnectConfirmation, setShowDisconnectConfirmation] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -19,6 +23,8 @@ export function IntegrationsTab() {
     (connection) => connection.provider === "google",
   );
   const isConnected = googleConnection?.status === "active";
+  const cleanupPending =
+    disconnectCleanupNeedsRetry && googleConnection?.status === "disabled";
 
   useEffect(() => () => {
     if (pollTimer.current) clearTimeout(pollTimer.current);
@@ -90,6 +96,27 @@ export function IntegrationsTab() {
     }
   }
 
+  async function disconnectGoogleCalendar() {
+    setConnectionError(null);
+    setStatusMessage(null);
+
+    try {
+      await disconnectMutation.mutateAsync("google");
+      setShowDisconnectConfirmation(false);
+      setDisconnectCleanupNeedsRetry(false);
+      setStatusMessage("Google Calendar has been disconnected.");
+    } catch (error) {
+      await connectionsQuery.refetch();
+      setShowDisconnectConfirmation(false);
+      setDisconnectCleanupNeedsRetry(true);
+      setConnectionError(
+        error instanceof ApiError
+          ? error.detail
+          : "Could not disconnect Google Calendar. Try again.",
+      );
+    }
+  }
+
   return (
     <section className="max-w-3xl rounded-xl border border-gray-200 bg-white p-6 shadow-sm sm:p-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -112,6 +139,8 @@ export function IntegrationsTab() {
             <><RefreshCw aria-hidden="true" className="h-3.5 w-3.5 animate-spin" /> Checking</>
           ) : isConnected ? (
             <><Check aria-hidden="true" className="h-3.5 w-3.5 text-emerald-600" /> Connected</>
+          ) : cleanupPending ? (
+            "Disconnect cleanup needed"
           ) : googleConnection?.status === "disabled" ? (
             "Disconnected"
           ) : (
@@ -133,15 +162,27 @@ export function IntegrationsTab() {
             </button>
           </div>
         ) : (
-          <button
-            type="button"
-            onClick={() => void connectGoogleCalendar()}
-            disabled={isConnected || isConnecting || connectionsQuery.isLoading}
-            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-sr-mint px-4 text-sm font-semibold text-sr-text-blue transition-colors hover:bg-sr-green hover:text-white disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-          >
-            {isConnecting ? "Waiting for authorization…" : isConnected ? "Google Calendar connected" : "Connect Google Calendar"}
-            {!isConnected && !isConnecting && <ExternalLink aria-hidden="true" className="h-4 w-4" />}
-          </button>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <button
+              type="button"
+              onClick={() => void connectGoogleCalendar()}
+              disabled={isConnected || cleanupPending || isConnecting || disconnectMutation.isPending || connectionsQuery.isLoading}
+              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-sr-mint px-4 text-sm font-semibold text-sr-text-blue transition-colors hover:bg-sr-green hover:text-white disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+            >
+              {isConnecting ? "Waiting for authorization…" : isConnected ? "Google Calendar connected" : cleanupPending ? "Finish disconnecting first" : "Connect Google Calendar"}
+              {!isConnected && !cleanupPending && !isConnecting && <ExternalLink aria-hidden="true" className="h-4 w-4" />}
+            </button>
+            {(isConnected || cleanupPending) && (
+              <button
+                type="button"
+                onClick={() => setShowDisconnectConfirmation(true)}
+                disabled={disconnectMutation.isPending}
+                className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-red-200 px-4 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+              >
+                {cleanupPending ? "Retry disconnect" : "Disconnect"}
+              </button>
+            )}
+          </div>
         )}
 
         {statusMessage && <p role="status" className="mt-3 text-sm text-emerald-700">{statusMessage}</p>}
@@ -150,6 +191,42 @@ export function IntegrationsTab() {
           Other integrations will appear here when their connection flows are available.
         </p>
       </div>
+
+      {showDisconnectConfirmation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <section
+            aria-labelledby="disconnect-calendar-title"
+            aria-modal="true"
+            className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl"
+            role="alertdialog"
+          >
+            <h2 id="disconnect-calendar-title" className="text-lg font-semibold text-gray-900">
+              Disconnect Google Calendar?
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-gray-600">
+              Interview events will no longer sync to your Google Calendar. You can reconnect it later.
+            </p>
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setShowDisconnectConfirmation(false)}
+                disabled={disconnectMutation.isPending}
+                className="h-10 rounded-lg border border-gray-200 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void disconnectGoogleCalendar()}
+                disabled={disconnectMutation.isPending}
+                className="h-10 rounded-lg bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {disconnectMutation.isPending ? "Disconnecting…" : "Disconnect calendar"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </section>
   );
 }
