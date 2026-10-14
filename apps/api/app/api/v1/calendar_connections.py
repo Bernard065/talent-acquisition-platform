@@ -8,6 +8,7 @@ from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import (
+    get_calendar_credential_resolver,
     get_calendar_credential_vault,
     get_calendar_oauth_providers,
     get_calendar_oauth_state_store,
@@ -24,9 +25,13 @@ from app.domains.calendar.enums import CalendarProvider
 from app.services.calendar_connections import (
     begin_calendar_authorization,
     complete_calendar_authorization,
+    disconnect_calendar_connection,
     list_calendar_connections,
 )
-from app.services.calendar_credentials import CalendarCredentialVault
+from app.services.calendar_credentials import (
+    CalendarCredentialResolver,
+    CalendarCredentialVault,
+)
 from app.services.calendar_oauth import (
     CalendarOAuthProvider,
     CalendarOAuthStateStore,
@@ -51,6 +56,10 @@ CredentialVault = Annotated[
     CalendarCredentialVault,
     Depends(get_calendar_credential_vault),
 ]
+CredentialResolver = Annotated[
+    CalendarCredentialResolver,
+    Depends(get_calendar_credential_resolver),
+]
 
 
 @router.get(
@@ -67,6 +76,32 @@ async def list_calendar_connections_endpoint(
     connections = await list_calendar_connections(session, context=context)
     response.headers["Cache-Control"] = "private, no-store"
     return [CalendarConnectionResponse.model_validate(item) for item in connections]
+
+
+@router.delete(
+    "/{provider}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Disconnect the caller's calendar",
+)
+async def disconnect_calendar_connection_endpoint(
+    provider: CalendarProvider,
+    response: Response,
+    context: CallerContext,
+    session: DatabaseSession,
+    oauth_providers: OAuthProviders,
+    credential_resolver: CredentialResolver,
+    credential_vault: CredentialVault,
+) -> None:
+    """Disable and revoke only the authenticated user's provider connection."""
+    await disconnect_calendar_connection(
+        session,
+        context=context,
+        provider=provider,
+        credential_resolver=credential_resolver,
+        credential_vault=credential_vault,
+        oauth_providers=oauth_providers,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
 
 
 def _redirect_uri_for_provider(

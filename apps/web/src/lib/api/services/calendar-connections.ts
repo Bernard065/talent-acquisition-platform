@@ -1,4 +1,4 @@
-import { get, post, type RequestOptions } from "../client";
+import { del, get, post, type RequestOptions } from "../client";
 import type {
   CalendarAuthorizationUrlResponse,
   CalendarConnectionResponse,
@@ -20,4 +20,11 @@ export function beginCalendarAuthorization(
     undefined,
     options,
   );
+}
+
+export function disconnectCalendar(
+  provider: CalendarProvider,
+  options?: RequestOptions,
+): Promise<void> {
+  return del<void>(`/calendar-connections/${provider}`, options);
 }

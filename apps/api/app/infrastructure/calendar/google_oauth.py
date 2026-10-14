@@ -21,6 +21,7 @@ _GOOGLE_AUTHORIZATION_ENDPOINT = (
 _GOOGLE_TOKEN_ENDPOINT = (
     "https://oauth2.googleapis.com/token"  # noqa: S105
 )
+_GOOGLE_REVOCATION_ENDPOINT = "https://oauth2.googleapis.com/revoke"  # noqa: S105
 _GOOGLE_CALENDAR_EVENTS_SCOPE = (
     "https://www.googleapis.com/auth/calendar.events"
 )
@@ -204,6 +205,41 @@ class GoogleCalendarOAuthProvider:
                 "token_type": SecretStr("Bearer"),
             }
         )
+
+    async def revoke(
+        self,
+        *,
+        credentials: ResolvedCalendarCredentials,
+    ) -> None:
+        """Revoke the stored Google refresh token before deleting credentials."""
+        refresh_token = credentials.required("refresh_token")
+
+        try:
+            response = await self._http_client.post(
+                _GOOGLE_REVOCATION_ENDPOINT,
+                data={"token": refresh_token.get_secret_value()},
+                headers={"Accept": "application/json"},
+            )
+        except (httpx.TimeoutException, httpx.NetworkError) as error:
+            raise CalendarOAuthError(
+                "google_oauth_revocation_unavailable",
+                retryable=True,
+            ) from error
+        except httpx.HTTPError as error:
+            raise CalendarOAuthError(
+                "google_oauth_revocation_failed",
+                retryable=True,
+            ) from error
+
+        # Google returns 400 when the token has already been revoked or has
+        # expired. Treat that as success so a disconnect can be retried safely.
+        if response.status_code == 400:
+            return
+        if response.is_error:
+            raise CalendarOAuthError(
+                "google_oauth_revocation_rejected",
+                retryable=_is_retryable_http_status(response.status_code),
+            )
 
     async def aclose(self) -> None:
         """Close the injected HTTP client during application shutdown."""

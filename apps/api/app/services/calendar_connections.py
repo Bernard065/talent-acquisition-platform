@@ -25,7 +25,12 @@ from app.services.calendar_connection_errors import (
     CalendarConnectionAccessDeniedError,
     CalendarConnectionValidationError,
 )
-from app.services.calendar_credentials import CalendarCredentialVault
+from app.services.calendar_credentials import (
+    CalendarCredentialResolutionError,
+    CalendarCredentialResolver,
+    CalendarCredentialVault,
+    CalendarCredentialVaultError,
+)
 from app.services.calendar_oauth import (
     CalendarAuthorizationRequest,
     CalendarOAuthCodeExchange,
@@ -220,6 +225,93 @@ async def list_calendar_connections(
         .order_by(CalendarConnection.provider)
     )
     return list(result.all())
+
+
+async def disconnect_calendar_connection(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    provider: CalendarProvider,
+    credential_resolver: CalendarCredentialResolver,
+    credential_vault: CalendarCredentialVault,
+    oauth_providers: Mapping[CalendarProvider, CalendarOAuthProvider],
+) -> None:
+    """Disable and revoke only the caller's connection for one provider.
+
+    The database status is committed before external revocation so interview
+    sync workers stop selecting this connection immediately. A failed external
+    cleanup leaves the disabled row and credential reference available for a
+    safe retry.
+    """
+    _require_connection_access(context)
+    owner = await _current_tenant_user(session, context=context)
+
+    async with transactional(session):
+        connection = await session.scalar(
+            select(CalendarConnection)
+            .where(
+                CalendarConnection.tenant_id == context.tenant_id,
+                CalendarConnection.owner_user_id == owner.id,
+                CalendarConnection.provider == provider,
+            )
+            .with_for_update()
+        )
+
+        # DELETE is idempotent; an absent connection needs no further cleanup.
+        if connection is None:
+            return
+
+        was_active = connection.status == CalendarConnectionStatus.ACTIVE
+        connection.status = CalendarConnectionStatus.DISABLED
+        credential_reference = connection.credential_reference
+        await session.flush()
+
+        if was_active:
+            record_audit_event(
+                session,
+                context=context,
+                action="calendar_connection.disconnected",
+                entity_type="calendar_connection",
+                entity_id=str(connection.id),
+                details={"provider": provider.value},
+            )
+            await session.flush()
+
+    # Commit the disabled state before any potentially slow provider/vault I/O.
+    await session.commit()
+
+    oauth_provider = oauth_providers.get(provider)
+    if oauth_provider is None:
+        raise CalendarOAuthError(
+            "calendar_oauth_provider_not_configured",
+            retryable=False,
+        )
+
+    try:
+        credentials = await credential_resolver.resolve(
+            credential_reference=credential_reference,
+        )
+    except CalendarCredentialResolutionError as error:
+        if error.code != "calendar_credential_not_found":
+            raise CalendarCredentialVaultError(
+                "calendar_credential_resolution_failed",
+                retryable=error.retryable,
+            ) from error
+        credentials = None
+
+    if credentials is not None:
+        revoke = getattr(oauth_provider, "revoke", None)
+        if not callable(revoke):
+            raise CalendarOAuthError(
+                "calendar_oauth_revocation_not_configured",
+                retryable=False,
+            )
+
+        await revoke(credentials=credentials)
+
+    await credential_vault.delete(
+        credential_reference=credential_reference,
+    )
 
 
 async def complete_calendar_authorization(

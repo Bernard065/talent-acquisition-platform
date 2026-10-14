@@ -2,7 +2,11 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
-import { beginCalendarAuthorization, listCalendarConnections } from "../services/calendar-connections";
+import {
+  beginCalendarAuthorization,
+  disconnectCalendar,
+  listCalendarConnections,
+} from "../services/calendar-connections";
 import type { CalendarProvider } from "@/types/api";
 
 export const calendarConnectionQueryKeys = {
@@ -27,6 +31,19 @@ export function useBeginCalendarAuthorization() {
     mutationFn: (provider: CalendarProvider) => beginCalendarAuthorization(provider),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: calendarConnectionQueryKeys.list() });
+    },
+  });
+}
+
+export function useDisconnectCalendar() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (provider: CalendarProvider) => disconnectCalendar(provider),
+    onSettled: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: calendarConnectionQueryKeys.list(),
+      });
     },
   });
 }

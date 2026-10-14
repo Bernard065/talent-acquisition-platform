@@ -15,7 +15,10 @@ from app.core.security import JwtVerifier, TokenClaims
 from app.db.session import Database
 from app.domains.calendar.enums import CalendarProvider
 from app.services.abuse_control import PublicApplicationAbuseGuard
-from app.services.calendar_credentials import CalendarCredentialVault
+from app.services.calendar_credentials import (
+    CalendarCredentialResolver,
+    CalendarCredentialVault,
+)
 from app.services.calendar_oauth import (
     CalendarOAuthProvider,
     CalendarOAuthStateStore,
@@ -288,6 +291,28 @@ async def get_calendar_credential_vault(
         )
 
     return cast(CalendarCredentialVault, credential_vault)
+
+
+async def get_calendar_credential_resolver(
+    request: Request,
+) -> CalendarCredentialResolver:
+    """Return the configured resolver for calendar credential references."""
+    credential_resolver = getattr(
+        request.app.state,
+        "calendar_credential_resolver",
+        None,
+    )
+    if credential_resolver is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Calendar authorization service is unavailable.",
+            headers={
+                "Retry-After": "5",
+                "Cache-Control": "private, no-store",
+            },
+        )
+
+    return cast(CalendarCredentialResolver, credential_resolver)
 
 
 async def get_webhook_signing_secret_vault(
