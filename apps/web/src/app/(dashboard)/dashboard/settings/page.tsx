@@ -14,7 +14,7 @@ export default function SettingsPage() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-sr-text-blue tracking-tight">Settings</h1>
-        <p className="text-sm text-gray-500 mt-1">Manage your account and integrations</p>
+        <p className="text-sm text-gray-500 mt-1">View your account details and manage integrations and notifications</p>
       </div>
 
       {/* Tabs Navigation */}

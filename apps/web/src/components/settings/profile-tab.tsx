@@ -1,74 +1,95 @@
-import { InlineSvgIcon005, InlineSvgIcon006 } from "@/components/icons";
-import React, { useState } from "react";
+"use client";
 
-export const ProfileTab = () => {
-  const [isSavedFeedback, setIsSavedFeedback] = useState(false);
+import { useSession } from "next-auth/react";
+import { Mail, ShieldCheck, UserRound } from "lucide-react";
+import { getUserDisplayName } from "@/lib/user-display-name";
+import type { Role } from "@/types/api/auth";
 
-  const handleSave = () => {
-    setIsSavedFeedback(true);
-    setTimeout(() => setIsSavedFeedback(false), 2000);
-  };
+const roleLabels: Record<Role, string> = {
+  tenant_admin: "Workspace admin",
+  recruiter: "Recruiter",
+  hiring_manager: "Hiring manager",
+  interviewer: "Interviewer",
+  people_operations: "People operations",
+  analyst: "Analyst",
+};
+
+function getInitials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toLocaleUpperCase() ?? "")
+    .join("");
+}
+
+export function ProfileTab() {
+  const { data: session, status } = useSession();
+  const email = session?.user?.email?.trim() || "Email unavailable";
+  const name = getUserDisplayName(session?.user?.name, session?.user?.email) ?? "Name unavailable";
+  const roles = session?.roles ?? [];
+
+  if (status === "loading") {
+    return (
+      <section aria-label="Loading profile" className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <p className="text-sm text-gray-500">Loading your profile…</p>
+      </section>
+    );
+  }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-      <div className="p-6 border-b border-gray-100 flex items-center gap-5">
-        <div className="w-16 h-16 rounded-full bg-sr-mint text-sr-text-blue flex items-center justify-center font-bold text-2xl shrink-0">
-          BB
+    <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+      <header className="flex flex-col gap-4 border-b border-gray-100 p-6 sm:flex-row sm:items-center sm:gap-5">
+        <div
+          aria-hidden="true"
+          className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-sr-mint text-2xl font-bold text-sr-text-blue"
+        >
+          {name === "Name unavailable" ? <UserRound className="h-7 w-7" /> : getInitials(name)}
         </div>
-        <div>
-          <h2 className="text-xl font-bold text-sr-text-blue">Bernard Bebeni</h2>
-          <p className="text-sm text-gray-500 mt-1">Head of Talent Acquisition • Acme Corp</p>
+        <div className="min-w-0">
+          <h2 className="break-words text-xl font-bold text-sr-text-blue">{name}</h2>
+          <p className="mt-1 break-all text-sm text-gray-500">{email}</p>
+        </div>
+      </header>
+
+      <div className="grid gap-6 p-6 sm:p-8 md:grid-cols-2">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-gray-900">Account name</h3>
+          <p className="mt-2 break-words text-sm text-gray-700">{name}</p>
+        </div>
+
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-gray-900">Email address</h3>
+          <p className="mt-2 flex min-w-0 items-center gap-2 break-all text-sm text-gray-700">
+            <Mail aria-hidden="true" className="h-4 w-4 shrink-0 text-gray-400" />
+            {email}
+          </p>
+        </div>
+
+        <div className="md:col-span-2">
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+            <ShieldCheck aria-hidden="true" className="h-4 w-4 text-gray-400" />
+            Workspace access
+          </h3>
+          {roles.length > 0 ? (
+            <ul className="mt-3 flex flex-wrap gap-2">
+              {roles.map((role) => (
+                <li key={role} className="rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-700">
+                  {roleLabels[role]}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-sm text-gray-500">No workspace roles are available for this account.</p>
+          )}
         </div>
       </div>
-      <div className="p-6 sm:p-8">
-        <form className="grid grid-cols-1 md:grid-cols-2 gap-6" onSubmit={(e) => { e.preventDefault(); handleSave(); }}>
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1.5 block">First Name</label>
-            <input type="text" defaultValue="Bernard" className="h-11 px-4 rounded-lg border border-gray-200 bg-white text-gray-900 placeholder-gray-400 focus:border-sr-green focus:ring-1 focus:ring-sr-green outline-none transition-colors w-full" />
-          </div>
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1.5 block">Last Name</label>
-            <input type="text" defaultValue="Bebeni" className="h-11 px-4 rounded-lg border border-gray-200 bg-white text-gray-900 placeholder-gray-400 focus:border-sr-green focus:ring-1 focus:ring-sr-green outline-none transition-colors w-full" />
-          </div>
-          <div className="md:col-span-2 relative">
-            <label className="text-sm font-medium text-gray-700 mb-1.5 block">Email Address</label>
-            <div className="relative">
-              <input type="email" defaultValue="bernard@acmecorp.com" disabled className="h-11 pl-10 pr-4 rounded-lg border border-gray-200 bg-gray-50 text-gray-500 w-full cursor-not-allowed" />
-              <InlineSvgIcon005 className="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5" />
-            </div>
-            <p className="text-xs text-gray-400 mt-1.5">Email cannot be changed directly. Contact IT support.</p>
-          </div>
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1.5 block">Job Title</label>
-            <input type="text" defaultValue="Head of Talent Acquisition" className="h-11 px-4 rounded-lg border border-gray-200 bg-white text-gray-900 placeholder-gray-400 focus:border-sr-green focus:ring-1 focus:ring-sr-green outline-none transition-colors w-full" />
-          </div>
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1.5 block">Company</label>
-            <input type="text" defaultValue="Acme Corp" disabled className="h-11 px-4 rounded-lg border border-gray-200 bg-gray-50 text-gray-500 w-full cursor-not-allowed" />
-          </div>
-          <div className="md:col-span-2">
-            <label className="text-sm font-medium text-gray-700 mb-1.5 block">Timezone</label>
-            <select className="h-11 px-4 rounded-lg border border-gray-200 bg-white text-gray-900 focus:border-sr-green focus:ring-1 focus:ring-sr-green outline-none transition-colors w-full appearance-none">
-              <option>Africa/Nairobi (UTC+3)</option>
-              <option>Europe/London (UTC+0)</option>
-              <option>America/New_York (UTC-5)</option>
-              <option>America/Los_Angeles (UTC-8)</option>
-            </select>
-          </div>
-          <div className="md:col-span-2 flex justify-end mt-4 pt-6 border-t border-gray-100">
-            <button type="submit" className={`h-11 px-6 rounded-lg font-semibold transition-all flex items-center gap-2 ${isSavedFeedback ? "bg-green-500 text-white" : "bg-sr-mint text-sr-text-blue hover:bg-sr-green hover:text-white"}`}>
-              {isSavedFeedback ? (
-                <>
-                  <InlineSvgIcon006 className="w-5 h-5" />
-                  Saved!
-                </>
-              ) : (
-                "Save Changes"
-              )}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+
+      <footer className="border-t border-gray-100 bg-gray-50 px-6 py-4 sm:px-8">
+        <p className="text-sm text-gray-600">
+          Your name and email come from your sign-in account and are read-only in this workspace.
+        </p>
+      </footer>
+    </section>
   );
-};
+}
