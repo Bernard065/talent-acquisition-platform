@@ -31,7 +31,9 @@ _ALLOWED_TRANSITIONS: dict[
         }
     ),
     HrisHandoffStatus.SUCCEEDED: frozenset(),
-    HrisHandoffStatus.FAILED: frozenset(),
+    # Workspace administrators may explicitly redrive a terminal delivery
+    # after correcting its configuration or destination data.
+    HrisHandoffStatus.FAILED: frozenset({HrisHandoffStatus.PENDING}),
 }
 
 
