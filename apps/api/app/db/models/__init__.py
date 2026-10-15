@@ -64,6 +64,7 @@ from app.db.models.webhook import (
     WebhookEvent,
     WebhookSubscription,
 )
+from app.db.models.worker_heartbeat import WorkerHeartbeat
 
 __all__ = [
     "Application",
@@ -123,4 +124,5 @@ __all__ = [
     "WebhookEndpoint",
     "WebhookEvent",
     "WebhookSubscription",
+    "WorkerHeartbeat",
 ]

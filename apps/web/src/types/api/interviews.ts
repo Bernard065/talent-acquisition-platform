@@ -66,6 +66,14 @@ export interface InterviewCalendarSync {
   provider: CalendarProvider;
   connection_status: CalendarConnectionStatus;
   status: InterviewCalendarSyncStatus;
+  delivery_state:
+    | "queued"
+    | "syncing"
+    | "synced"
+    | "failed"
+    | "disabled"
+    | "worker_unavailable"
+    | "not_queued";
   last_error_code: string | null;
   last_attempt_at: string | null;
   synced_at: string | null;
@@ -74,6 +82,10 @@ export interface InterviewCalendarSync {
 export interface InterviewCalendarSyncListResponse {
   items: InterviewCalendarSync[];
   can_retry: boolean;
+  worker_available: boolean;
+  worker_last_seen_at: string | null;
+  queue_status: "pending" | "processing" | "processed" | "dead_lettered" | null;
+  queued_at: string | null;
 }
 
 export interface InterviewCalendarSyncRetryResponse {

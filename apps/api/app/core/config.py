@@ -338,6 +338,11 @@ class Settings(BaseSettings):
     calendar_sync_worker_heartbeat_path: Path = Path(
         "/tmp/tap-calendar-sync-worker.heartbeat"  # noqa: S108
     )
+    calendar_sync_worker_heartbeat_interval_seconds: int = Field(
+        default=15,
+        ge=5,
+        le=300,
+    )
     calendar_sync_worker_heartbeat_max_age_seconds: int = Field(
         default=90,
         ge=10,

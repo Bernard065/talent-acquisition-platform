@@ -1,10 +1,18 @@
 """Version 1 private interview calendar search endpoint."""
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal, cast
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    status,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_db_session, get_tenant_context
@@ -17,13 +25,19 @@ from app.api.v1.schemas.interviews import (
     InterviewSessionResponse,
 )
 from app.core.authorization import TenantContext
-from app.domains.calendar.enums import InterviewCalendarSyncStatus
+from app.core.config import Settings
+from app.db.models.calendar import InterviewCalendarSync
+from app.domains.calendar.enums import (
+    CalendarConnectionStatus,
+    InterviewCalendarSyncStatus,
+)
 from app.domains.interviews.enums import InterviewSessionStatus
+from app.domains.outbox.enums import OutboxEventStatus
 from app.services.interview_calendar_sync import (
     CalendarSyncRetryAlreadyQueuedError,
     CalendarSyncRetryUnavailableError,
     can_retry_interview_calendar_sync,
-    list_interview_calendar_syncs,
+    get_interview_calendar_sync_snapshot,
     retry_failed_interview_calendar_syncs,
 )
 from app.services.interview_search import (
@@ -38,6 +52,46 @@ CallerContext = Annotated[TenantContext, Depends(get_tenant_context)]
 DatabaseSession = Annotated[AsyncSession, Depends(get_db_session)]
 
 
+def _calendar_delivery_state(
+    *,
+    sync: InterviewCalendarSync | None,
+    connection_status: CalendarConnectionStatus,
+    queue_status: OutboxEventStatus | None,
+    worker_available: bool,
+    interview_version: int,
+) -> Literal[
+    "queued",
+    "syncing",
+    "synced",
+    "failed",
+    "disabled",
+    "worker_unavailable",
+    "not_queued",
+]:
+    """Describe the current delivery lifecycle in recruiter-friendly terms."""
+    if connection_status is CalendarConnectionStatus.DISABLED:
+        return "disabled"
+    if sync is not None and sync.status is InterviewCalendarSyncStatus.FAILED:
+        return "failed"
+    if queue_status is OutboxEventStatus.DEAD_LETTERED:
+        return "failed"
+    if queue_status is OutboxEventStatus.PENDING:
+        return "queued" if worker_available else "worker_unavailable"
+    if queue_status is OutboxEventStatus.PROCESSING:
+        return "syncing" if worker_available else "worker_unavailable"
+    if (
+        sync is not None
+        and sync.status is InterviewCalendarSyncStatus.SYNCED
+        and sync.synced_interview_version == interview_version
+    ):
+        return "synced"
+    if sync is not None and sync.status is InterviewCalendarSyncStatus.DISABLED:
+        return "disabled"
+    if sync is not None and sync.status is InterviewCalendarSyncStatus.PENDING:
+        return "not_queued" if worker_available else "worker_unavailable"
+    return "not_queued"
+
+
 @router.get(
     "/{interview_session_id}/calendar-syncs",
     response_model=InterviewCalendarSyncListResponse,
@@ -48,16 +102,25 @@ async def list_interview_calendar_syncs_endpoint(
     context: CallerContext,
     session: DatabaseSession,
     response: Response,
+    request: Request,
 ) -> InterviewCalendarSyncListResponse:
     """Return safe synchronization state for calendars on this interview."""
-    rows = await list_interview_calendar_syncs(
+    settings = cast(Settings, request.app.state.settings)
+    snapshot = await get_interview_calendar_sync_snapshot(
         session,
         context=context,
         interview_session_id=interview_session_id,
+        worker_heartbeat_max_age_seconds=(
+            settings.calendar_sync_worker_heartbeat_max_age_seconds
+        ),
     )
     response.headers["Cache-Control"] = "private, no-store"
     return InterviewCalendarSyncListResponse(
         can_retry=can_retry_interview_calendar_sync(context),
+        worker_available=snapshot.worker_available,
+        worker_last_seen_at=snapshot.worker_last_seen_at,
+        queue_status=snapshot.queue_status,
+        queued_at=snapshot.queued_at,
         items=[
             InterviewCalendarSyncResponse(
                 calendar_owner_display_name=display_name,
@@ -68,11 +131,18 @@ async def list_interview_calendar_syncs_endpoint(
                     if sync is not None
                     else InterviewCalendarSyncStatus.PENDING
                 ),
+                delivery_state=_calendar_delivery_state(
+                    sync=sync,
+                    connection_status=connection.status,
+                    queue_status=snapshot.queue_status,
+                    worker_available=snapshot.worker_available,
+                    interview_version=snapshot.interview_version,
+                ),
                 last_error_code=sync.last_error_code if sync is not None else None,
                 last_attempt_at=sync.last_attempt_at if sync is not None else None,
                 synced_at=sync.synced_at if sync is not None else None,
             )
-            for sync, connection, display_name in rows
+            for sync, connection, display_name in snapshot.rows
         ]
     )
 
