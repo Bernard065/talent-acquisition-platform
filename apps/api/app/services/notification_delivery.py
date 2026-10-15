@@ -37,6 +37,7 @@ from app.services.notification_email_templates import (
     InterviewNotificationDetails,
     UnsupportedNotificationTemplateError,
     render_action_item_digest_email,
+    render_calendar_sync_failure_email,
     render_interview_notification_email,
     render_notification_email,
 )
@@ -458,6 +459,43 @@ async def _render_delivery_message(
         event_type = NotificationEventType(notification.event_type)
     except ValueError:
         return _render_message(notification, recipient_email)
+
+    if event_type is NotificationEventType.INTERVIEW_CALENDAR_SYNC_FAILED:
+        user_id = notification.recipient_user_id
+        if notification.entity_type != "interview_session" or user_id is None:
+            raise UnsupportedNotificationTemplateError(
+                "Calendar sync failure recipient or interview reference is invalid."
+            )
+
+        interview = await session.scalar(
+            select(InterviewSession).where(
+                InterviewSession.id == notification.entity_id,
+                InterviewSession.tenant_id == notification.tenant_id,
+            )
+        )
+        if interview is None:
+            raise UnsupportedNotificationTemplateError(
+                "Calendar sync failure interview is no longer available."
+            )
+        creator_id = await session.scalar(
+            select(User.id).where(
+                User.tenant_id == notification.tenant_id,
+                User.external_subject == interview.created_by_subject,
+            )
+        )
+        if creator_id != user_id:
+            raise UnsupportedNotificationTemplateError(
+                "Calendar sync failure recipient is no longer authorized."
+            )
+
+        return render_calendar_sync_failure_email(
+            notification_id=notification.id,
+            idempotency_key=notification.deduplication_key,
+            recipient_email=recipient_email,
+            interview_url=(
+                f"{web_app_base_url.rstrip('/')}/dashboard/interviews/{interview.id}"
+            ),
+        )
 
     if event_type not in {
         NotificationEventType.INTERVIEW_SCHEDULED,
