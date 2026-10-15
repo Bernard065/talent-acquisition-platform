@@ -39,6 +39,7 @@ from app.services.onboarding import (
     create_onboarding_template,
     start_onboarding,
 )
+from app.services.outbox import enqueue_outbox_event
 from app.services.outbox_worker import OutboxWorkerPolicy
 from tests.services.test_onboarding import _context, _seed_hired_application
 
@@ -93,7 +94,7 @@ async def _create_handoff(
     *,
     tenant_id: UUID,
 ) -> HrisHandoff:
-    """Create an accepted onboarding handoff and its outbox event."""
+    """Create a legacy HRIS handoff fixture and its outbox event."""
     application, _ = await _seed_hired_application(session, tenant_id=tenant_id)
     now = datetime.now(UTC)
     session.add(
@@ -151,14 +152,28 @@ async def _create_handoff(
         application_id=application.id,
         onboarding_template_id=template.id,
     )
-    handoff = await session.scalar(
-        select(HrisHandoff).where(
-            HrisHandoff.tenant_id == tenant_id,
-            HrisHandoff.onboarding_instance_id == instance.id,
-        )
+    handoff = HrisHandoff(
+        tenant_id=tenant_id,
+        hris_connection_id=connection.id,
+        onboarding_instance_id=instance.id,
+        application_id=application.id,
     )
-    assert handoff is not None
-    assert connection.id == handoff.hris_connection_id
+    session.add(handoff)
+    await session.flush()
+    enqueue_outbox_event(
+        session,
+        context=_context(tenant_id),
+        event_type="hris.handoff_requested",
+        aggregate_type="hris_handoff",
+        aggregate_id=str(handoff.id),
+        deduplication_key=f"hris-handoff-requested:{handoff.id}:{handoff.version}",
+        payload={
+            "hris_handoff_id": str(handoff.id),
+            "onboarding_instance_id": str(instance.id),
+            "handoff_version": handoff.version,
+        },
+    )
+    await session.flush()
     return handoff
 
 
@@ -228,7 +243,7 @@ async def _handoff_event(
     *,
     tenant_id: UUID,
 ) -> OutboxEvent:
-    """Load the HRIS event generated atomically by onboarding startup."""
+    """Load the explicit test handoff event."""
     event = await session.scalar(
         select(OutboxEvent).where(
             OutboxEvent.tenant_id == tenant_id,

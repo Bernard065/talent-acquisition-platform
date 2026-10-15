@@ -207,6 +207,7 @@ async def test_erasure_atomically_queues_one_work_item_per_disclosure(
     assert erasure_event is not None
     assert erasure_event.details == {
         "document_count": 0,
+        "employee_record_count": 0,
         "processor_deletion_request_count": 2,
         "privacy_status": "erased",
     }

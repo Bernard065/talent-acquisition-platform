@@ -31,6 +31,7 @@ from app.api.v1.candidate_retention_reviews import (
 )
 from app.api.v1.candidates import router as candidates_router
 from app.api.v1.documents import router as documents_router
+from app.api.v1.employee_records import router as employee_records_router
 from app.api.v1.health import router as health_router
 from app.api.v1.hiring_decisions import router as hiring_decisions_router
 from app.api.v1.hris_connections import (
@@ -487,6 +488,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application.include_router(
         onboarding_router,
+        prefix=active_settings.api_prefix,
+    )
+
+    application.include_router(
+        employee_records_router,
         prefix=active_settings.api_prefix,
     )
 

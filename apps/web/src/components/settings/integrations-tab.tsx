@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { CalendarDays, Check, ExternalLink, RefreshCw } from "lucide-react";
 import { ApiError } from "@/lib/api/errors";
-import { HrisIntegrationSection } from "@/components/settings/hris-integration-section";
 import {
   useBeginCalendarAuthorization,
   useCalendarConnections,
@@ -228,7 +227,6 @@ export function IntegrationsTab() {
         </div>
       )}
     </section>
-    <HrisIntegrationSection />
     </>
   );
 }
