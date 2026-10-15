@@ -335,6 +335,7 @@ async def test_failed_onboarding_rolls_back_mindhire_employee_record(
     """Roll back the employee record with failed onboarding startup."""
     tenant_id = uuid4()
     application, _ = await _seed_hired_application(session, tenant_id=tenant_id)
+    application_id = application.id
     template = await _create_template(session, tenant_id=tenant_id)
 
     async def fail_notifications(*_: object, **__: object) -> None:
@@ -354,7 +355,7 @@ async def test_failed_onboarding_rolls_back_mindhire_employee_record(
                 subject="people-operations-subject",
                 roles=frozenset({Role.PEOPLE_OPERATIONS}),
             ),
-            application_id=application.id,
+            application_id=application_id,
             onboarding_template_id=template.id,
         )
 
@@ -369,7 +370,7 @@ async def test_failed_onboarding_rolls_back_mindhire_employee_record(
         await session.scalars(
             select(Employee).where(
                 Employee.tenant_id == tenant_id,
-                Employee.application_id == application.id,
+                Employee.application_id == application_id,
             )
         )
     )
