@@ -11,6 +11,7 @@ import { ApplicationScreeningAssessmentSection } from "@/components/applications
 import { ApplicationStageControl } from "@/components/applications/application-stage-control";
 import { ApplicationOfferSection } from "@/components/applications/application-offer-section";
 import { ApplicationOnboardingSection } from "@/components/applications/application-onboarding-section";
+import { ApplicationEmployeeRecordSection } from "@/components/applications/application-employee-record-section";
 import { ApplicationInterviewFeedbackSection } from "@/components/applications/application-interview-feedback-section";
 import {
   useApplication,
@@ -806,6 +807,10 @@ export default function ApplicationDetailsPage() {
             />
           )}
 
+          <ApplicationEmployeeRecordSection
+            applicationId={application.id}
+            applicationStatus={application.status}
+          />
           <ApplicationOnboardingSection
             applicationId={application.id}
             applicationStatus={application.status}

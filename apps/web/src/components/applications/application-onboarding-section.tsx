@@ -166,7 +166,7 @@ export function ApplicationOnboardingSection({
         </div>
       )}
       {error && <p role="alert" className="mt-3 text-sm text-red-800">{error}</p>}
-      {instance?.status === "active" && <p className="mt-4 text-xs text-gray-500">If an active HRIS connection is configured, the handoff is queued when onboarding starts.</p>}
+      {instance?.status === "active" && <p className="mt-4 text-xs text-gray-500">This onboarding plan and employee record are managed in MindHire.</p>}
     </section>
   );
 }

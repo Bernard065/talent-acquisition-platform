@@ -12,4 +12,4 @@ export * from "./documents";
 export * from "./notifications";
 export * from "./calendar-connections";
 export * from "./onboarding";
-export * from "./hris";
+export * from "./employee-records";

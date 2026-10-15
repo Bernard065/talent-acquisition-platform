@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
+import { employeeRecordQueryKeys } from "@/lib/api/hooks/employee-records";
 import {
   assignOnboardingTask,
   cancelOnboarding,
@@ -67,9 +68,14 @@ export function useStartApplicationOnboarding() {
       idempotencyKey: string;
     }) => startApplicationOnboarding(applicationId, request, idempotencyKey),
     onSuccess: async (_instance, { applicationId }) => {
-      await queryClient.invalidateQueries({
-        queryKey: onboardingQueryKeys.application(applicationId),
-      });
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: onboardingQueryKeys.application(applicationId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: employeeRecordQueryKeys.application(applicationId),
+        }),
+      ]);
     },
   });
 }
