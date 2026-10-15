@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CalendarDays, Check, ExternalLink, RefreshCw } from "lucide-react";
 import { ApiError } from "@/lib/api/errors";
+import { HrisIntegrationSection } from "@/components/settings/hris-integration-section";
 import {
   useBeginCalendarAuthorization,
   useCalendarConnections,
@@ -118,6 +119,7 @@ export function IntegrationsTab() {
   }
 
   return (
+    <>
     <section className="max-w-3xl rounded-xl border border-gray-200 bg-white p-6 shadow-sm sm:p-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-start gap-4">
@@ -187,9 +189,7 @@ export function IntegrationsTab() {
 
         {statusMessage && <p role="status" className="mt-3 text-sm text-emerald-700">{statusMessage}</p>}
         {connectionError && <p role="alert" className="mt-3 text-sm text-red-700">{connectionError}</p>}
-        <p className="mt-4 text-xs text-gray-500">
-          Other integrations will appear here when their connection flows are available.
-        </p>
+        <p className="mt-4 text-xs text-gray-500">This calendar connection belongs to your account.</p>
       </div>
 
       {showDisconnectConfirmation && (
@@ -228,5 +228,7 @@ export function IntegrationsTab() {
         </div>
       )}
     </section>
+    <HrisIntegrationSection />
+    </>
   );
 }

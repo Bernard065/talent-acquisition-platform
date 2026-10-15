@@ -4,13 +4,16 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_db_session, get_tenant_context
+from app.api.idempotency import IdempotencyKey, idempotency_response
 from app.api.v1.schemas.hris_handoffs import (
     HrisHandoffOperationListResponse,
     HrisHandoffOperationResponse,
+    RetryHrisHandoffRequest,
 )
 from app.core.authorization import Role, TenantContext
 from app.domains.hris.enums import HrisHandoffStatus
@@ -19,7 +22,9 @@ from app.services.hris_handoff_operations import (
     HrisHandoffOperation,
     get_hris_handoff_operation,
     list_hris_handoff_operations,
+    retry_failed_hris_handoff,
 )
+from app.services.idempotency import IdempotencyResult, execute_idempotently
 
 router = APIRouter(
     prefix="/hris/handoffs",
@@ -65,6 +70,13 @@ def _to_response(
         created_at=handoff.created_at,
         updated_at=handoff.updated_at,
     )
+
+
+def _private_response(result: IdempotencyResult) -> JSONResponse:
+    """Return an idempotent handoff mutation without intermediary caching."""
+    response = idempotency_response(result)
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
 
 
 @router.get(
@@ -125,3 +137,39 @@ async def get_hris_handoff_operation_endpoint(
     response.headers["Cache-Control"] = "private, no-store"
 
     return _to_response(operation)
+
+
+@router.post(
+    "/{handoff_id}/retry",
+    response_model=HrisHandoffOperationResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Retry a terminally failed HRIS handoff",
+)
+async def retry_hris_handoff_endpoint(
+    handoff_id: UUID,
+    payload: RetryHrisHandoffRequest,
+    context: TenantAdminContext,
+    session: DatabaseSession,
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Queue an audited retry for a failed tenant-owned handoff."""
+
+    async def operation() -> tuple[int, dict[str, object]]:
+        handoff_operation = await retry_failed_hris_handoff(
+            session,
+            context=context,
+            handoff_id=handoff_id,
+            expected_version=payload.expected_version,
+        )
+        response = _to_response(handoff_operation)
+        return status.HTTP_200_OK, response.model_dump(mode="json")
+
+    result = await execute_idempotently(
+        session,
+        context=context,
+        key=idempotency_key,
+        operation_name=f"hris_handoff.retry:{handoff_id}",
+        payload=payload.model_dump(mode="json"),
+        operation=operation,
+    )
+    return _private_response(result)

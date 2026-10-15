@@ -13,13 +13,21 @@ from sqlalchemy.sql.selectable import Select
 
 from app.core.authorization import Role, TenantContext
 from app.db.models.hris import HrisConnection, HrisHandoff
+from app.db.transactions import transactional
 from app.domains.hris.enums import HrisHandoffStatus, HrisProvider
+from app.domains.hris.transitions import (
+    InvalidHrisHandoffTransitionError,
+    validate_hris_handoff_transition,
+)
+from app.services.audit import record_audit_event
 from app.services.hris_errors import HrisAccessDeniedError
 from app.services.hris_handoff_errors import (
     HrisHandoffNotFoundError,
     HrisHandoffValidationError,
+    HrisHandoffVersionConflictError,
     InvalidHrisHandoffCursorError,
 )
+from app.services.outbox import enqueue_outbox_event
 
 _MAX_PAGE_SIZE = 100
 
@@ -212,3 +220,78 @@ async def get_hris_handoff_operation(
         raise HrisHandoffNotFoundError("HRIS handoff not found.")
 
     return HrisHandoffOperation(handoff=row[0], provider=row[1])
+
+
+async def retry_failed_hris_handoff(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    handoff_id: UUID,
+    expected_version: int,
+) -> HrisHandoffOperation:
+    """Audited tenant-admin redrive of one terminally failed handoff."""
+    _require_tenant_admin(context)
+
+    async with transactional(session):
+        handoff = await session.scalar(
+            select(HrisHandoff)
+            .where(
+                HrisHandoff.id == handoff_id,
+                HrisHandoff.tenant_id == context.tenant_id,
+            )
+            .with_for_update()
+        )
+        if handoff is None:
+            raise HrisHandoffNotFoundError("HRIS handoff not found.")
+        if handoff.version != expected_version:
+            raise HrisHandoffVersionConflictError(
+                "HRIS handoff has changed; reload before retrying."
+            )
+
+        try:
+            validate_hris_handoff_transition(
+                handoff.status,
+                HrisHandoffStatus.PENDING,
+            )
+        except InvalidHrisHandoffTransitionError as error:
+            raise HrisHandoffValidationError(
+                "Only terminally failed handoffs can be retried manually."
+            ) from error
+
+        handoff.status = HrisHandoffStatus.PENDING
+        handoff.last_error_code = None
+        await session.flush()
+
+        enqueue_outbox_event(
+            session,
+            context=context,
+            event_type="hris.handoff_requested",
+            aggregate_type="hris_handoff",
+            aggregate_id=str(handoff.id),
+            deduplication_key=f"hris-handoff-requested:{handoff.id}:{handoff.version}",
+            payload={
+                "hris_handoff_id": str(handoff.id),
+                "onboarding_instance_id": str(handoff.onboarding_instance_id),
+                "handoff_version": handoff.version,
+            },
+        )
+        record_audit_event(
+            session,
+            context=context,
+            action="hris_handoff.retry_requested",
+            entity_type="hris_handoff",
+            entity_id=str(handoff.id),
+            details={"version": handoff.version},
+        )
+        provider = await session.scalar(
+            select(HrisConnection.provider).where(
+                HrisConnection.id == handoff.hris_connection_id,
+                HrisConnection.tenant_id == context.tenant_id,
+            )
+        )
+        if provider is None:
+            raise HrisHandoffNotFoundError("HRIS handoff not found.")
+        await session.flush()
+        await session.refresh(handoff)
+
+    return HrisHandoffOperation(handoff=handoff, provider=provider)

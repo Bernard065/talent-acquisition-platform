@@ -10,6 +10,7 @@ import { ApplicationDebriefSection } from "@/components/applications/application
 import { ApplicationScreeningAssessmentSection } from "@/components/applications/application-screening-assessment-section";
 import { ApplicationStageControl } from "@/components/applications/application-stage-control";
 import { ApplicationOfferSection } from "@/components/applications/application-offer-section";
+import { ApplicationOnboardingSection } from "@/components/applications/application-onboarding-section";
 import { ApplicationInterviewFeedbackSection } from "@/components/applications/application-interview-feedback-section";
 import {
   useApplication,
@@ -804,6 +805,11 @@ export default function ApplicationDetailsPage() {
               applicationStatus={application.status}
             />
           )}
+
+          <ApplicationOnboardingSection
+            applicationId={application.id}
+            applicationStatus={application.status}
+          />
 
           <section aria-labelledby="application-activity-heading" className="rounded-xl border border-gray-200 bg-white p-6">
             <div className="flex flex-wrap items-start justify-between gap-3">

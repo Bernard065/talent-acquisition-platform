@@ -11,3 +11,5 @@ export * from "./public-applications";
 export * from "./documents";
 export * from "./notifications";
 export * from "./calendar-connections";
+export * from "./onboarding";
+export * from "./hris";

@@ -3,19 +3,23 @@
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_db_session, get_tenant_context
 from app.api.idempotency import IdempotencyKey, idempotency_response
 from app.api.v1.schemas.onboarding import (
+    ApplicationOnboardingResponse,
     AssignOnboardingTaskRequest,
     CreateOnboardingTemplateRequest,
     ExpectedInstanceVersionRequest,
     OnboardingInstanceResponse,
     OnboardingTaskResponse,
+    OnboardingTemplateListItemResponse,
+    OnboardingTemplateListResponse,
     OnboardingTemplateResponse,
+    OnboardingTemplateTaskResponse,
     StartOnboardingRequest,
     UpdateOnboardingTaskStatusRequest,
 )
@@ -29,6 +33,8 @@ from app.services.onboarding import (
     cancel_onboarding,
     complete_onboarding,
     create_onboarding_template,
+    get_application_onboarding,
+    list_active_onboarding_templates,
     start_onboarding,
     update_onboarding_task_status,
 )
@@ -44,6 +50,68 @@ def _private_response(result: IdempotencyResult) -> JSONResponse:
     response = idempotency_response(result)
     response.headers["Cache-Control"] = "private, no-store"
     return response
+
+
+@router.get(
+    "/onboarding-templates",
+    response_model=OnboardingTemplateListResponse,
+    summary="List active onboarding templates",
+)
+async def list_onboarding_templates_endpoint(
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+) -> OnboardingTemplateListResponse:
+    """List tenant templates recruiters can use for hired applications."""
+    templates = await list_active_onboarding_templates(
+        session,
+        context=context,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return OnboardingTemplateListResponse(
+        items=[
+            OnboardingTemplateListItemResponse(
+                id=template.id,
+                name=template.name,
+                version=template.version,
+                is_active=template.is_active,
+                created_at=template.created_at,
+                tasks=[
+                    OnboardingTemplateTaskResponse.model_validate(task)
+                    for task in tasks
+                ],
+            )
+            for template, tasks in templates
+        ]
+    )
+
+
+@router.get(
+    "/applications/{application_id}/onboarding",
+    response_model=ApplicationOnboardingResponse,
+    summary="Get onboarding for an application",
+)
+async def get_application_onboarding_endpoint(
+    application_id: UUID,
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+) -> ApplicationOnboardingResponse:
+    """Return onboarding task progress without returning candidate data."""
+    result = await get_application_onboarding(
+        session,
+        context=context,
+        application_id=application_id,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    if result is None:
+        return ApplicationOnboardingResponse(instance=None, tasks=[])
+
+    instance, tasks = result
+    return ApplicationOnboardingResponse(
+        instance=OnboardingInstanceResponse.model_validate(instance),
+        tasks=[OnboardingTaskResponse.model_validate(task) for task in tasks],
+    )
 
 
 @router.post(

@@ -38,3 +38,11 @@ class HrisHandoffOperationListResponse(BaseModel):
 
     items: list[HrisHandoffOperationResponse]
     next_cursor: str | None = None
+
+
+class RetryHrisHandoffRequest(BaseModel):
+    """Optimistic concurrency precondition for an admin-initiated retry."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)

@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.authorization import Role, TenantContext
 from app.db.models.application import Application
 from app.db.models.hris import HrisConnection, HrisHandoff
-from app.db.models.identity import User
+from app.db.models.identity import User, UserRoleAssignment
 from app.db.models.onboarding import (
     OnboardingInstance,
     OnboardingInstanceHistory,
@@ -66,6 +66,92 @@ _ONBOARDING_WRITE_ROLES = frozenset(
 _MAX_NAME_LENGTH = 200
 _MAX_DESCRIPTION_LENGTH = 5_000
 _MAX_BLOCK_REASON_LENGTH = 2_000
+
+
+async def list_active_onboarding_templates(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+) -> list[tuple[OnboardingTemplate, tuple[OnboardingTemplateTask, ...]]]:
+    """List active tenant templates and their ordered task definitions."""
+    _require_role(context, _ONBOARDING_WRITE_ROLES)
+
+    templates = list(
+        await session.scalars(
+            select(OnboardingTemplate)
+            .where(
+                OnboardingTemplate.tenant_id == context.tenant_id,
+                OnboardingTemplate.is_active.is_(True),
+            )
+            .order_by(
+                OnboardingTemplate.name,
+                OnboardingTemplate.version.desc(),
+            )
+        )
+    )
+    if not templates:
+        return []
+
+    task_rows = await session.execute(
+        select(OnboardingTemplateTask)
+        .where(
+            OnboardingTemplateTask.onboarding_template_id.in_(
+                template.id for template in templates
+            )
+        )
+        .order_by(
+            OnboardingTemplateTask.onboarding_template_id,
+            OnboardingTemplateTask.position,
+        )
+    )
+    tasks_by_template: dict[UUID, list[OnboardingTemplateTask]] = {}
+    for task in task_rows.scalars():
+        tasks_by_template.setdefault(task.onboarding_template_id, []).append(task)
+
+    return [
+        (template, tuple(tasks_by_template.get(template.id, ())))
+        for template in templates
+    ]
+
+
+async def get_application_onboarding(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    application_id: UUID,
+) -> tuple[OnboardingInstance, tuple[OnboardingTask, ...]] | None:
+    """Load onboarding state for one tenant application without candidate PII."""
+    _require_role(context, _ONBOARDING_WRITE_ROLES)
+
+    application = await session.scalar(
+        select(Application.id).where(
+            Application.id == application_id,
+            Application.tenant_id == context.tenant_id,
+        )
+    )
+    if application is None:
+        raise ApplicationNotFoundError("Application was not found.")
+
+    instance = await session.scalar(
+        select(OnboardingInstance).where(
+            OnboardingInstance.tenant_id == context.tenant_id,
+            OnboardingInstance.application_id == application_id,
+        )
+    )
+    if instance is None:
+        return None
+
+    tasks = tuple(
+        await session.scalars(
+            select(OnboardingTask)
+            .where(
+                OnboardingTask.tenant_id == context.tenant_id,
+                OnboardingTask.onboarding_instance_id == instance.id,
+            )
+            .order_by(OnboardingTask.created_at, OnboardingTask.id)
+        )
+    )
+    return instance, tasks
 
 
 @dataclass(frozen=True, slots=True)
@@ -456,6 +542,25 @@ async def start_onboarding(
             )
 
         started_at = datetime.now(UTC)
+        requested_roles = {
+            task.default_assignee_role
+            for task in template_tasks
+            if task.default_assignee_role is not None
+        }
+        users_by_role: dict[Role, list[UUID]] = {}
+        if requested_roles:
+            role_rows = await session.execute(
+                select(UserRoleAssignment.role, User.id)
+                .join(User, User.id == UserRoleAssignment.user_id)
+                .where(
+                    User.tenant_id == context.tenant_id,
+                    UserRoleAssignment.role.in_(requested_roles),
+                )
+                .order_by(User.display_name, User.id)
+            )
+            for role, user_id in role_rows:
+                users_by_role.setdefault(role, []).append(user_id)
+
         template_snapshot = {
             "template_id": str(template.id),
             "template_name": template.name,
@@ -502,6 +607,13 @@ async def start_onboarding(
                     else None
                 ),
                 status=OnboardingTaskStatus.NOT_STARTED,
+                assignee_user_id=(
+                    users_by_role[template_task.default_assignee_role][0]
+                    if template_task.default_assignee_role is not None
+                    and len(users_by_role.get(template_task.default_assignee_role, ()))
+                    == 1
+                    else None
+                ),
             )
             for template_task in template_tasks
         ]
