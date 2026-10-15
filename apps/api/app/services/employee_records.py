@@ -4,8 +4,9 @@ from datetime import date
 from typing import cast
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.authorization import Role, TenantContext
 from app.db.models.application import Application
@@ -30,6 +31,98 @@ _EMPLOYEE_ROLES = frozenset({Role.TENANT_ADMIN, Role.PEOPLE_OPERATIONS, Role.REC
 def _require_employee_access(context: TenantContext) -> None:
     if context.roles.isdisjoint(_EMPLOYEE_ROLES):
         raise OnboardingAccessDeniedError("Caller is not permitted to manage employee records.")
+
+
+async def list_employee_records(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    page: int,
+    limit: int,
+    query: str | None = None,
+    status: EmployeeStatus | None = None,
+    department: str | None = None,
+    location: str | None = None,
+) -> tuple[list[tuple[Employee, str]], int]:
+    """Return a tenant-scoped, paginated employee directory page."""
+    _require_employee_access(context)
+    filters: list[ColumnElement[bool]] = [Employee.tenant_id == context.tenant_id]
+    if status is not None:
+        filters.append(Employee.status == status)
+    if department:
+        filters.append(func.lower(Employee.department) == department.strip().casefold())
+    if location:
+        filters.append(func.lower(Employee.location) == location.strip().casefold())
+    if query and query.strip():
+        search_term = f"%{query.strip()}%"
+        filters.append(
+            or_(
+                Candidate.full_name.ilike(search_term),
+                Employee.employee_number.ilike(search_term),
+                Employee.work_email.ilike(search_term),
+                Employee.job_title.ilike(search_term),
+                Employee.department.ilike(search_term),
+                Employee.location.ilike(search_term),
+            )
+        )
+
+    tenant_candidate_join = and_(
+        Candidate.id == Employee.candidate_id,
+        Candidate.tenant_id == Employee.tenant_id,
+    )
+    total = await session.scalar(
+        select(func.count(Employee.id))
+        .select_from(Employee)
+        .join(Candidate, tenant_candidate_join)
+        .where(*filters)
+    )
+    rows = (
+        await session.execute(
+            select(Employee, Candidate.full_name)
+            .join(Candidate, tenant_candidate_join)
+            .where(*filters)
+            .order_by(
+                Employee.start_date.desc().nullslast(),
+                Employee.created_at.desc(),
+                Employee.id.desc(),
+            )
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
+    ).all()
+    return [(employee, employee_name) for employee, employee_name in rows], total or 0
+
+
+async def get_employee_directory_filter_options(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+) -> tuple[list[str], list[str]]:
+    """Return available employee departments and locations for this tenant."""
+    _require_employee_access(context)
+    departments = list(
+        await session.scalars(
+            select(Employee.department)
+            .where(
+                Employee.tenant_id == context.tenant_id,
+                Employee.department.is_not(None),
+            )
+            .distinct()
+            .order_by(Employee.department)
+        )
+    )
+    locations = list(
+        await session.scalars(
+            select(Employee.location)
+            .where(
+                Employee.tenant_id == context.tenant_id,
+                Employee.location.is_not(None),
+            )
+            .distinct()
+            .order_by(Employee.location)
+        )
+    )
+    return [value for value in departments if value], [value for value in locations if value]
 
 
 async def get_application_employee_record(

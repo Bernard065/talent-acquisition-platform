@@ -54,3 +54,29 @@ class EmployeeRecordResponse(BaseModel):
     version: int
     created_at: datetime
     updated_at: datetime
+
+
+class EmployeeDirectoryItemResponse(EmployeeRecordResponse):
+    """Employee record fields needed to identify an employee in the directory."""
+
+    employee_name: str
+
+
+class EmployeeDirectoryResponse(BaseModel):
+    """A page of tenant-scoped employee records."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[EmployeeDirectoryItemResponse]
+    total: int
+    page: int
+    limit: int
+
+
+class EmployeeDirectoryFilterOptionsResponse(BaseModel):
+    """Distinct employee values used to populate directory filters."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    departments: list[str]
+    locations: list[str]
