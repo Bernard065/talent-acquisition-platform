@@ -5,6 +5,11 @@ from uuid import UUID
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, model_validator
 
+from app.domains.calendar.enums import (
+    CalendarConnectionStatus,
+    CalendarProvider,
+    InterviewCalendarSyncStatus,
+)
 from app.domains.interviews.enums import (
     InterviewCancellationReason,
     InterviewFormat,
@@ -76,6 +81,37 @@ class InterviewSessionResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     version: int
+
+
+class InterviewCalendarSyncResponse(BaseModel):
+    """Safe calendar delivery state for one interview participant calendar."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    calendar_owner_display_name: str
+    provider: CalendarProvider
+    connection_status: CalendarConnectionStatus
+    status: InterviewCalendarSyncStatus
+    last_error_code: str | None
+    last_attempt_at: datetime | None
+    synced_at: datetime | None
+
+
+class InterviewCalendarSyncListResponse(BaseModel):
+    """Calendar synchronization states associated with one interview."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[InterviewCalendarSyncResponse]
+    can_retry: bool
+
+
+class InterviewCalendarSyncRetryResponse(BaseModel):
+    """Acknowledgement that failed calendar delivery was queued for retry."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: str = "queued"
 
 
 class InterviewParticipantSummaryResponse(BaseModel):

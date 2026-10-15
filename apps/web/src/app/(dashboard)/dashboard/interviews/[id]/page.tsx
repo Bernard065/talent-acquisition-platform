@@ -6,7 +6,13 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { InterviewFeedbackForm } from "@/components/interviews/interview-feedback-form";
-import { useCancelInterview, useCompleteInterviewSession, useInterview } from "@/lib/api/hooks/interviews";
+import {
+  useCancelInterview,
+  useCompleteInterviewSession,
+  useInterview,
+  useInterviewCalendarSyncs,
+  useRetryInterviewCalendarSyncs,
+} from "@/lib/api/hooks/interviews";
 import { useApplicationSubmittedInterviewFeedback } from "@/lib/api/hooks/interview-feedback";
 import {
   INTERVIEW_CANCELLATION_REASONS,
@@ -28,12 +34,14 @@ export default function InterviewDetailsPage() {
   const { status: sessionStatus } = useSession();
   const { id } = useParams<{ id: string }>();
   const interviewQuery = useInterview(id);
+  const calendarSyncQuery = useInterviewCalendarSyncs(id);
   const submittedFeedbackQuery = useApplicationSubmittedInterviewFeedback(
     interviewQuery.data?.application_id ?? "",
     Boolean(interviewQuery.data?.application_id),
   );
   const cancelMutation = useCancelInterview();
   const completeMutation = useCompleteInterviewSession();
+  const retryCalendarSyncMutation = useRetryInterviewCalendarSyncs();
   const interview = interviewQuery.data;
   const isLoading = sessionStatus === "loading" || interviewQuery.isLoading;
   const [cancellationReason, setCancellationReason] = useState<InterviewCancellationReason | "">("");
@@ -49,6 +57,11 @@ export default function InterviewDetailsPage() {
   const canComplete = Boolean(
     interview && (
       hasSubmittedFeedback || now >= new Date(interview.scheduled_end_at).getTime()
+    ),
+  );
+  const hasRetryableCalendarSync = Boolean(
+    calendarSyncQuery.data?.can_retry && calendarSyncQuery.data.items.some(
+      (item) => item.status === "failed" && item.connection_status === "active",
     ),
   );
 
@@ -213,6 +226,82 @@ export default function InterviewDetailsPage() {
               </div>
             )}
             {error && !isConfirming && <p role="alert" className="mt-4 text-sm text-red-700">{error}</p>}
+          </section>
+
+          <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm sm:p-8">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-sr-text-blue">Calendar sync</h2>
+                <p className="mt-1 text-sm text-gray-600">
+                  Delivery status for the calendars connected by interview participants.
+                </p>
+              </div>
+              {hasRetryableCalendarSync && (
+                <Button
+                  variant="outline"
+                  disabled={retryCalendarSyncMutation.isPending}
+                  onClick={() => retryCalendarSyncMutation.mutate(id)}
+                >
+                  {retryCalendarSyncMutation.isPending ? "Queuing retry…" : "Retry failed sync"}
+                </Button>
+              )}
+            </div>
+            {calendarSyncQuery.isLoading ? (
+              <p className="mt-4 text-sm text-gray-500" aria-live="polite">Loading calendar status…</p>
+            ) : calendarSyncQuery.isError ? (
+              <div className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+                Calendar sync status is temporarily unavailable.
+                <button className="ml-2 font-semibold underline" onClick={() => void calendarSyncQuery.refetch()}>
+                  Try again
+                </button>
+              </div>
+            ) : calendarSyncQuery.data?.items.length ? (
+              <ul className="mt-5 divide-y divide-gray-100">
+                {calendarSyncQuery.data.items.map((item) => {
+                  const statusLabel = item.connection_status === "disabled"
+                    ? "Calendar disconnected"
+                    : item.status === "pending"
+                      ? "Waiting to sync"
+                      : item.status === "synced"
+                        ? "Synced"
+                        : item.status === "failed"
+                          ? "Sync failed"
+                          : "Sync disabled";
+                  return (
+                    <li key={`${item.calendar_owner_display_name}-${item.provider}`} className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{item.calendar_owner_display_name}</p>
+                        <p className="text-xs capitalize text-gray-500">{item.provider} calendar</p>
+                      </div>
+                      <div className="text-right">
+                        <p className={`text-sm font-medium ${item.status === "failed" ? "text-red-700" : item.status === "synced" ? "text-green-700" : "text-gray-700"}`}>
+                          {statusLabel}
+                        </p>
+                        {item.status === "synced" && item.synced_at && (
+                          <time className="text-xs text-gray-500" dateTime={item.synced_at}>
+                            Updated {formatDateTime(item.synced_at)}
+                          </time>
+                        )}
+                        {item.status === "failed" && item.last_error_code && (
+                          <p className="text-xs text-gray-500">Reason: {formatLabel(item.last_error_code)}</p>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="mt-4 rounded-lg bg-gray-50 p-3 text-sm text-gray-600">
+                No calendar sync is configured. Participants can connect a calendar in Settings to sync interview events.
+              </p>
+            )}
+            {retryCalendarSyncMutation.isError && (
+              <p role="alert" className="mt-4 text-sm text-red-700">
+                {retryCalendarSyncMutation.error instanceof Error
+                  ? retryCalendarSyncMutation.error.message
+                  : "Could not queue a calendar sync retry."}
+              </p>
+            )}
           </section>
 
           <InterviewFeedbackForm

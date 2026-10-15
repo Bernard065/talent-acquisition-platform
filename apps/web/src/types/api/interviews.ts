@@ -1,3 +1,8 @@
+import type {
+  CalendarConnectionStatus,
+  CalendarProvider,
+} from "./calendar-connections";
+
 export type InterviewSessionStatus = "scheduled" | "completed" | "cancelled";
 export type InterviewParticipantRole = "interviewer" | "coordinator";
 export type InterviewFormat = "online" | "in_person";
@@ -52,6 +57,27 @@ export interface InterviewSessionResponse {
   created_at: string;
   updated_at: string;
   version: number;
+}
+
+export type InterviewCalendarSyncStatus = "pending" | "synced" | "failed" | "disabled";
+
+export interface InterviewCalendarSync {
+  calendar_owner_display_name: string;
+  provider: CalendarProvider;
+  connection_status: CalendarConnectionStatus;
+  status: InterviewCalendarSyncStatus;
+  last_error_code: string | null;
+  last_attempt_at: string | null;
+  synced_at: string | null;
+}
+
+export interface InterviewCalendarSyncListResponse {
+  items: InterviewCalendarSync[];
+  can_retry: boolean;
+}
+
+export interface InterviewCalendarSyncRetryResponse {
+  status: "queued";
 }
 
 export type InterviewFeedbackStatus = "draft" | "submitted";

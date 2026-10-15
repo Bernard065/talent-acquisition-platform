@@ -6,6 +6,8 @@ import type {
   InterviewSearchListResponse,
   ScheduleInterviewRequest,
   InterviewCancellationReason,
+  InterviewCalendarSyncListResponse,
+  InterviewCalendarSyncRetryResponse,
   InterviewSessionStatus,
 } from "@/types/api";
 
@@ -32,6 +34,27 @@ export async function getInterview(
   options?: RequestOptions,
 ): Promise<InterviewSessionResponse> {
   return get<InterviewSessionResponse>(`/interviews/${id}`, options);
+}
+
+export async function getInterviewCalendarSyncs(
+  id: string,
+  options?: RequestOptions,
+): Promise<InterviewCalendarSyncListResponse> {
+  return get<InterviewCalendarSyncListResponse>(
+    `/interviews/${id}/calendar-syncs`,
+    options,
+  );
+}
+
+export async function retryInterviewCalendarSyncs(
+  id: string,
+  options?: RequestOptions,
+): Promise<InterviewCalendarSyncRetryResponse> {
+  return post<InterviewCalendarSyncRetryResponse>(
+    `/interviews/${id}/calendar-syncs/retry`,
+    {},
+    options,
+  );
 }
 
 export async function scheduleInterview(

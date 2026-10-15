@@ -11,8 +11,10 @@ import {
   cancelInterview,
   completeInterview,
   getInterview,
+  getInterviewCalendarSyncs,
   listInterviews,
   scheduleInterview,
+  retryInterviewCalendarSyncs,
   type InterviewSearchParams,
 } from "../services/interviews";
 import type {
@@ -27,6 +29,7 @@ export const interviewQueryKeys = {
   list: (params: InterviewSearchParams = {}) =>
     [...interviewQueryKeys.lists(), params] as const,
   detail: (id: string) => [...interviewQueryKeys.all, "detail", id] as const,
+  calendarSyncs: (id: string) => [...interviewQueryKeys.all, "calendar-syncs", id] as const,
 };
 
 export function useInterviews(params: InterviewSearchParams = {}) {
@@ -39,6 +42,34 @@ export function useInterviews(params: InterviewSearchParams = {}) {
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     enabled: status === "authenticated",
+  });
+}
+
+export function useInterviewCalendarSyncs(id: string) {
+  const { status } = useSession();
+
+  return useQuery({
+    queryKey: interviewQueryKeys.calendarSyncs(id),
+    queryFn: ({ signal }) => getInterviewCalendarSyncs(id, { signal }),
+    enabled: status === "authenticated" && Boolean(id),
+    refetchInterval: (query) =>
+      query.state.data?.items.some((item) => item.status === "pending")
+        ? 5_000
+        : false,
+  });
+}
+
+export function useRetryInterviewCalendarSyncs() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (interviewSessionId: string) =>
+      retryInterviewCalendarSyncs(interviewSessionId),
+    onSuccess: async (_result, interviewSessionId) => {
+      await queryClient.invalidateQueries({
+        queryKey: interviewQueryKeys.calendarSyncs(interviewSessionId),
+      });
+    },
   });
 }
 
