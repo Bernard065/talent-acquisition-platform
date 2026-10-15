@@ -10,4 +10,3 @@ class EmployeeStatus(StrEnum):
     ACTIVE = "active"
     INACTIVE = "inactive"
 
-\n
