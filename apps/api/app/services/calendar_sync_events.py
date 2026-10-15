@@ -1,6 +1,7 @@
 """Transaction-safe publishing of interview calendar synchronization work."""
 
 from typing import Literal
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +20,7 @@ def enqueue_interview_calendar_sync(
     context: TenantContext,
     interview_session: InterviewSession,
     operation: CalendarSyncOperation,
+    retry_id: UUID | None = None,
 ) -> None:
     """
     Queue identifier-only calendar synchronization work in the caller transaction.
@@ -38,6 +40,7 @@ def enqueue_interview_calendar_sync(
         deduplication_key=(
             f"calendar-sync:{interview_session.id}:"
             f"{interview_version}:{operation}"
+            + (f":retry:{retry_id}" if retry_id is not None else "")
         ),
         payload={
             "interview_session_id": str(interview_session.id),
