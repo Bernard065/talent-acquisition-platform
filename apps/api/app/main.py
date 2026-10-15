@@ -23,6 +23,9 @@ from app.api.v1.approvals import router as approvals_router
 from app.api.v1.calendar_connections import (
     router as calendar_connections_router,
 )
+from app.api.v1.calendar_sync_operations import (
+    router as calendar_sync_operations_router,
+)
 from app.api.v1.candidate_retention_reviews import (
     router as candidate_retention_reviews_router,
 )
@@ -504,6 +507,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application.include_router(
         interview_search_router,
+        prefix=active_settings.api_prefix,
+    )
+
+    application.include_router(
+        calendar_sync_operations_router,
         prefix=active_settings.api_prefix,
     )
 
