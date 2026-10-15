@@ -12,10 +12,12 @@ import app.services.hris_connections as hris_connections
 import app.services.onboarding as onboarding
 from app.core.authorization import Role, TenantContext
 from app.db.models.audit import AuditEvent
+from app.db.models.employee import Employee
 from app.db.models.hris import HrisConnection, HrisHandoff
 from app.db.models.onboarding import OnboardingInstance
 from app.db.models.outbox import OutboxEvent
-from app.domains.hris.enums import HrisConnectionStatus, HrisHandoffStatus, HrisProvider
+from app.domains.employees.enums import EmployeeStatus
+from app.domains.hris.enums import HrisConnectionStatus, HrisProvider
 from app.services.hris_connections import (
     CreateHrisConnectionCommand,
     create_hris_connection,
@@ -264,10 +266,10 @@ async def test_hris_connections_are_tenant_isolated(
 
 
 @pytest.mark.asyncio
-async def test_starting_onboarding_creates_private_atomic_hris_handoff(
+async def test_starting_onboarding_creates_mindhire_employee_without_hris_handoff(
     session: AsyncSession,
 ) -> None:
-    """Create the handoff, outbox event, and audit event in one transaction."""
+    """Onboarding creates a MindHire employee without sending data to an HRIS."""
     tenant_id = uuid4()
     application, _ = await _seed_hired_application(session, tenant_id=tenant_id)
     vault = _FakeHrisCredentialVault()
@@ -291,6 +293,12 @@ async def test_starting_onboarding_creates_private_atomic_hris_handoff(
         onboarding_template_id=template.id,
     )
 
+    employee = await session.scalar(
+        select(Employee).where(
+            Employee.tenant_id == tenant_id,
+            Employee.application_id == application.id,
+        )
+    )
     handoff = await session.scalar(
         select(HrisHandoff).where(
             HrisHandoff.tenant_id == tenant_id,
@@ -310,56 +318,23 @@ async def test_starting_onboarding_creates_private_atomic_hris_handoff(
         )
     )
 
-    assert handoff is not None
-    assert handoff.status is HrisHandoffStatus.PENDING
-    assert handoff.hris_connection_id == connection.id
-    assert handoff.application_id == application.id
-    assert handoff.onboarding_instance_id == instance.id
-
-    assert event is not None
-    assert event.aggregate_type == "hris_handoff"
-    assert event.aggregate_id == str(handoff.id)
-    assert event.payload == {
-        "hris_handoff_id": str(handoff.id),
-        "onboarding_instance_id": str(instance.id),
-        "handoff_version": handoff.version,
-    }
-
-    assert audit is not None
-    assert audit.entity_id == str(handoff.id)
-    assert audit.details == {
-        "status": "pending",
-        "version": handoff.version,
-    }
-
-    serialized_payload = str(event.payload).lower()
-    serialized_audit = str(audit.details).lower()
-    for prohibited_value in (
-        "ada lovelace",
-        "example.test",
-        "employee_referral",
-        "test-only-token",
-    ):
-        assert prohibited_value not in serialized_payload
-        assert prohibited_value not in serialized_audit
+    assert connection.status is HrisConnectionStatus.ACTIVE
+    assert employee is not None
+    assert employee.job_title == "Senior Backend Engineer"
+    assert employee.status is EmployeeStatus.PREBOARDING
+    assert handoff is None
+    assert event is None
+    assert audit is None
 
 
 @pytest.mark.asyncio
-async def test_failed_onboarding_rolls_back_hris_handoff_and_outbox(
+async def test_failed_onboarding_rolls_back_mindhire_employee_record(
     session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Keep onboarding, handoff, audit, and outbox changes transactionally atomic."""
+    """Roll back the employee record with failed onboarding startup."""
     tenant_id = uuid4()
     application, _ = await _seed_hired_application(session, tenant_id=tenant_id)
-    vault = _FakeHrisCredentialVault()
-
-    await create_hris_connection(
-        session,
-        context=_context(tenant_id),
-        command=_command(),
-        credential_vault=vault,
-    )
     template = await _create_template(session, tenant_id=tenant_id)
 
     async def fail_notifications(*_: object, **__: object) -> None:
@@ -390,20 +365,14 @@ async def test_failed_onboarding_rolls_back_hris_handoff_and_outbox(
             )
         )
     )
-    handoffs = list(
+    employee_records = list(
         await session.scalars(
-            select(HrisHandoff).where(HrisHandoff.tenant_id == tenant_id)
-        )
-    )
-    events = list(
-        await session.scalars(
-            select(OutboxEvent).where(
-                OutboxEvent.event_type == "hris.handoff_requested",
-                OutboxEvent.tenant_id == tenant_id,
+            select(Employee).where(
+                Employee.tenant_id == tenant_id,
+                Employee.application_id == application.id,
             )
         )
     )
 
     assert not instances
-    assert not handoffs
-    assert not events
+    assert not employee_records
