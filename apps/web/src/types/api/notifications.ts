@@ -19,7 +19,8 @@ export interface NotificationActionItemsResponse {
 
 export type NotificationPreferenceEventType =
   | "action_item.overdue_follow_up_digest"
-  | "action_item.pending_interview_feedback_digest";
+  | "action_item.pending_interview_feedback_digest"
+  | "interview.calendar_sync_failed";
 
 export interface NotificationPreference {
   event_type: string;

@@ -6,20 +6,29 @@ import {
 } from "@/lib/api/hooks/notifications";
 import type { NotificationPreferenceEventType } from "@/types/api";
 
-const digestPreferences: Array<{
+const notificationPreferences: Array<{
   eventType: NotificationPreferenceEventType;
   title: string;
   description: string;
+  frequencyControl: boolean;
 }> = [
   {
     eventType: "action_item.overdue_follow_up_digest",
     title: "Overdue candidate follow-ups",
     description: "Include follow-ups that are past due for applications assigned to you.",
+    frequencyControl: true,
   },
   {
     eventType: "action_item.pending_interview_feedback_digest",
     title: "Pending interview feedback",
     description: "Include feedback you still need to submit after an interview.",
+    frequencyControl: true,
+  },
+  {
+    eventType: "interview.calendar_sync_failed",
+    title: "Failed interview calendar syncs",
+    description: "Email me if an interview calendar event cannot be delivered after automatic retries.",
+    frequencyControl: false,
   },
 ];
 
@@ -30,9 +39,9 @@ export function NotificationsTab() {
   return (
     <section className="flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
       <header className="border-b border-gray-100 p-6">
-        <h2 className="text-lg font-bold text-sr-text-blue">Email digest preferences</h2>
+        <h2 className="text-lg font-bold text-sr-text-blue">Email notification preferences</h2>
         <p className="mt-1 text-sm text-gray-600">
-          Choose which recruiting actions you receive and how often. Digests are sent only when enabled categories have items that need your attention; the delivery time is configured by your workspace administrator.
+          Choose which recruiting notifications you receive. Action-item digests can be sent daily or weekly; a terminal calendar-sync failure is emailed as soon as it occurs.
         </p>
       </header>
 
@@ -59,7 +68,7 @@ export function NotificationsTab() {
           )}
 
           <div className="divide-y divide-gray-100">
-            {digestPreferences.map(({ eventType, title, description }) => {
+            {notificationPreferences.map(({ eventType, title, description, frequencyControl }) => {
               const preference = query.data?.find(
                 (item) => item.event_type === eventType && item.channel === "email",
               );
@@ -77,27 +86,29 @@ export function NotificationsTab() {
                     <p className="mt-1 text-sm text-gray-600">{description}</p>
                   </div>
                   <div className="flex flex-wrap items-center justify-end gap-3">
-                    <label className="flex items-center gap-2 text-sm text-gray-700">
-                      <span className="sr-only">Delivery frequency for {title}</span>
-                      <select
-                        aria-label={"Delivery frequency for " + title}
-                        value={preference?.digest_frequency ?? "daily"}
-                        disabled={!preference?.enabled || updatePreference.isPending}
-                        onChange={(event) => {
-                          if (!preference) return;
-                          updatePreference.mutate({
-                            eventType,
-                            enabled: preference.enabled,
-                            frequency: event.currentTarget.value === "weekly" ? "weekly" : "daily",
-                            expectedVersion: preference.version,
-                          });
-                        }}
-                        className="h-9 rounded-lg border border-gray-300 bg-white px-2 text-sm text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sr-green disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
-                      >
-                        <option value="daily">Daily</option>
-                        <option value="weekly">Weekly</option>
-                      </select>
-                    </label>
+                    {frequencyControl && (
+                      <label className="flex items-center gap-2 text-sm text-gray-700">
+                        <span className="sr-only">Delivery frequency for {title}</span>
+                        <select
+                          aria-label={"Delivery frequency for " + title}
+                          value={preference?.digest_frequency ?? "daily"}
+                          disabled={!preference?.enabled || updatePreference.isPending}
+                          onChange={(event) => {
+                            if (!preference) return;
+                            updatePreference.mutate({
+                              eventType,
+                              enabled: preference.enabled,
+                              frequency: event.currentTarget.value === "weekly" ? "weekly" : "daily",
+                              expectedVersion: preference.version,
+                            });
+                          }}
+                          className="h-9 rounded-lg border border-gray-300 bg-white px-2 text-sm text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sr-green disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500"
+                        >
+                          <option value="daily">Daily</option>
+                          <option value="weekly">Weekly</option>
+                        </select>
+                      </label>
+                    )}
                     <button
                       type="button"
                       role="switch"
