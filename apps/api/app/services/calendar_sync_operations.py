@@ -4,8 +4,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.functions import count
 
 from app.core.authorization import Role, TenantContext
 from app.db.models.application import Application
@@ -86,7 +87,9 @@ async def list_calendar_sync_operations(
     if status_filter is not None:
         conditions.append(InterviewCalendarSync.status == status_filter)
 
-    total = await session.scalar(select(func.count(InterviewCalendarSync.id)).where(*conditions))
+    total = await session.scalar(
+        select(count(InterviewCalendarSync.id)).where(*conditions)
+    )
     rows = await session.execute(
         select(
             InterviewCalendarSync,
