@@ -129,6 +129,40 @@ class InterviewCalendarSyncRetryResponse(BaseModel):
     status: str = "queued"
 
 
+class CalendarSyncOperationItemResponse(BaseModel):
+    """Safe operational metadata for one workspace calendar delivery."""
+
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    id: UUID
+    interview_session_id: UUID
+    interview_title: str
+    scheduled_start_at: datetime
+    calendar_owner_display_name: str
+    provider: CalendarProvider
+    connection_status: CalendarConnectionStatus
+    sync_status: InterviewCalendarSyncStatus
+    outbox_status: OutboxEventStatus | None
+    attempts: int
+    last_error_code: str | None
+    last_attempt_at: datetime | None
+    synced_at: datetime | None
+    can_retry: bool
+
+
+class CalendarSyncOperationsListResponse(BaseModel):
+    """Paginated operational sync records and worker health."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[CalendarSyncOperationItemResponse]
+    total: int
+    limit: int
+    offset: int
+    worker_available: bool
+    worker_last_seen_at: datetime | None
+
+
 class InterviewParticipantSummaryResponse(BaseModel):
     """Participant identity metadata safe for tenant interview calendars."""
 

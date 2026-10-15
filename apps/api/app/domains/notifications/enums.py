@@ -41,6 +41,7 @@ class NotificationEventType(StrEnum):
     INTERVIEW_RESCHEDULED = "interview.rescheduled"
     INTERVIEW_CANCELLED = "interview.cancelled"
     INTERVIEW_REMINDER = "interview.reminder"
+    INTERVIEW_CALENDAR_SYNC_FAILED = "interview.calendar_sync_failed"
     OVERDUE_FOLLOW_UP_DIGEST = "action_item.overdue_follow_up_digest"
     PENDING_INTERVIEW_FEEDBACK_DIGEST = (
         "action_item.pending_interview_feedback_digest"

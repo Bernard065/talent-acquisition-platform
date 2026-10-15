@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from typing import Literal, cast
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +15,7 @@ from app.core.authorization import Role, TenantContext
 from app.db.models.application import Application
 from app.db.models.calendar import CalendarConnection, InterviewCalendarSync
 from app.db.models.candidate import Candidate
+from app.db.models.identity import User
 from app.db.models.interview import InterviewParticipant, InterviewSession
 from app.db.models.outbox import OutboxEvent
 from app.db.transactions import transactional
@@ -29,6 +30,8 @@ from app.domains.candidates.processor_data import (
     CandidateProcessorPurpose,
 )
 from app.domains.interviews.enums import InterviewSessionStatus
+from app.domains.notifications.enums import NotificationEventType
+from app.domains.outbox.enums import OutboxEventStatus
 from app.services.calendar_credentials import (
     CalendarCredentialResolutionError,
     CalendarCredentialResolver,
@@ -42,6 +45,7 @@ from app.services.calendar_provider import (
 from app.services.candidate_processor_deletions import (
     record_candidate_processor_disclosure,
 )
+from app.services.notification_publishing import enqueue_notification_request
 from app.services.outbox_worker import (
     DEFAULT_OUTBOX_WORKER_POLICY,
     OutboxWorkerPolicy,
@@ -99,6 +103,143 @@ class PreparedCalendarSync:
 def _now() -> datetime:
     """Return the current timezone-aware UTC timestamp."""
     return datetime.now(UTC)
+
+
+async def _queue_terminal_failure_notification(
+    session: AsyncSession,
+    *,
+    event: OutboxEvent,
+    worker_id: str,
+) -> None:
+    """Notify the interview creator once a calendar event is terminally failed."""
+    try:
+        interview_id = UUID(event.aggregate_id)
+    except ValueError:
+        return
+
+    interview = await session.scalar(
+        select(InterviewSession).where(
+            InterviewSession.id == interview_id,
+            InterviewSession.tenant_id == event.tenant_id,
+        )
+    )
+    if interview is None:
+        return
+
+    recipient_user_id = await session.scalar(
+        select(User.id).where(
+            User.tenant_id == event.tenant_id,
+            User.external_subject == interview.created_by_subject,
+        )
+    )
+    if recipient_user_id is None:
+        return
+
+    enqueue_notification_request(
+        session,
+        context=TenantContext(
+            tenant_id=event.tenant_id,
+            subject=f"system:calendar-sync:{worker_id}",
+            roles=frozenset({Role.PEOPLE_OPERATIONS}),
+            request_id=f"outbox:{event.id}",
+        ),
+        recipient_user_id=recipient_user_id,
+        notification_event_type=NotificationEventType.INTERVIEW_CALENDAR_SYNC_FAILED,
+        entity_type="interview_session",
+        entity_id=interview.id,
+        template_key="interview_calendar_sync_failed",
+        deduplication_scope=str(event.id),
+    )
+
+
+async def _mark_pending_calendar_syncs_failed(
+    session: AsyncSession,
+    *,
+    event: OutboxEvent,
+    failure_code: str,
+) -> None:
+    """Fail deliveries that were not reached before their shared event ended."""
+    try:
+        interview_id = UUID(event.aggregate_id)
+    except ValueError:
+        return
+
+    await session.execute(
+        update(InterviewCalendarSync)
+        .where(
+            InterviewCalendarSync.tenant_id == event.tenant_id,
+            InterviewCalendarSync.interview_session_id == interview_id,
+            InterviewCalendarSync.status == InterviewCalendarSyncStatus.PENDING,
+        )
+        .values(
+            status=InterviewCalendarSyncStatus.FAILED,
+            last_error_code=failure_code,
+            last_attempt_at=_now(),
+            updated_at=_now(),
+        )
+    )
+
+
+async def _recover_expired_calendar_sync_leases(
+    session: AsyncSession,
+    *,
+    worker_id: str,
+    policy: OutboxWorkerPolicy,
+) -> None:
+    """Reconcile expired calendar leases before the generic outbox claims work."""
+    stale_before = _now() - policy.visibility_timeout
+    now = _now()
+
+    async with transactional(session):
+        stale_events = list(
+            await session.scalars(
+                select(OutboxEvent)
+                .where(
+                    OutboxEvent.event_type == _CALENDAR_SYNC_REQUESTED_EVENT,
+                    OutboxEvent.status == OutboxEventStatus.PROCESSING,
+                    OutboxEvent.locked_at.is_not(None),
+                    OutboxEvent.locked_at < stale_before,
+                )
+                .order_by(OutboxEvent.locked_at, OutboxEvent.id)
+                .with_for_update(skip_locked=True)
+            )
+        )
+
+        for event in stale_events:
+            event.locked_at = None
+            event.locked_by = None
+            event.last_error = "lease_expired"
+            if event.attempts >= policy.max_attempts:
+                event.status = OutboxEventStatus.DEAD_LETTERED
+                event.dead_lettered_at = now
+                try:
+                    interview_id = UUID(event.aggregate_id)
+                except ValueError:
+                    continue
+                await session.execute(
+                    update(InterviewCalendarSync)
+                    .where(
+                        InterviewCalendarSync.tenant_id == event.tenant_id,
+                        InterviewCalendarSync.interview_session_id == interview_id,
+                        InterviewCalendarSync.status == InterviewCalendarSyncStatus.PENDING,
+                    )
+                    .values(
+                        status=InterviewCalendarSyncStatus.FAILED,
+                        last_error_code="lease_expired",
+                        last_attempt_at=now,
+                        updated_at=now,
+                    )
+                )
+                await _queue_terminal_failure_notification(
+                    session,
+                    event=event,
+                    worker_id=worker_id,
+                )
+            else:
+                event.status = OutboxEventStatus.PENDING
+                event.next_attempt_at = now
+
+        await session.flush()
 
 
 def _safe_failure_code(code: str) -> str:
@@ -448,6 +589,11 @@ async def process_interview_calendar_sync_events(
     Provider operations are intentionally outside database transactions. Sync
     records and outbox leases make retries safe through stable idempotency keys.
     """
+    await _recover_expired_calendar_sync_leases(
+        session,
+        worker_id=worker_id,
+        policy=policy,
+    )
     events = await claim_outbox_events(
         session,
         worker_id=worker_id,
@@ -460,6 +606,7 @@ async def process_interview_calendar_sync_events(
     dead_lettered = 0
 
     for event in events:
+        current_prepared: PreparedCalendarSync | None = None
         try:
             request = _request_from_event(event)
             prepared_syncs = await _prepare_calendar_syncs(
@@ -488,6 +635,7 @@ async def process_interview_calendar_sync_events(
 
         try:
             for prepared in prepared_syncs:
+                current_prepared = prepared
                 external_event_id = await _execute_prepared_sync(
                     prepared=prepared,
                     credential_resolver=credential_resolver,
@@ -509,32 +657,54 @@ async def process_interview_calendar_sync_events(
             CalendarProviderError,
         ) as error:
             failure_code = _safe_failure_code(error.code)
+            async with transactional(session):
+                if current_prepared is not None:
+                    await _mark_sync_failed(
+                        session,
+                        prepared=current_prepared,
+                        failure_code=failure_code,
+                    )
 
-            # Only the connection currently being processed is marked failed.
-            if "prepared" in locals():
-                await _mark_sync_failed(
-                    session,
-                    prepared=prepared,
-                    failure_code=failure_code,
-                )
-
-            if error.retryable:
-                await schedule_outbox_event_retry(
-                    session,
-                    event_id=event.id,
-                    worker_id=worker_id,
-                    failure_code=failure_code,
-                    policy=policy,
-                )
-                retried += 1
-            else:
-                await dead_letter_outbox_event(
-                    session,
-                    event_id=event.id,
-                    worker_id=worker_id,
-                    failure_code=failure_code,
-                )
-                dead_lettered += 1
+                if error.retryable:
+                    failed_event = await schedule_outbox_event_retry(
+                        session,
+                        event_id=event.id,
+                        worker_id=worker_id,
+                        failure_code=failure_code,
+                        policy=policy,
+                    )
+                    if failed_event.status is OutboxEventStatus.DEAD_LETTERED:
+                        await _mark_pending_calendar_syncs_failed(
+                            session,
+                            event=failed_event,
+                            failure_code=failure_code,
+                        )
+                        await _queue_terminal_failure_notification(
+                            session,
+                            event=failed_event,
+                            worker_id=worker_id,
+                        )
+                        dead_lettered += 1
+                    else:
+                        retried += 1
+                else:
+                    failed_event = await dead_letter_outbox_event(
+                        session,
+                        event_id=event.id,
+                        worker_id=worker_id,
+                        failure_code=failure_code,
+                    )
+                    await _mark_pending_calendar_syncs_failed(
+                        session,
+                        event=failed_event,
+                        failure_code=failure_code,
+                    )
+                    await _queue_terminal_failure_notification(
+                        session,
+                        event=failed_event,
+                        worker_id=worker_id,
+                    )
+                    dead_lettered += 1
             continue
 
         await mark_outbox_event_processed(

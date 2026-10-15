@@ -85,6 +85,12 @@ const approvalNavigation: NavigationItem[] = [
     icon: Settings,
     roles: dashboardRolePolicies.approvalSettings,
   },
+  {
+    name: "Calendar sync",
+    href: "/dashboard/settings/calendar-sync",
+    icon: CalendarDays,
+    roles: dashboardRolePolicies.workspaceAdmin,
+  },
 ];
 
 function canAccessNavigation(item: NavigationItem, roles: Role[]): boolean {

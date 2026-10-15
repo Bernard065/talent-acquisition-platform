@@ -138,6 +138,17 @@ _TEMPLATES: dict[tuple[NotificationEventType, str], NotificationEmailTemplate] =
         subject="Interview reminder",
         text_body="Your interview is coming up.",
     ),
+    (
+        NotificationEventType.INTERVIEW_CALENDAR_SYNC_FAILED,
+        "interview_calendar_sync_failed",
+    ): NotificationEmailTemplate(
+        subject="Interview calendar sync needs attention",
+        text_body=(
+            "Calendar delivery for an interview could not be completed "
+            "automatically. Sign in to your hiring workspace to review the "
+            "calendar status and retry it if appropriate."
+        ),
+    ),
 }
 
 
@@ -181,6 +192,27 @@ def render_notification_email(
         recipient_email=recipient_email,
         subject=template.subject,
         text_body=template.text_body,
+    )
+
+
+def render_calendar_sync_failure_email(
+    *,
+    notification_id: UUID,
+    idempotency_key: str,
+    recipient_email: str,
+    interview_url: str,
+) -> EmailMessage:
+    """Render a terminal calendar failure alert with its authorized interview link."""
+    template = resolve_notification_email_template(
+        event_type=NotificationEventType.INTERVIEW_CALENDAR_SYNC_FAILED,
+        template_key="interview_calendar_sync_failed",
+    )
+    return EmailMessage(
+        notification_id=notification_id,
+        idempotency_key=idempotency_key,
+        recipient_email=recipient_email,
+        subject=template.subject,
+        text_body=f"{template.text_body}\n\nReview interview: {interview_url}",
     )
 
 

@@ -13,6 +13,7 @@ const pageTitles: Array<{ href: string; title: string }> = [
   { href: "/dashboard/jobs/new", title: "Create requisition" },
   { href: "/dashboard/requisitions", title: "Requisitions" },
   { href: "/dashboard/settings/approvals", title: "Approval settings" },
+  { href: "/dashboard/settings/calendar-sync", title: "Calendar sync" },
   { href: "/dashboard/approvals", title: "Approvals" },
   { href: "/dashboard/jobs", title: "Jobs" },
   { href: "/dashboard/candidates", title: "Candidates" },

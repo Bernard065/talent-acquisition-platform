@@ -92,6 +92,32 @@ export interface InterviewCalendarSyncRetryResponse {
   status: "queued";
 }
 
+export interface CalendarSyncOperationItem {
+  id: string;
+  interview_session_id: string;
+  interview_title: string;
+  scheduled_start_at: string;
+  calendar_owner_display_name: string;
+  provider: CalendarProvider;
+  connection_status: CalendarConnectionStatus;
+  sync_status: InterviewCalendarSyncStatus;
+  outbox_status: "pending" | "processing" | "processed" | "dead_lettered" | null;
+  attempts: number;
+  last_error_code: string | null;
+  last_attempt_at: string | null;
+  synced_at: string | null;
+  can_retry: boolean;
+}
+
+export interface CalendarSyncOperationsListResponse {
+  items: CalendarSyncOperationItem[];
+  total: number;
+  limit: number;
+  offset: number;
+  worker_available: boolean;
+  worker_last_seen_at: string | null;
+}
+
 export type InterviewFeedbackStatus = "draft" | "submitted";
 export type InterviewRecommendation = "strong_no" | "no" | "yes" | "strong_yes";
 

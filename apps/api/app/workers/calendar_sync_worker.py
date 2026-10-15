@@ -54,13 +54,14 @@ async def _heartbeat_loop(
     """Persist liveness independently while calendar calls are in flight."""
     while True:
         try:
+            # Keep the process liveness marker independent of database health.
+            _record_heartbeat(settings.calendar_sync_worker_heartbeat_path)
             async with database.session_factory() as session:
                 await record_worker_heartbeat(
                     session,
                     worker_name=CALENDAR_SYNC_WORKER_NAME,
                 )
                 await session.commit()
-            _record_heartbeat(settings.calendar_sync_worker_heartbeat_path)
         except Exception:  # pylint: disable=broad-exception-caught
             logger.exception(
                 "calendar_sync_worker_heartbeat_failed",
@@ -187,6 +188,9 @@ async def main() -> None:
                 worker_id=worker_id,
             )
         )
+        # Publish liveness before the first outbox poll so a fast cycle (or
+        # an early cancellation) cannot exit before the heartbeat task runs.
+        _record_heartbeat(settings.calendar_sync_worker_heartbeat_path)
 
         logger.info(
             "calendar_sync_worker_started",

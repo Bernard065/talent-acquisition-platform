@@ -33,6 +33,7 @@ const dashboardRouteRules: readonly DashboardRouteRule[] = [
   { path: "/dashboard/jobs/new", match: "exact", roles: dashboardRolePolicies.requisitionCreate },
   { path: "/dashboard/requisitions/new", match: "exact", roles: dashboardRolePolicies.requisitionCreate },
   { path: "/dashboard/settings/approvals", match: "exact", roles: dashboardRolePolicies.approvalSettings },
+  { path: "/dashboard/settings/calendar-sync", match: "exact", roles: dashboardRolePolicies.workspaceAdmin },
   { path: "/dashboard/team", match: "exact", roles: dashboardRolePolicies.workspaceAdmin },
   { path: "/dashboard/candidates", match: "exact", roles: dashboardRolePolicies.recruiting },
   { path: "/dashboard/candidates", match: "detail", roles: dashboardRolePolicies.recruiting },

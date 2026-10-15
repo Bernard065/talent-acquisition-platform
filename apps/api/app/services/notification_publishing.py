@@ -24,6 +24,7 @@ def _deduplication_key(
     entity_type: str,
     entity_id: UUID,
     occurrence_key: str | None = None,
+    deduplication_scope: str | None = None,
 ) -> str:
     """Return a fixed-length, non-sensitive stable delivery identity."""
     identity = "|".join(
@@ -34,6 +35,7 @@ def _deduplication_key(
             entity_type,
             str(entity_id),
             *([occurrence_key] if occurrence_key is not None else []),
+            *([deduplication_scope] if deduplication_scope is not None else []),
         )
     )
     return sha256(identity.encode("utf-8")).hexdigest()
@@ -51,10 +53,13 @@ def enqueue_notification_request(
     template_key: str,
     occurrence_key: int | None = None,
     scheduled_at: datetime | None = None,
+    deduplication_scope: str | None = None,
 ) -> None:
     """Queue one recipient-specific notification request in this transaction."""
     if (recipient_user_id is None) == (recipient_candidate_id is None):
         raise ValueError("Exactly one notification recipient must be provided.")
+    if deduplication_scope is not None and not deduplication_scope.strip():
+        raise ValueError("Notification deduplication scope cannot be blank.")
 
     recipient_identity = (
         str(recipient_user_id)
@@ -70,6 +75,7 @@ def enqueue_notification_request(
         occurrence_key=(
             str(occurrence_key) if occurrence_key is not None else None
         ),
+        deduplication_scope=deduplication_scope,
     )
 
     payload: dict[str, str] = {
