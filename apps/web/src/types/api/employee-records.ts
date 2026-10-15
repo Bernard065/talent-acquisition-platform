@@ -17,6 +17,22 @@ export interface EmployeeRecordResponse {
   updated_at: string;
 }
 
+export interface EmployeeDirectoryItemResponse extends EmployeeRecordResponse {
+  employee_name: string;
+}
+
+export interface EmployeeDirectoryResponse {
+  items: EmployeeDirectoryItemResponse[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface EmployeeDirectoryFilterOptionsResponse {
+  departments: string[];
+  locations: string[];
+}
+
 export interface CreateEmployeeRecordRequest {
   employee_number?: string | null;
   work_email?: string | null;

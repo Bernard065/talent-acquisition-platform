@@ -6,17 +6,42 @@ import type {
   CreateEmployeeRecordRequest,
   UpdateEmployeeRecordRequest,
 } from "@/types/api/employee-records";
+import type { EmployeeDirectoryParams } from "../services/employee-records";
 import {
   createApplicationEmployeeRecord,
+  getEmployeeDirectoryFilterOptions,
   getApplicationEmployeeRecord,
+  listEmployeeRecords,
   updateEmployeeRecord,
 } from "../services/employee-records";
 
 export const employeeRecordQueryKeys = {
   all: ["employee-records"] as const,
+  lists: () => [...employeeRecordQueryKeys.all, "list"] as const,
+  list: (params: EmployeeDirectoryParams = {}) =>
+    [...employeeRecordQueryKeys.lists(), params] as const,
+  filterOptions: () => [...employeeRecordQueryKeys.all, "filter-options"] as const,
   application: (applicationId: string) =>
     [...employeeRecordQueryKeys.all, applicationId] as const,
 };
+
+export function useEmployeeDirectory(params: EmployeeDirectoryParams) {
+  const { status } = useSession();
+  return useQuery({
+    queryKey: employeeRecordQueryKeys.list(params),
+    queryFn: ({ signal }) => listEmployeeRecords(params, { signal }),
+    enabled: status === "authenticated",
+  });
+}
+
+export function useEmployeeDirectoryFilterOptions() {
+  const { status } = useSession();
+  return useQuery({
+    queryKey: employeeRecordQueryKeys.filterOptions(),
+    queryFn: ({ signal }) => getEmployeeDirectoryFilterOptions({ signal }),
+    enabled: status === "authenticated",
+  });
+}
 
 export function useApplicationEmployeeRecord(
   applicationId: string,
@@ -43,9 +68,13 @@ export function useCreateApplicationEmployeeRecord() {
       idempotencyKey: string;
     }) => createApplicationEmployeeRecord(applicationId, request, idempotencyKey),
     onSuccess: async (_record, variables) => {
-      await queryClient.invalidateQueries({
-        queryKey: employeeRecordQueryKeys.application(variables.applicationId),
-      });
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: employeeRecordQueryKeys.application(variables.applicationId),
+        }),
+        queryClient.invalidateQueries({ queryKey: employeeRecordQueryKeys.lists() }),
+        queryClient.invalidateQueries({ queryKey: employeeRecordQueryKeys.filterOptions() }),
+      ]);
     },
   });
 }
@@ -64,9 +93,13 @@ export function useUpdateEmployeeRecord() {
       idempotencyKey: string;
     }) => updateEmployeeRecord(employeeId, request, idempotencyKey),
     onSuccess: async (_record, variables) => {
-      await queryClient.invalidateQueries({
-        queryKey: employeeRecordQueryKeys.application(variables.applicationId),
-      });
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: employeeRecordQueryKeys.application(variables.applicationId),
+        }),
+        queryClient.invalidateQueries({ queryKey: employeeRecordQueryKeys.lists() }),
+        queryClient.invalidateQueries({ queryKey: employeeRecordQueryKeys.filterOptions() }),
+      ]);
     },
   });
 }
