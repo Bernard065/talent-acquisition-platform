@@ -64,6 +64,11 @@ export default function InterviewDetailsPage() {
       (item) => item.status === "failed" && item.connection_status === "active",
     ),
   );
+  const hasUnavailableCalendarWorker = Boolean(
+    calendarSyncQuery.data?.items.some(
+      (item) => item.delivery_state === "worker_unavailable",
+    ),
+  );
 
   useEffect(() => {
     const updateNow = () => setNow(Date.now());
@@ -246,6 +251,16 @@ export default function InterviewDetailsPage() {
                 </Button>
               )}
             </div>
+            {hasUnavailableCalendarWorker && (
+              <p role="status" className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                This calendar event is delayed because the calendar sync worker is unavailable. A platform administrator needs to start or restore the worker.
+                {calendarSyncQuery.data?.worker_last_seen_at && (
+                  <span className="mt-1 block text-xs text-amber-800">
+                    Last worker heartbeat: {formatDateTime(calendarSyncQuery.data.worker_last_seen_at)}
+                  </span>
+                )}
+              </p>
+            )}
             {calendarSyncQuery.isLoading ? (
               <p className="mt-4 text-sm text-gray-500" aria-live="polite">Loading calendar status…</p>
             ) : calendarSyncQuery.isError ? (
@@ -258,15 +273,15 @@ export default function InterviewDetailsPage() {
             ) : calendarSyncQuery.data?.items.length ? (
               <ul className="mt-5 divide-y divide-gray-100">
                 {calendarSyncQuery.data.items.map((item) => {
-                  const statusLabel = item.connection_status === "disabled"
-                    ? "Calendar disconnected"
-                    : item.status === "pending"
-                      ? "Waiting to sync"
-                      : item.status === "synced"
-                        ? "Synced"
-                        : item.status === "failed"
-                          ? "Sync failed"
-                          : "Sync disabled";
+                  const statusLabel = {
+                    queued: "Queued",
+                    syncing: "Syncing",
+                    synced: "Synced",
+                    failed: "Sync failed",
+                    disabled: "Calendar disconnected",
+                    worker_unavailable: "Delayed: worker unavailable",
+                    not_queued: "Not queued",
+                  }[item.delivery_state];
                   return (
                     <li key={`${item.calendar_owner_display_name}-${item.provider}`} className="flex flex-wrap items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
                       <div>
@@ -274,10 +289,10 @@ export default function InterviewDetailsPage() {
                         <p className="text-xs capitalize text-gray-500">{item.provider} calendar</p>
                       </div>
                       <div className="text-right">
-                        <p className={`text-sm font-medium ${item.status === "failed" ? "text-red-700" : item.status === "synced" ? "text-green-700" : "text-gray-700"}`}>
+                        <p className={`text-sm font-medium ${item.delivery_state === "failed" ? "text-red-700" : item.delivery_state === "synced" ? "text-green-700" : item.delivery_state === "worker_unavailable" ? "text-amber-900" : "text-gray-700"}`}>
                           {statusLabel}
                         </p>
-                        {item.status === "synced" && item.synced_at && (
+                        {item.delivery_state === "synced" && item.synced_at && (
                           <time className="text-xs text-gray-500" dateTime={item.synced_at}>
                             Updated {formatDateTime(item.synced_at)}
                           </time>

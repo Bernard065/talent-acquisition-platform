@@ -53,8 +53,10 @@ export function useInterviewCalendarSyncs(id: string) {
     queryFn: ({ signal }) => getInterviewCalendarSyncs(id, { signal }),
     enabled: status === "authenticated" && Boolean(id),
     refetchInterval: (query) =>
-      query.state.data?.items.some((item) => item.status === "pending")
-        ? 5_000
+      query.state.data?.items.some((item) =>
+        ["queued", "syncing", "worker_unavailable"].includes(item.delivery_state),
+      )
+        ? 10_000
         : false,
   });
 }
