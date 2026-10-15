@@ -1,9 +1,37 @@
 import { get, patch, post, type RequestOptions } from "../client";
 import type {
   CreateEmployeeRecordRequest,
+  EmployeeDirectoryFilterOptionsResponse,
+  EmployeeDirectoryResponse,
   EmployeeRecordResponse,
   UpdateEmployeeRecordRequest,
 } from "@/types/api/employee-records";
+
+export interface EmployeeDirectoryParams {
+  page?: number;
+  limit?: number;
+  query?: string;
+  status?: EmployeeRecordResponse["status"];
+  department?: string;
+  location?: string;
+}
+
+export function listEmployeeRecords(
+  params: EmployeeDirectoryParams = {},
+  options?: RequestOptions,
+) {
+  return get<EmployeeDirectoryResponse>("/employee-records", {
+    ...options,
+    params: { ...options?.params, ...params },
+  });
+}
+
+export function getEmployeeDirectoryFilterOptions(options?: RequestOptions) {
+  return get<EmployeeDirectoryFilterOptionsResponse>(
+    "/employee-records/filter-options",
+    options,
+  );
+}
 
 export function getApplicationEmployeeRecord(
   applicationId: string,

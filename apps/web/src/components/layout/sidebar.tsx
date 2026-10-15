@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import type { Role } from "@/types/api/auth";
-import { MindHireMark, LayoutDashboard, BriefcaseBusiness, FileText, Users, List, CalendarDays, ChartNoAxesColumnIncreasing, UsersRound, Settings, X } from "@/components/icons";
+import { MindHireMark, LayoutDashboard, BriefcaseBusiness, FileText, Users, List, CalendarDays, ChartNoAxesColumnIncreasing, ContactRound, UsersRound, Settings, X } from "@/components/icons";
 import { dashboardRolePolicies } from "@/components/layout/dashboard-role-access";
 
 type NavigationItem = {
@@ -51,6 +51,12 @@ const navigation: NavigationItem[] = [
     href: "/dashboard/applications",
     icon: List,
     roles: dashboardRolePolicies.recruiting,
+  },
+  {
+    name: "Employees",
+    href: "/dashboard/employees",
+    icon: ContactRound,
+    roles: dashboardRolePolicies.employeeManagement,
   },
   {
     name: "Interviews",
