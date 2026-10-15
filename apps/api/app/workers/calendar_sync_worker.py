@@ -4,6 +4,7 @@ import asyncio
 import os
 import socket
 from collections.abc import Mapping
+from contextlib import suppress
 from pathlib import Path
 
 import httpx
@@ -22,6 +23,10 @@ from app.services.calendar_sync_worker import (
     process_interview_calendar_sync_events,
 )
 from app.services.outbox_worker import OutboxWorkerPolicy
+from app.services.worker_heartbeats import (
+    CALENDAR_SYNC_WORKER_NAME,
+    record_worker_heartbeat,
+)
 
 logger = structlog.get_logger()
 
@@ -38,6 +43,33 @@ def _record_heartbeat(path: Path) -> None:
     """Write a liveness marker for the worker health check."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.touch(exist_ok=True)
+
+
+async def _heartbeat_loop(
+    *,
+    database: Database,
+    settings: Settings,
+    worker_id: str,
+) -> None:
+    """Persist liveness independently while calendar calls are in flight."""
+    while True:
+        try:
+            async with database.session_factory() as session:
+                await record_worker_heartbeat(
+                    session,
+                    worker_name=CALENDAR_SYNC_WORKER_NAME,
+                )
+                await session.commit()
+            _record_heartbeat(settings.calendar_sync_worker_heartbeat_path)
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.exception(
+                "calendar_sync_worker_heartbeat_failed",
+                worker_id=worker_id,
+            )
+
+        await asyncio.sleep(
+            settings.calendar_sync_worker_heartbeat_interval_seconds
+        )
 
 
 def _require_setting(value: str | None, *, name: str) -> str:
@@ -138,6 +170,7 @@ async def main() -> None:
     database = Database(str(settings.database_url))
     worker_id = _worker_id(settings.calendar_sync_worker_id)
     http_client: httpx.AsyncClient | None = None
+    heartbeat_task: asyncio.Task[None] | None = None
 
     try:
         credential_resolver, providers, http_client = await _build_google_runtime(
@@ -146,6 +179,13 @@ async def main() -> None:
 
         policy = OutboxWorkerPolicy(
             batch_size=settings.calendar_sync_worker_batch_size,
+        )
+        heartbeat_task = asyncio.create_task(
+            _heartbeat_loop(
+                database=database,
+                settings=settings,
+                worker_id=worker_id,
+            )
         )
 
         logger.info(
@@ -165,10 +205,6 @@ async def main() -> None:
                         providers=providers,
                         policy=policy,
                     )
-
-                _record_heartbeat(
-                    settings.calendar_sync_worker_heartbeat_path
-                )
 
                 logger.info(
                     "calendar_sync_worker_cycle_complete",
@@ -192,6 +228,11 @@ async def main() -> None:
                     settings.calendar_sync_worker_poll_interval_seconds
                 )
     finally:
+        if heartbeat_task is not None:
+            heartbeat_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await heartbeat_task
+
         if http_client is not None:
             await http_client.aclose()
 

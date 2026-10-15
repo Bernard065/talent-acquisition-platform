@@ -1,6 +1,7 @@
 """Strict HTTP contracts for interview scheduling."""
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, model_validator
@@ -16,6 +17,7 @@ from app.domains.interviews.enums import (
     InterviewParticipantRole,
     InterviewSessionStatus,
 )
+from app.domains.outbox.enums import OutboxEventStatus
 
 
 class InterviewParticipantRequest(BaseModel):
@@ -92,6 +94,15 @@ class InterviewCalendarSyncResponse(BaseModel):
     provider: CalendarProvider
     connection_status: CalendarConnectionStatus
     status: InterviewCalendarSyncStatus
+    delivery_state: Literal[
+        "queued",
+        "syncing",
+        "synced",
+        "failed",
+        "disabled",
+        "worker_unavailable",
+        "not_queued",
+    ]
     last_error_code: str | None
     last_attempt_at: datetime | None
     synced_at: datetime | None
@@ -104,6 +115,10 @@ class InterviewCalendarSyncListResponse(BaseModel):
 
     items: list[InterviewCalendarSyncResponse]
     can_retry: bool
+    worker_available: bool
+    worker_last_seen_at: datetime | None
+    queue_status: OutboxEventStatus | None
+    queued_at: datetime | None
 
 
 class InterviewCalendarSyncRetryResponse(BaseModel):
