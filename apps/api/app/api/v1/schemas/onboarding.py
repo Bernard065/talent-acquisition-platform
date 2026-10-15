@@ -107,6 +107,31 @@ class OnboardingTemplateResponse(BaseModel):
     created_at: datetime
 
 
+class OnboardingTemplateTaskResponse(BaseModel):
+    """One ordered task definition available for a new onboarding instance."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    position: int
+    title: str
+    description: str | None
+    due_offset_days: int | None
+    default_assignee_role: Role | None
+
+
+class OnboardingTemplateListItemResponse(OnboardingTemplateResponse):
+    """Active template metadata and its immutable task definitions."""
+
+    tasks: list[OnboardingTemplateTaskResponse]
+
+
+class OnboardingTemplateListResponse(BaseModel):
+    """Available tenant onboarding templates."""
+
+    items: list[OnboardingTemplateListItemResponse]
+
+
 class OnboardingInstanceResponse(BaseModel):
     """Private onboarding instance metadata without applicant PII."""
 
@@ -138,3 +163,10 @@ class OnboardingTaskResponse(BaseModel):
     completed_at: datetime | None
     blocked_reason: str | None
     version: int
+
+
+class ApplicationOnboardingResponse(BaseModel):
+    """An application's onboarding instance, when one has been started."""
+
+    instance: OnboardingInstanceResponse | None
+    tasks: list[OnboardingTaskResponse]
