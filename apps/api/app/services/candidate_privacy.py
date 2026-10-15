@@ -11,9 +11,11 @@ from app.core.authorization import Role, TenantContext
 from app.db.models.candidate import Candidate
 from app.db.models.candidate_document import CandidateDocument
 from app.db.models.candidate_retention_hold import CandidateRetentionHold
+from app.db.models.employee import Employee
 from app.db.transactions import transactional
 from app.domains.candidates.enums import CandidateConsentStatus, CandidatePrivacyStatus
 from app.domains.documents.enums import CandidateDocumentStatus
+from app.domains.employees.enums import EmployeeStatus
 from app.services.audit import record_audit_event
 from app.services.candidate_privacy_errors import (
     CandidatePrivacyAccessDeniedError,
@@ -156,6 +158,26 @@ async def request_candidate_erasure(
             candidate_id=candidate.id,
         )
 
+        employees = list(
+            await session.scalars(
+                select(Employee)
+                .where(
+                    Employee.tenant_id == context.tenant_id,
+                    Employee.candidate_id == candidate.id,
+                )
+                .with_for_update()
+            )
+        )
+        for employee in employees:
+            employee.employee_number = None
+            employee.work_email = None
+            employee.start_date = None
+            employee.job_title = "Erased employee"
+            employee.department = None
+            employee.location = None
+            employee.manager_user_id = None
+            employee.status = EmployeeStatus.INACTIVE
+
         previous_consent = candidate.consent_status
         candidate.consent_status = CandidateConsentStatus.WITHDRAWN
         if previous_consent is not CandidateConsentStatus.WITHDRAWN:
@@ -230,6 +252,7 @@ async def request_candidate_erasure(
             details={
                 "document_count": len(documents),
                 "processor_deletion_request_count": processor_deletion_request_count,
+                "employee_record_count": len(employees),
                 "privacy_status": candidate.privacy_status.value,
             },
         )
