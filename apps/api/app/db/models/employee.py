@@ -41,6 +41,7 @@ class Employee(Base):
             "work_email",
             name="uq_employees_tenant_work_email",
         ),
+        UniqueConstraint("user_id", name="uq_employees_user_id"),
         Index(
             "ix_employees_tenant_status_created_at",
             "tenant_id",
@@ -69,6 +70,9 @@ class Employee(Base):
     location: Mapped[str | None] = mapped_column(String(200), nullable=True)
     manager_user_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     status: Mapped[EmployeeStatus] = mapped_column(
         Enum(
