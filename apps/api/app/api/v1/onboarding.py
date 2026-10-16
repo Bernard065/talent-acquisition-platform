@@ -15,6 +15,8 @@ from app.api.v1.schemas.onboarding import (
     CreateOnboardingTemplateRequest,
     ExpectedInstanceVersionRequest,
     OnboardingInstanceResponse,
+    OnboardingOverviewItemResponse,
+    OnboardingOverviewResponse,
     OnboardingTaskResponse,
     OnboardingTemplateListItemResponse,
     OnboardingTemplateListResponse,
@@ -35,6 +37,7 @@ from app.services.onboarding import (
     create_onboarding_template,
     get_application_onboarding,
     list_active_onboarding_templates,
+    list_onboarding_overview,
     start_onboarding,
     update_onboarding_task_status,
 )
@@ -50,6 +53,41 @@ def _private_response(result: IdempotencyResult) -> JSONResponse:
     response = idempotency_response(result)
     response.headers["Cache-Control"] = "private, no-store"
     return response
+
+
+@router.get(
+    "/onboarding-instances",
+    response_model=OnboardingOverviewResponse,
+    summary="List workspace onboarding plans",
+)
+async def list_onboarding_overview_endpoint(
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+) -> OnboardingOverviewResponse:
+    """List recent onboarding plans for authorized workspace members."""
+    items = await list_onboarding_overview(session, context=context)
+    response.headers["Cache-Control"] = "private, no-store"
+    return OnboardingOverviewResponse(
+        items=[
+            OnboardingOverviewItemResponse(
+                instance=OnboardingInstanceResponse.model_validate(instance),
+                employee_name=employee_name,
+                job_title=job_title,
+                total_tasks=total_tasks,
+                completed_tasks=completed_tasks,
+                overdue_tasks=overdue_tasks,
+            )
+            for (
+                instance,
+                employee_name,
+                job_title,
+                total_tasks,
+                completed_tasks,
+                overdue_tasks,
+            ) in items
+        ]
+    )
 
 
 @router.get(
