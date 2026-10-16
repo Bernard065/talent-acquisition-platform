@@ -8,12 +8,16 @@ from pydantic import BaseModel, ConfigDict
 
 
 class NotificationActionItem(BaseModel):
-    """One overdue follow-up or pending interviewer feedback task."""
+    """One overdue follow-up, onboarding task, or interview feedback action."""
 
     model_config = ConfigDict(extra="forbid", from_attributes=True)
 
     id: str
-    kind: Literal["overdue_follow_up", "pending_interview_feedback"]
+    kind: Literal[
+        "overdue_follow_up",
+        "pending_interview_feedback",
+        "overdue_onboarding_task",
+    ]
     title: str
     candidate_name: str
     requisition_title: str

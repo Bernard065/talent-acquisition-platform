@@ -44,12 +44,12 @@ function safeNotificationHref(href: string): string {
 }
 
 function getPresentation(kind: NotificationActionItemKind) {
-  if (kind === "overdue_follow_up") {
+  if (kind !== "pending_interview_feedback") {
     return {
       Icon: Clock3,
       iconClassName: "bg-amber-100 text-amber-800",
       titlePrefix: "Overdue: ",
-      datePrefix: "Due",
+      datePrefix: kind === "overdue_onboarding_task" ? "Task due" : "Due",
     };
   }
 
@@ -61,6 +61,9 @@ function getPresentation(kind: NotificationActionItemKind) {
   };
 }
 
+/**
+ * Displays a single notification action item with its due date and status.
+ */
 function NotificationRow({
   item,
   onNavigate,
@@ -84,10 +87,10 @@ function NotificationRow({
           <Icon aria-hidden="true" className="size-4" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="line-clamp-2 break-words text-sm font-medium text-gray-900">
+          <span className="line-clamp-2 wrap-break-word text-sm font-medium text-gray-900">
             {titlePrefix}{item.title}
           </span>
-          <span className="mt-0.5 block break-words text-xs text-gray-700">
+          <span className="mt-0.5 block wrap-break-word text-xs text-gray-700">
             {item.candidate_name} · {item.requisition_title}
           </span>
           {dueAt && (
@@ -101,6 +104,9 @@ function NotificationRow({
   );
 }
 
+/**
+ * Shows overdue actions and follow-up reminders for the current user.
+ */
 export function NotificationCenter() {
   const [isOpen, setIsOpen] = useState(false);
   const localTimeReady = useLocalTimeReady();
@@ -178,7 +184,7 @@ export function NotificationCenter() {
           ref={panelRef}
           id={panelId}
           aria-labelledby={headingId}
-          className="fixed inset-x-4 top-[4.25rem] z-50 max-h-[calc(100dvh-5rem)] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:max-h-none sm:w-[min(24rem,calc(100vw-2rem))]"
+          className="fixed inset-x-4 top-17 z-50 max-h-[calc(100dvh-5rem)] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:max-h-none sm:w-[min(24rem,calc(100vw-2rem))]"
         >
           <header className="border-b border-gray-100 px-4 py-3">
             <div className="flex items-center justify-between gap-3">
@@ -187,7 +193,7 @@ export function NotificationCenter() {
                 <span className="text-xs text-gray-600">{attentionLabel}</span>
               )}
             </div>
-            <p className="mt-1 text-xs text-gray-600">Overdue follow-ups and feedback still to submit.</p>
+            <p className="mt-1 text-xs text-gray-600">Overdue follow-ups, onboarding tasks, and feedback still to submit.</p>
           </header>
 
           {query.isLoading && !query.data ? (
