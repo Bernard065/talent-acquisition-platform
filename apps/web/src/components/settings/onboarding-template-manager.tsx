@@ -45,7 +45,7 @@ export function OnboardingTemplateManager() {
       <div>
         <h2 className="text-lg font-semibold text-sr-text-blue">Onboarding templates</h2>
         <p className="mt-1 text-sm leading-relaxed text-gray-600">
-          Define reusable tasks for new hires. A template is snapshotted when onboarding starts, so later changes won’t alter active plans.
+          Define reusable tasks for new hires in the order they should be completed. A template is snapshotted when onboarding starts, so later changes won’t alter active plans.
         </p>
       </div>
 
@@ -59,9 +59,9 @@ export function OnboardingTemplateManager() {
             <li key={template.id} className="rounded-lg border border-gray-200 p-4">
               <p className="font-medium text-gray-900">{template.name}</p>
               <p className="mt-1 text-sm text-gray-600">Version {template.version} · {template.tasks.length} tasks</p>
-              <ul className="mt-3 space-y-1 text-sm text-gray-700">
-                {template.tasks.map((task) => <li key={task.id}>• {task.title}</li>)}
-              </ul>
+              <ol className="mt-3 space-y-1 text-sm text-gray-700">
+                {template.tasks.map((task, index) => <li key={task.id}>{index + 1}. {task.title}</li>)}
+              </ol>
             </li>
           ))}
         </ul>
@@ -78,6 +78,7 @@ export function OnboardingTemplateManager() {
           <input required maxLength={200} value={name} onChange={(event) => setName(event.target.value)} className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20" placeholder="New employee onboarding" />
         </label>
         <div className="space-y-3">
+          <p className="text-sm text-gray-600">Add tasks from first to last. New hires must complete them in this order.</p>
           {tasks.map((task, index) => (
             <fieldset key={index} className="grid gap-3 rounded-lg border border-gray-200 p-4 sm:grid-cols-2">
               <legend className="px-1 text-sm font-medium text-gray-700">Task {index + 1}</legend>
