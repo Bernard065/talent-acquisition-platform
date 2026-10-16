@@ -281,12 +281,17 @@ def render_action_item_digest_email(
     idempotency_key: str,
     recipient_email: str,
     overdue_follow_up_count: int,
+    overdue_onboarding_task_count: int,
     pending_feedback_count: int,
     frequency: NotificationDigestFrequency,
     web_app_base_url: str,
 ) -> EmailMessage:
     """Render a privacy-minimal digest with authenticated workspace links."""
-    if overdue_follow_up_count < 0 or pending_feedback_count < 0:
+    if (
+        overdue_follow_up_count < 0
+        or overdue_onboarding_task_count < 0
+        or pending_feedback_count < 0
+    ):
         raise ValueError("Digest counts cannot be negative.")
 
     base_url = web_app_base_url.rstrip("/")
@@ -306,6 +311,12 @@ def render_action_item_digest_email(
         lines.append(
             f"- {overdue_follow_up_count} overdue {follow_up_word}: "
             f"{base_url}/dashboard/applications"
+        )
+    if overdue_onboarding_task_count:
+        task_word = "task" if overdue_onboarding_task_count == 1 else "tasks"
+        lines.append(
+            f"- {overdue_onboarding_task_count} overdue onboarding {task_word}: "
+            f"{base_url}/dashboard/onboarding"
         )
     if pending_feedback_count:
         feedback_word = "interview" if pending_feedback_count == 1 else "interviews"

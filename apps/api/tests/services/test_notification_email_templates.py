@@ -163,6 +163,7 @@ def test_renders_action_item_digest_with_counts_and_workspace_links(
         idempotency_key="digest-key",
         recipient_email="recruiter@example.test",
         overdue_follow_up_count=2,
+        overdue_onboarding_task_count=3,
         pending_feedback_count=1,
         frequency=frequency,
         web_app_base_url="https://workspace.example.test/",
@@ -172,6 +173,7 @@ def test_renders_action_item_digest_with_counts_and_workspace_links(
     assert message.text_body == (
         f"Hello,\n\nHere is your {frequency.value} recruiting action summary:\n\n"
         "- 2 overdue follow-ups: https://workspace.example.test/dashboard/applications\n"
+        "- 3 overdue onboarding tasks: https://workspace.example.test/dashboard/onboarding\n"
         "- Feedback is pending for 1 interview: "
         "https://workspace.example.test/dashboard/interviews\n\n"
         "Sign in to your workspace to review and complete these actions."
@@ -185,6 +187,7 @@ def test_action_item_digest_does_not_include_candidate_or_interview_details() ->
         idempotency_key="digest-key",
         recipient_email="recruiter@example.test",
         overdue_follow_up_count=1,
+        overdue_onboarding_task_count=1,
         pending_feedback_count=1,
         frequency=NotificationDigestFrequency.DAILY,
         web_app_base_url="https://workspace.example.test",
@@ -204,6 +207,7 @@ def test_action_item_digest_rejects_negative_counts() -> None:
             idempotency_key="digest-key",
             recipient_email="recruiter@example.test",
             overdue_follow_up_count=-1,
+            overdue_onboarding_task_count=0,
             pending_feedback_count=0,
             frequency=NotificationDigestFrequency.DAILY,
             web_app_base_url="https://workspace.example.test",

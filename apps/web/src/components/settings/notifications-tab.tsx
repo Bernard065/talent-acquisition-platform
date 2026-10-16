@@ -19,6 +19,12 @@ const notificationPreferences: Array<{
     frequencyControl: true,
   },
   {
+    eventType: "action_item.overdue_onboarding_task_digest",
+    title: "Overdue onboarding tasks",
+    description: "Include onboarding tasks assigned to you that are past due.",
+    frequencyControl: true,
+  },
+  {
     eventType: "action_item.pending_interview_feedback_digest",
     title: "Pending interview feedback",
     description: "Include feedback you still need to submit after an interview.",

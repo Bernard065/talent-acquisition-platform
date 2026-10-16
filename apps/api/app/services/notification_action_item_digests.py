@@ -13,6 +13,10 @@ from app.core.authorization import Role, TenantContext
 from app.db.models.identity import User, UserRoleAssignment
 from app.db.models.notification import Notification, NotificationPreference
 from app.db.transactions import transactional
+from app.domains.notifications.action_item_digest_policy import (
+    ACTION_ITEM_DIGEST_PREFERENCE_BY_KIND,
+    ACTION_ITEM_DIGEST_PREFERENCES,
+)
 from app.domains.notifications.enums import (
     NotificationChannel,
     NotificationDigestFrequency,
@@ -26,9 +30,7 @@ from app.services.notification_action_items import (
 
 _DAILY_DIGEST_EVENT = "action_item.daily_digest"
 _WEEKLY_DIGEST_EVENT = "action_item.weekly_digest"
-_OVERDUE_PREFERENCE = NotificationEventType.OVERDUE_FOLLOW_UP_DIGEST
-_FEEDBACK_PREFERENCE = NotificationEventType.PENDING_INTERVIEW_FEEDBACK_DIGEST
-_DIGEST_PREFERENCES = (_OVERDUE_PREFERENCE, _FEEDBACK_PREFERENCE)
+_DIGEST_PREFERENCES = ACTION_ITEM_DIGEST_PREFERENCES
 _DIGEST_ENTITY_TYPE = "action_item_digest"
 _DIGEST_TEMPLATE_KEY = "action_item_digest"
 
@@ -64,11 +66,7 @@ def _enabled_action_items(
     """Keep items enabled for this recipient and this digest cadence."""
     enabled_items: list[NotificationActionItemRecord] = []
     for item in items:
-        event_type = (
-            _OVERDUE_PREFERENCE
-            if item.kind == "overdue_follow_up"
-            else _FEEDBACK_PREFERENCE
-        )
+        event_type = ACTION_ITEM_DIGEST_PREFERENCE_BY_KIND[item.kind]
         enabled, item_frequency = _preference(preferences, event_type)
         if enabled and item_frequency is frequency:
             enabled_items.append(item)

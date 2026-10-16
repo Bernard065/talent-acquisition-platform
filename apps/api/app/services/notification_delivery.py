@@ -23,6 +23,10 @@ from app.domains.interviews.enums import (
     InterviewSessionStatus,
 )
 from app.domains.job_postings.enums import JobPostingStatus
+from app.domains.notifications.action_item_digest_policy import (
+    ACTION_ITEM_DIGEST_PREFERENCE_BY_KIND,
+    ACTION_ITEM_DIGEST_PREFERENCES,
+)
 from app.domains.notifications.enums import (
     NotificationDigestFrequency,
     NotificationEventType,
@@ -69,12 +73,6 @@ _ACTION_ITEM_DIGEST_FREQUENCIES = {
     "action_item.daily_digest": NotificationDigestFrequency.DAILY,
     "action_item.weekly_digest": NotificationDigestFrequency.WEEKLY,
 }
-_OVERDUE_FOLLOW_UP_DIGEST = NotificationEventType.OVERDUE_FOLLOW_UP_DIGEST
-_PENDING_FEEDBACK_DIGEST = (
-    NotificationEventType.PENDING_INTERVIEW_FEEDBACK_DIGEST
-)
-
-
 def _now() -> datetime:
     return datetime.now(UTC)
 
@@ -564,10 +562,7 @@ async def _render_action_item_digest(
             NotificationPreference.user_id == user_id,
             NotificationPreference.channel == notification.channel,
             NotificationPreference.event_type.in_(
-                [
-                    _OVERDUE_FOLLOW_UP_DIGEST.value,
-                    _PENDING_FEEDBACK_DIGEST.value,
-                ]
+                [event_type.value for event_type in ACTION_ITEM_DIGEST_PREFERENCES]
             ),
         )
     )
@@ -588,7 +583,7 @@ async def _render_action_item_digest(
             (True, NotificationDigestFrequency.DAILY),
         )[1]
         is digest_frequency
-        for event_type in (_OVERDUE_FOLLOW_UP_DIGEST, _PENDING_FEEDBACK_DIGEST)
+        for event_type in ACTION_ITEM_DIGEST_PREFERENCES
     ):
         raise StaleActionItemDigestError
 
@@ -609,19 +604,11 @@ async def _render_action_item_digest(
         for item in items
         if (
             enabled_preferences.get(
-                (
-                    _OVERDUE_FOLLOW_UP_DIGEST.value
-                    if item.kind == "overdue_follow_up"
-                    else _PENDING_FEEDBACK_DIGEST.value
-                ),
+                ACTION_ITEM_DIGEST_PREFERENCE_BY_KIND[item.kind].value,
                 (True, NotificationDigestFrequency.DAILY),
             )[0]
             and enabled_preferences.get(
-                (
-                    _OVERDUE_FOLLOW_UP_DIGEST.value
-                    if item.kind == "overdue_follow_up"
-                    else _PENDING_FEEDBACK_DIGEST.value
-                ),
+                ACTION_ITEM_DIGEST_PREFERENCE_BY_KIND[item.kind].value,
                 (True, NotificationDigestFrequency.DAILY),
             )[1]
             is digest_frequency
@@ -631,7 +618,10 @@ async def _render_action_item_digest(
     feedback_count = sum(
         item.kind == "pending_interview_feedback" for item in enabled_items
     )
-    if overdue_count + feedback_count == 0:
+    onboarding_task_count = sum(
+        item.kind == "overdue_onboarding_task" for item in enabled_items
+    )
+    if overdue_count + feedback_count + onboarding_task_count == 0:
         raise StaleActionItemDigestError
 
     return render_action_item_digest_email(
@@ -640,6 +630,7 @@ async def _render_action_item_digest(
         recipient_email=recipient_email,
         overdue_follow_up_count=overdue_count,
         pending_feedback_count=feedback_count,
+        overdue_onboarding_task_count=onboarding_task_count,
         frequency=digest_frequency,
         web_app_base_url=web_app_base_url,
     )

@@ -30,7 +30,11 @@ from app.services.notification_action_items import NotificationActionItemRecord
 
 def _action_item(
     *,
-    kind: Literal["overdue_follow_up", "pending_interview_feedback"],
+    kind: Literal[
+        "overdue_follow_up",
+        "overdue_onboarding_task",
+        "pending_interview_feedback",
+    ],
 ) -> NotificationActionItemRecord:
     """Create a minimal action item for cadence-filter tests."""
     application_id = uuid4()
@@ -48,20 +52,25 @@ def _action_item(
 
 def test_digest_preferences_default_to_enabled_daily() -> None:
     """Existing users without explicit digest preferences receive daily digests."""
-    enabled, frequency = _preference(
-        {},
+    for event_type in (
         NotificationEventType.OVERDUE_FOLLOW_UP_DIGEST,
-    )
+        NotificationEventType.OVERDUE_ONBOARDING_TASK_DIGEST,
+        NotificationEventType.PENDING_INTERVIEW_FEEDBACK_DIGEST,
+    ):
+        enabled, frequency = _preference({}, event_type)
 
-    assert enabled is True
-    assert frequency is NotificationDigestFrequency.DAILY
+        assert enabled is True
+        assert frequency is NotificationDigestFrequency.DAILY
 
 
 @pytest.mark.parametrize(
     ("frequency", "expected_kinds"),
     [
         (NotificationDigestFrequency.DAILY, ["overdue_follow_up"]),
-        (NotificationDigestFrequency.WEEKLY, ["pending_interview_feedback"]),
+        (
+            NotificationDigestFrequency.WEEKLY,
+            ["overdue_onboarding_task", "pending_interview_feedback"],
+        ),
     ],
 )
 def test_action_items_follow_individual_enabled_and_frequency_preferences(
@@ -71,6 +80,7 @@ def test_action_items_follow_individual_enabled_and_frequency_preferences(
     """Each category obeys its own opt-in and selected delivery cadence."""
     items = [
         _action_item(kind="overdue_follow_up"),
+        _action_item(kind="overdue_onboarding_task"),
         _action_item(kind="pending_interview_feedback"),
     ]
     preferences = {
@@ -80,6 +90,10 @@ def test_action_items_follow_individual_enabled_and_frequency_preferences(
         ),
         NotificationEventType.PENDING_INTERVIEW_FEEDBACK_DIGEST.value: (
             frequency is NotificationDigestFrequency.WEEKLY,
+            NotificationDigestFrequency.WEEKLY,
+        ),
+        NotificationEventType.OVERDUE_ONBOARDING_TASK_DIGEST.value: (
+            True,
             NotificationDigestFrequency.WEEKLY,
         ),
     }
@@ -148,6 +162,7 @@ async def digest_action_items() -> list[NotificationActionItemRecord]:
     """Return one item for each supported digest category."""
     return [
         _action_item(kind="overdue_follow_up"),
+        _action_item(kind="overdue_onboarding_task"),
         _action_item(kind="pending_interview_feedback"),
     ]
 
@@ -207,6 +222,16 @@ async def test_scheduler_respects_category_preferences_and_weekly_deduplication(
                 event_type=NotificationEventType.OVERDUE_FOLLOW_UP_DIGEST.value,
                 channel=NotificationChannel.EMAIL,
                 enabled=False,
+                digest_frequency=NotificationDigestFrequency.WEEKLY.value,
+            ),
+            NotificationPreference(
+                tenant_id=user.tenant_id,
+                user_id=user.id,
+                event_type=(
+                    NotificationEventType.OVERDUE_ONBOARDING_TASK_DIGEST.value
+                ),
+                channel=NotificationChannel.EMAIL,
+                enabled=True,
                 digest_frequency=NotificationDigestFrequency.WEEKLY.value,
             ),
             NotificationPreference(
