@@ -47,7 +47,7 @@ export function ProfileTab() {
           {name === "Name unavailable" ? <UserRound className="h-7 w-7" /> : getInitials(name)}
         </div>
         <div className="min-w-0">
-          <h2 className="break-words text-xl font-bold text-sr-text-blue">{name}</h2>
+          <h2 className="wrap-break-word text-xl font-bold text-sr-text-blue">{name}</h2>
           <p className="mt-1 break-all text-sm text-gray-500">{email}</p>
         </div>
       </header>
@@ -55,7 +55,7 @@ export function ProfileTab() {
       <div className="grid gap-6 p-6 sm:p-8 md:grid-cols-2">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-gray-900">Account name</h3>
-          <p className="mt-2 break-words text-sm text-gray-700">{name}</p>
+          <p className="mt-2 wrap-break-word text-sm text-gray-700">{name}</p>
         </div>
 
         <div className="min-w-0">

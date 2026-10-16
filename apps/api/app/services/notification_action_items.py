@@ -15,6 +15,7 @@ from app.db.models.candidate import Candidate
 from app.db.models.identity import User
 from app.db.models.interview import InterviewParticipant, InterviewSession
 from app.db.models.interview_feedback import InterviewFeedback
+from app.db.models.onboarding import OnboardingInstance, OnboardingTask
 from app.db.models.requisition import Requisition
 from app.domains.candidates.enums import (
     ApplicationStatus,
@@ -24,6 +25,10 @@ from app.domains.interviews.enums import (
     InterviewFeedbackStatus,
     InterviewParticipantRole,
     InterviewSessionStatus,
+)
+from app.domains.onboarding.enums import (
+    OnboardingInstanceStatus,
+    OnboardingTaskStatus,
 )
 from app.services.application_follow_up_errors import (
     ApplicationFollowUpAccessDeniedError,
@@ -49,7 +54,11 @@ _FEEDBACK_APPLICATION_STATUSES = (
 @dataclass(frozen=True, slots=True)
 class NotificationActionItemRecord:
     id: str
-    kind: Literal["overdue_follow_up", "pending_interview_feedback"]
+    kind: Literal[
+        "overdue_follow_up",
+        "pending_interview_feedback",
+        "overdue_onboarding_task",
+    ]
     title: str
     candidate_name: str
     requisition_title: str
@@ -208,6 +217,74 @@ async def list_notification_action_items(
                 requisition_title=requisition_title,
                 due_at=interview.scheduled_end_at,
                 href=f"/dashboard/interviews/{interview.id}",
+                application_id=application_id,
+            )
+        )
+
+    onboarding_rows = await session.execute(
+        select(
+            OnboardingTask,
+            Application.id,
+            Candidate.full_name,
+            Requisition.title,
+        )
+        .join(
+            OnboardingInstance,
+            and_(
+                OnboardingInstance.id == OnboardingTask.onboarding_instance_id,
+                OnboardingInstance.tenant_id == OnboardingTask.tenant_id,
+            ),
+        )
+        .join(
+            Application,
+            and_(
+                Application.id == OnboardingInstance.application_id,
+                Application.tenant_id == OnboardingInstance.tenant_id,
+            ),
+        )
+        .join(
+            Candidate,
+            and_(
+                Candidate.id == Application.candidate_id,
+                Candidate.tenant_id == Application.tenant_id,
+            ),
+        )
+        .join(
+            Requisition,
+            and_(
+                Requisition.id == Application.requisition_id,
+                Requisition.tenant_id == Application.tenant_id,
+            ),
+        )
+        .where(
+            OnboardingTask.tenant_id == context.tenant_id,
+            OnboardingTask.assignee_user_id == user.id,
+            OnboardingTask.due_at <= now,
+            OnboardingTask.status.in_(
+                (
+                    OnboardingTaskStatus.NOT_STARTED,
+                    OnboardingTaskStatus.IN_PROGRESS,
+                    OnboardingTaskStatus.BLOCKED,
+                )
+            ),
+            OnboardingInstance.status == OnboardingInstanceStatus.ACTIVE,
+            Candidate.privacy_status == CandidatePrivacyStatus.ACTIVE,
+        )
+        .order_by(OnboardingTask.due_at, OnboardingTask.id)
+        .limit(50)
+    )
+    for task, application_id, candidate_name, requisition_title in onboarding_rows.all():
+        if task.due_at is None:
+            continue
+        items.append(
+            NotificationActionItemRecord(
+                id=f"onboarding-task:{task.id}",
+                kind="overdue_onboarding_task",
+                title=task.title,
+                candidate_name=candidate_name,
+                requisition_title=requisition_title,
+                due_at=task.due_at,
+                href=f"/dashboard/applications/{application_id}",
                 application_id=application_id,
             )
         )

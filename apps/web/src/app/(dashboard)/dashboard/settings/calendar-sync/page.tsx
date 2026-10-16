@@ -135,7 +135,7 @@ export default function CalendarSyncOperationsPage() {
               </p>
             )}
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] text-left text-sm">
+              <table className="w-full text-left text-sm">
                 <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                   <tr>
                     <th className="px-5 py-3 font-medium">Interview</th>

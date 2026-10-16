@@ -19,7 +19,7 @@ export const JobCard = ({ job }: { job: JobPostingResponse }) => {
         {/* Left side */}
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2 mb-2">
-            <h3 className="text-base font-semibold text-sr-text-blue group-hover:text-sr-green transition-colors break-words">
+            <h3 className="text-base font-semibold text-sr-text-blue group-hover:text-sr-green transition-colors wrap-break-word">
               {job.title}
             </h3>
             <JobStatusBadge status={job.status} />
