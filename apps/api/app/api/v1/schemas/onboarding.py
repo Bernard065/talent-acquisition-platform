@@ -5,6 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.api.v1.schemas.employee_records import EmployeePortalProfileResponse
 from app.core.authorization import Role
 from app.domains.onboarding.enums import (
     OnboardingInstanceStatus,
@@ -170,6 +171,28 @@ class ApplicationOnboardingResponse(BaseModel):
 
     instance: OnboardingInstanceResponse | None
     tasks: list[OnboardingTaskResponse]
+
+
+class EmployeePortalTaskResponse(BaseModel):
+    """Employee-safe task details for the employee's own onboarding plan."""
+
+    id: UUID
+    title: str
+    description: str | None
+    due_at: datetime | None
+    status: OnboardingTaskStatus
+    completed_at: datetime | None
+    version: int
+
+
+class EmployeePortalOnboardingResponse(BaseModel):
+    """A signed-in employee's own profile summary and onboarding checklist."""
+
+    profile: EmployeePortalProfileResponse
+    onboarding_status: OnboardingInstanceStatus | None
+    started_at: datetime | None
+    completed_at: datetime | None
+    tasks: list[EmployeePortalTaskResponse]
 
 
 class OnboardingOverviewItemResponse(BaseModel):

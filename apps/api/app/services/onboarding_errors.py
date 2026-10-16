@@ -13,6 +13,14 @@ class OnboardingInstanceNotFoundError(LookupError):
     """Raised when an onboarding instance is absent from the caller's tenant."""
 
 
+class EmployeePortalRecordNotFoundError(LookupError):
+    """Raised when the authenticated user has no linked employee onboarding record."""
+
+
+class EmployeeRecordNotFoundError(LookupError):
+    """Raised when an employee record is absent from the caller's tenant."""
+
+
 class OnboardingTaskNotFoundError(LookupError):
     """Raised when an onboarding task is absent from the caller's tenant."""
 

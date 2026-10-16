@@ -15,6 +15,8 @@ from app.api.v1.schemas.employee_records import (
     EmployeeDirectoryItemResponse,
     EmployeeDirectoryResponse,
     EmployeeRecordResponse,
+    LinkEmployeeAccountRequest,
+    LinkEmployeeAccountResponse,
     UpdateEmployeeRecordRequest,
 )
 from app.core.authorization import TenantContext
@@ -23,6 +25,7 @@ from app.services.employee_records import (
     create_application_employee_record,
     get_application_employee_record,
     get_employee_directory_filter_options,
+    link_employee_account,
     list_employee_records,
     update_employee_record,
 )
@@ -196,6 +199,48 @@ async def update_employee_record_endpoint(
         context=context,
         key=idempotency_key,
         operation_name=f"employee_record.update:{employee_id}",
+        payload=payload.model_dump(mode="json"),
+        operation=operation,
+    )
+    return _private_response(result)
+
+
+@router.put(
+    "/employee-records/{employee_id}/account",
+    response_model=LinkEmployeeAccountResponse,
+    summary="Link an employee record to an existing workspace account",
+)
+async def link_employee_account_endpoint(
+    employee_id: UUID,
+    payload: LinkEmployeeAccountRequest,
+    context: CallerContext,
+    session: DatabaseSession,
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Link or unlink one employee account as an admin or People Ops member."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        employee = await link_employee_account(
+            session,
+            context=context,
+            employee_id=employee_id,
+            user_id=payload.user_id,
+            expected_version=payload.expected_version,
+        )
+        return (
+            status.HTTP_200_OK,
+            LinkEmployeeAccountResponse(
+                employee_id=employee.id,
+                user_id=employee.user_id,
+                version=employee.version,
+            ).model_dump(mode="json"),
+        )
+
+    result = await execute_idempotently(
+        session,
+        context=context,
+        key=idempotency_key,
+        operation_name=f"employee_record.account_link:{employee_id}",
         payload=payload.model_dump(mode="json"),
         operation=operation,
     )
