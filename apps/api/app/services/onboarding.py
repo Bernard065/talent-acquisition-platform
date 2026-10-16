@@ -4,8 +4,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.authorization import Role, TenantContext
 from app.db.models.application import Application
@@ -72,69 +73,153 @@ async def list_onboarding_overview(
     session: AsyncSession,
     *,
     context: TenantContext,
-) -> list[tuple[OnboardingInstance, str, str, int, int, int]]:
-    """List recent tenant onboarding plans with task progress summaries."""
+    page: int,
+    limit: int,
+    query: str | None = None,
+    status: OnboardingInstanceStatus | None = None,
+    overdue_only: bool = False,
+) -> tuple[
+    list[tuple[OnboardingInstance, str, str, int, int, int]],
+    int,
+    int,
+    int,
+]:
+    """List matching tenant onboarding plans and workspace-wide counters."""
     _require_role(context, _ONBOARDING_WRITE_ROLES)
 
-    rows = await session.execute(
+    filters: list[ColumnElement[bool]] = [
+        OnboardingInstance.tenant_id == context.tenant_id,
+    ]
+    if status is not None:
+        filters.append(OnboardingInstance.status == status)
+    if query and query.strip():
+        search_term = f"%{query.strip()}%"
+        filters.append(
+            or_(
+                Candidate.full_name.ilike(search_term),
+                Employee.job_title.ilike(search_term),
+            )
+        )
+    if overdue_only:
+        filters.append(
+            exists(
+                select(OnboardingTask.id).where(
+                    OnboardingTask.tenant_id == OnboardingInstance.tenant_id,
+                    OnboardingTask.onboarding_instance_id == OnboardingInstance.id,
+                    OnboardingTask.due_at < func.current_timestamp(),
+                    OnboardingTask.status.not_in(
+                        {
+                            OnboardingTaskStatus.COMPLETED,
+                            OnboardingTaskStatus.CANCELLED,
+                        }
+                    ),
+                )
+            )
+        )
+
+    application_join = and_(
+        Application.id == OnboardingInstance.application_id,
+        Application.tenant_id == OnboardingInstance.tenant_id,
+    )
+    candidate_join = and_(
+        Candidate.id == Application.candidate_id,
+        Candidate.tenant_id == Application.tenant_id,
+    )
+    employee_join = and_(
+        Employee.application_id == Application.id,
+        Employee.tenant_id == Application.tenant_id,
+    )
+    joins = (
         select(OnboardingInstance, Candidate.full_name, Employee.job_title)
-        .join(
-            Application,
-            (Application.id == OnboardingInstance.application_id)
-            & (Application.tenant_id == OnboardingInstance.tenant_id),
-        )
-        .join(
-            Candidate,
-            (Candidate.id == Application.candidate_id)
-            & (Candidate.tenant_id == Application.tenant_id),
-        )
-        .join(
-            Employee,
-            (Employee.application_id == Application.id)
-            & (Employee.tenant_id == Application.tenant_id),
-        )
-        .where(OnboardingInstance.tenant_id == context.tenant_id)
-        .order_by(OnboardingInstance.started_at.desc(), OnboardingInstance.id)
-        .limit(100)
+        .join(Application, application_join)
+        .join(Candidate, candidate_join)
+        .join(Employee, employee_join)
+    )
+    total = await session.scalar(
+        select(func.count(OnboardingInstance.id))
+        .select_from(OnboardingInstance)
+        .join(Application, application_join)
+        .join(Candidate, candidate_join)
+        .join(Employee, employee_join)
+        .where(*filters)
+    )
+    rows = await session.execute(
+        joins.where(*filters)
+        .order_by(OnboardingInstance.started_at.desc(), OnboardingInstance.id.desc())
+        .offset((page - 1) * limit)
+        .limit(limit)
     )
     plans = list(rows.tuples())
-    if not plans:
-        return []
 
     instance_ids = [instance.id for instance, _, _ in plans]
-    tasks = await session.scalars(
-        select(OnboardingTask).where(
-            OnboardingTask.tenant_id == context.tenant_id,
-            OnboardingTask.onboarding_instance_id.in_(instance_ids),
-        )
-    )
     tasks_by_instance: dict[UUID, list[OnboardingTask]] = {
         instance_id: [] for instance_id in instance_ids
     }
-    for task in tasks:
-        tasks_by_instance[task.onboarding_instance_id].append(task)
+    if instance_ids:
+        tasks = await session.scalars(
+            select(OnboardingTask).where(
+                OnboardingTask.tenant_id == context.tenant_id,
+                OnboardingTask.onboarding_instance_id.in_(instance_ids),
+            )
+        )
+        for task in tasks:
+            tasks_by_instance[task.onboarding_instance_id].append(task)
 
     now = datetime.now(UTC)
-    return [
-        (
-            instance,
-            employee_name,
-            job_title,
-            len(instance_tasks := tasks_by_instance[instance.id]),
-            sum(task.status is OnboardingTaskStatus.COMPLETED for task in instance_tasks),
-            sum(
-                task.due_at is not None
-                and task.due_at < now
-                and task.status
-                not in {
+    items = []
+    for instance, employee_name, job_title in plans:
+        instance_tasks = tasks_by_instance[instance.id]
+        items.append(
+            (
+                instance,
+                employee_name,
+                job_title,
+                len(instance_tasks),
+                sum(
+                    task.status is OnboardingTaskStatus.COMPLETED
+                    for task in instance_tasks
+                ),
+                sum(
+                    task.due_at is not None
+                    and task.due_at < now
+                    and task.status
+                    not in {
+                        OnboardingTaskStatus.COMPLETED,
+                        OnboardingTaskStatus.CANCELLED,
+                    }
+                    for task in instance_tasks
+                ),
+            )
+        )
+
+    active_count = await session.scalar(
+        select(func.count(OnboardingInstance.id)).where(
+            OnboardingInstance.tenant_id == context.tenant_id,
+            OnboardingInstance.status == OnboardingInstanceStatus.ACTIVE,
+        )
+    )
+    overdue_count = await session.scalar(
+        select(func.count(OnboardingTask.id))
+        .join(
+            OnboardingInstance,
+            and_(
+                OnboardingInstance.id == OnboardingTask.onboarding_instance_id,
+                OnboardingInstance.tenant_id == OnboardingTask.tenant_id,
+            ),
+        )
+        .where(
+            OnboardingTask.tenant_id == context.tenant_id,
+            OnboardingInstance.status == OnboardingInstanceStatus.ACTIVE,
+            OnboardingTask.due_at < func.current_timestamp(),
+            OnboardingTask.status.not_in(
+                {
                     OnboardingTaskStatus.COMPLETED,
                     OnboardingTaskStatus.CANCELLED,
                 }
-                for task in instance_tasks
             ),
         )
-        for instance, employee_name, job_title in plans
-    ]
+    )
+    return items, total or 0, active_count or 0, overdue_count or 0
 
 
 async def list_active_onboarding_templates(
