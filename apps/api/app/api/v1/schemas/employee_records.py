@@ -35,6 +35,23 @@ class UpdateEmployeeRecordRequest(BaseModel):
     status: EmployeeStatus | None = None
 
 
+class LinkEmployeeAccountRequest(BaseModel):
+    """Link an employee record to an existing workspace identity."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    user_id: UUID | None
+    expected_version: int = Field(ge=1)
+
+
+class LinkEmployeeAccountResponse(BaseModel):
+    """Safe result of linking or unlinking an employee account."""
+
+    employee_id: UUID
+    user_id: UUID | None
+    version: int
+
+
 class EmployeeRecordResponse(BaseModel):
     """Internal employment details linked to a hired application."""
 
@@ -80,3 +97,15 @@ class EmployeeDirectoryFilterOptionsResponse(BaseModel):
 
     departments: list[str]
     locations: list[str]
+
+
+class EmployeePortalProfileResponse(BaseModel):
+    """Employee information visible to its linked account holder."""
+
+    full_name: str
+    work_email: str | None
+    start_date: date | None
+    job_title: str
+    department: str | None
+    location: str | None
+    status: EmployeeStatus

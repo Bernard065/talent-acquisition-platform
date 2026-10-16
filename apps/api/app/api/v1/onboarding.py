@@ -9,10 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_db_session, get_tenant_context
 from app.api.idempotency import IdempotencyKey, idempotency_response
+from app.api.v1.schemas.employee_records import EmployeePortalProfileResponse
 from app.api.v1.schemas.onboarding import (
     ApplicationOnboardingResponse,
     AssignOnboardingTaskRequest,
     CreateOnboardingTemplateRequest,
+    EmployeePortalOnboardingResponse,
+    EmployeePortalTaskResponse,
     ExpectedInstanceVersionRequest,
     OnboardingInstanceResponse,
     OnboardingOverviewItemResponse,
@@ -37,6 +40,7 @@ from app.services.onboarding import (
     complete_onboarding,
     create_onboarding_template,
     get_application_onboarding,
+    get_employee_portal_onboarding,
     list_active_onboarding_templates,
     list_onboarding_overview,
     start_onboarding,
@@ -173,6 +177,50 @@ async def get_application_onboarding_endpoint(
     return ApplicationOnboardingResponse(
         instance=OnboardingInstanceResponse.model_validate(instance),
         tasks=[OnboardingTaskResponse.model_validate(task) for task in tasks],
+    )
+
+
+@router.get(
+    "/employee-portal/me/onboarding",
+    response_model=EmployeePortalOnboardingResponse,
+    summary="Get the authenticated employee's own onboarding checklist",
+)
+async def get_employee_portal_onboarding_endpoint(
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+) -> EmployeePortalOnboardingResponse:
+    """Resolve the linked employee from the verified subject, never a client ID."""
+    employee, full_name, instance, tasks = await get_employee_portal_onboarding(
+        session,
+        context=context,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return EmployeePortalOnboardingResponse(
+        profile=EmployeePortalProfileResponse(
+            full_name=full_name,
+            work_email=employee.work_email,
+            start_date=employee.start_date,
+            job_title=employee.job_title,
+            department=employee.department,
+            location=employee.location,
+            status=employee.status,
+        ),
+        onboarding_status=instance.status if instance else None,
+        started_at=instance.started_at if instance else None,
+        completed_at=instance.completed_at if instance else None,
+        tasks=[
+            EmployeePortalTaskResponse(
+                id=task.id,
+                title=task.title,
+                description=task.description,
+                due_at=task.due_at,
+                status=task.status,
+                completed_at=task.completed_at,
+                version=task.version,
+            )
+            for task in tasks
+        ],
     )
 
 

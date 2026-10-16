@@ -177,6 +177,8 @@ from app.services.offer_errors import (
     OfferVersionConflictError,
 )
 from app.services.onboarding_errors import (
+    EmployeePortalRecordNotFoundError,
+    EmployeeRecordNotFoundError,
     OnboardingAccessDeniedError,
     OnboardingAlreadyExistsError,
     OnboardingInstanceNotFoundError,
@@ -256,6 +258,34 @@ async def not_found(
         status_code=status.HTTP_404_NOT_FOUND,
         detail="Requisition not found.",
     )
+
+
+async def employee_portal_record_not_found(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Avoid exposing whether another employee record exists to this identity."""
+    response = _error_response(
+        request,
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Employee onboarding record not found.",
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+async def employee_record_not_found(
+    request: Request,
+    _: Exception,
+) -> JSONResponse:
+    """Handle employee records absent from the caller's workspace."""
+    response = _error_response(
+        request,
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Employee record not found.",
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
 
 
 async def approval_policy_not_found(
@@ -1824,6 +1854,14 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         OnboardingInstanceNotFoundError,
         not_found,
+    )
+    application.add_exception_handler(
+        EmployeePortalRecordNotFoundError,
+        employee_portal_record_not_found,
+    )
+    application.add_exception_handler(
+        EmployeeRecordNotFoundError,
+        employee_record_not_found,
     )
     application.add_exception_handler(
         OnboardingTaskNotFoundError,

@@ -20,17 +20,28 @@ from app.domains.employees.enums import EmployeeStatus
 from app.services.audit import record_audit_event
 from app.services.candidate_errors import ApplicationNotFoundError
 from app.services.onboarding_errors import (
+    EmployeeRecordNotFoundError,
     OnboardingAccessDeniedError,
     OnboardingValidationError,
     OnboardingVersionConflictError,
 )
 
 _EMPLOYEE_ROLES = frozenset({Role.TENANT_ADMIN, Role.PEOPLE_OPERATIONS, Role.RECRUITER})
+_EMPLOYEE_ACCOUNT_ADMIN_ROLES = frozenset(
+    {Role.TENANT_ADMIN, Role.PEOPLE_OPERATIONS}
+)
 
 
 def _require_employee_access(context: TenantContext) -> None:
     if context.roles.isdisjoint(_EMPLOYEE_ROLES):
         raise OnboardingAccessDeniedError("Caller is not permitted to manage employee records.")
+
+
+def _require_employee_account_admin(context: TenantContext) -> None:
+    if context.roles.isdisjoint(_EMPLOYEE_ACCOUNT_ADMIN_ROLES):
+        raise OnboardingAccessDeniedError(
+            "Only workspace admins and People Operations can link employee accounts."
+        )
 
 
 async def list_employee_records(
@@ -308,7 +319,7 @@ async def update_employee_record(
             .with_for_update()
         )
         if employee is None:
-            raise ApplicationNotFoundError("Employee record was not found.")
+            raise EmployeeRecordNotFoundError("Employee record was not found.")
         if employee.version != expected_version:
             raise OnboardingVersionConflictError(
                 "Employee record has changed; reload before saving."
@@ -414,3 +425,96 @@ async def update_employee_record(
         await session.refresh(employee)
 
     return employee
+
+
+async def link_employee_account(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    employee_id: UUID,
+    user_id: UUID | None,
+    expected_version: int,
+) -> Employee:
+    """Link one tenant employee record to an existing tenant identity."""
+    _require_employee_account_admin(context)
+
+    async with transactional(session):
+        employee = await session.scalar(
+            select(Employee)
+            .where(
+                Employee.id == employee_id,
+                Employee.tenant_id == context.tenant_id,
+            )
+            .with_for_update()
+        )
+        if employee is None:
+            raise EmployeeRecordNotFoundError("Employee record was not found.")
+        if employee.version != expected_version:
+            raise OnboardingVersionConflictError(
+                "Employee record has changed; reload before linking an account."
+            )
+        if employee.user_id == user_id:
+            return employee
+
+        if user_id is not None:
+            user = await session.scalar(
+                select(User)
+                .where(
+                    User.id == user_id,
+                    User.tenant_id == context.tenant_id,
+                )
+                .with_for_update()
+            )
+            if user is None:
+                raise OnboardingValidationError(
+                    "Select an existing member of this workspace."
+                )
+            candidate_email = await session.scalar(
+                select(Candidate.email).where(
+                    Candidate.id == employee.candidate_id,
+                    Candidate.tenant_id == context.tenant_id,
+                )
+            )
+            accepted_emails = {
+                value.strip().casefold()
+                for value in (candidate_email, employee.work_email)
+                if value
+            }
+            if user.email.strip().casefold() not in accepted_emails:
+                raise OnboardingValidationError(
+                    "The account email must match the employee's candidate or work email."
+                )
+            linked_employee_id = await session.scalar(
+                select(Employee.id).where(
+                    Employee.user_id == user_id,
+                    Employee.id != employee.id,
+                )
+            )
+            if linked_employee_id is not None:
+                raise OnboardingValidationError(
+                    "This workspace account is already linked to another employee."
+                )
+
+        previous_user_id = employee.user_id
+        employee.user_id = user_id
+        record_audit_event(
+            session,
+            context=context,
+            action="employee_record.account_linked"
+            if user_id is not None
+            else "employee_record.account_unlinked",
+            entity_type="employee",
+            entity_id=str(employee.id),
+            details={
+                "previous_user_id": str(previous_user_id)
+                if previous_user_id
+                else None,
+                "user_id": str(user_id) if user_id else None,
+            },
+        )
+        await session.flush()
+        await session.refresh(employee)
+
+    return employee
+
+

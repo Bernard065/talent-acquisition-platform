@@ -23,6 +23,7 @@ from app.db.models.onboarding import (
 )
 from app.db.transactions import transactional
 from app.domains.candidates.enums import ApplicationStatus
+from app.domains.employees.enums import EmployeeStatus
 from app.domains.notifications.enums import NotificationEventType
 from app.domains.onboarding.enums import (
     OnboardingInstanceEventType,
@@ -42,6 +43,7 @@ from app.services.notification_publishing import (
     enqueue_notifications_for_roles,
 )
 from app.services.onboarding_errors import (
+    EmployeePortalRecordNotFoundError,
     OnboardingAccessDeniedError,
     OnboardingAlreadyExistsError,
     OnboardingInstanceNotFoundError,
@@ -310,6 +312,73 @@ async def get_application_onboarding(
         )
     )
     return instance, tasks
+
+
+async def get_employee_portal_onboarding(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+) -> tuple[
+    Employee,
+    str,
+    OnboardingInstance | None,
+    tuple[OnboardingTask, ...],
+]:
+    """Return onboarding only for the employee linked to the verified subject."""
+    user_id = await session.scalar(
+        select(User.id).where(
+            User.tenant_id == context.tenant_id,
+            User.external_subject == context.subject,
+        )
+    )
+    if user_id is None:
+        raise EmployeePortalRecordNotFoundError("Employee record was not found.")
+
+    employee_result = await session.execute(
+        select(Employee, Candidate.full_name)
+        .join(
+            Candidate,
+            and_(
+                Candidate.id == Employee.candidate_id,
+                Candidate.tenant_id == Employee.tenant_id,
+            ),
+        )
+        .where(
+            Employee.tenant_id == context.tenant_id,
+            Employee.user_id == user_id,
+        )
+    )
+    employee_row = employee_result.one_or_none()
+    if employee_row is None:
+        raise EmployeePortalRecordNotFoundError("Employee record was not found.")
+    employee, full_name = employee_row
+    if employee.status is EmployeeStatus.INACTIVE:
+        raise EmployeePortalRecordNotFoundError("Employee record was not found.")
+
+    instance = await session.scalar(
+        select(OnboardingInstance).where(
+            OnboardingInstance.tenant_id == context.tenant_id,
+            OnboardingInstance.application_id == employee.application_id,
+        )
+    )
+    tasks: tuple[OnboardingTask, ...] = ()
+    if instance is not None:
+        tasks = tuple(
+            await session.scalars(
+                select(OnboardingTask)
+                .join(
+                    OnboardingTemplateTask,
+                    OnboardingTask.template_task_id == OnboardingTemplateTask.id,
+                )
+                .where(
+                    OnboardingTask.tenant_id == context.tenant_id,
+                    OnboardingTask.onboarding_instance_id == instance.id,
+                )
+                .order_by(OnboardingTemplateTask.position, OnboardingTask.id)
+            )
+        )
+
+    return employee, full_name, instance, tasks
 
 
 @dataclass(frozen=True, slots=True)
