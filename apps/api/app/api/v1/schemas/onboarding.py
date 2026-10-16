@@ -189,3 +189,8 @@ class OnboardingOverviewResponse(BaseModel):
     """Workspace onboarding plans, ordered newest first."""
 
     items: list[OnboardingOverviewItemResponse]
+    total: int
+    page: int
+    limit: int
+    active_plan_count: int
+    overdue_task_count: int

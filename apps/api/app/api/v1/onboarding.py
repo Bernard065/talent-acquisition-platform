@@ -3,7 +3,7 @@
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +26,7 @@ from app.api.v1.schemas.onboarding import (
     UpdateOnboardingTaskStatusRequest,
 )
 from app.core.authorization import TenantContext
+from app.domains.onboarding.enums import OnboardingInstanceStatus
 from app.services.idempotency import IdempotencyResult, execute_idempotently
 from app.services.onboarding import (
     CreateOnboardingTemplateCommand,
@@ -64,9 +65,27 @@ async def list_onboarding_overview_endpoint(
     context: CallerContext,
     session: DatabaseSession,
     response: Response,
+    page: Annotated[int, Query(ge=1)] = 1,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    query: Annotated[str | None, Query(max_length=200)] = None,
+    status_filter: Annotated[
+        OnboardingInstanceStatus | None,
+        Query(alias="status"),
+    ] = None,
+    overdue_only: bool = False,
 ) -> OnboardingOverviewResponse:
-    """List recent onboarding plans for authorized workspace members."""
-    items = await list_onboarding_overview(session, context=context)
+    """Search and paginate onboarding plans in the caller's workspace."""
+    items, total, active_plan_count, overdue_task_count = (
+        await list_onboarding_overview(
+            session,
+            context=context,
+            page=page,
+            limit=limit,
+            query=query,
+            status=status_filter,
+            overdue_only=overdue_only,
+        )
+    )
     response.headers["Cache-Control"] = "private, no-store"
     return OnboardingOverviewResponse(
         items=[
@@ -86,7 +105,12 @@ async def list_onboarding_overview_endpoint(
                 completed_tasks,
                 overdue_tasks,
             ) in items
-        ]
+        ],
+        total=total,
+        page=page,
+        limit=limit,
+        active_plan_count=active_plan_count,
+        overdue_task_count=overdue_task_count,
     )
 
 
