@@ -59,6 +59,12 @@ const navigation: NavigationItem[] = [
     roles: dashboardRolePolicies.employeeManagement,
   },
   {
+    name: "Onboarding",
+    href: "/dashboard/onboarding",
+    icon: List,
+    roles: dashboardRolePolicies.employeeManagement,
+  },
+  {
     name: "Interviews",
     href: "/dashboard/interviews",
     icon: CalendarDays,

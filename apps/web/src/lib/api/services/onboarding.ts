@@ -5,6 +5,7 @@ import type {
   CreateOnboardingTemplateRequest,
   ExpectedInstanceVersionRequest,
   OnboardingInstanceResponse,
+  OnboardingOverviewResponse,
   OnboardingTaskResponse,
   OnboardingTemplateListResponse,
   OnboardingTemplateResponse,
@@ -19,6 +20,10 @@ type OnboardingTemplateCreated = Pick<
 
 export function listOnboardingTemplates(options?: RequestOptions) {
   return get<OnboardingTemplateListResponse>("/onboarding-templates", options);
+}
+
+export function listOnboardingOverview(options?: RequestOptions) {
+  return get<OnboardingOverviewResponse>("/onboarding-instances", options);
 }
 
 export function getApplicationOnboarding(
