@@ -298,11 +298,15 @@ async def get_application_onboarding(
     tasks = tuple(
         await session.scalars(
             select(OnboardingTask)
+            .join(
+                OnboardingTemplateTask,
+                OnboardingTask.template_task_id == OnboardingTemplateTask.id,
+            )
             .where(
                 OnboardingTask.tenant_id == context.tenant_id,
                 OnboardingTask.onboarding_instance_id == instance.id,
             )
-            .order_by(OnboardingTask.created_at, OnboardingTask.id)
+            .order_by(OnboardingTemplateTask.position, OnboardingTask.id)
         )
     )
     return instance, tasks
@@ -785,6 +789,52 @@ async def _load_active_task(
     return task, instance
 
 
+async def _require_task_predecessors_complete(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    task: OnboardingTask,
+) -> None:
+    """Prevent work on a task until every earlier template step is complete."""
+    template_task = await session.scalar(
+        select(OnboardingTemplateTask)
+        .join(
+            OnboardingTemplate,
+            OnboardingTemplateTask.onboarding_template_id == OnboardingTemplate.id,
+        )
+        .where(
+            OnboardingTemplateTask.id == task.template_task_id,
+            OnboardingTemplate.tenant_id == context.tenant_id,
+        )
+    )
+    if template_task is None:
+        raise OnboardingValidationError(
+            "This onboarding task is not linked to a valid template step."
+        )
+
+    blocking_task = await session.scalar(
+        select(OnboardingTask)
+        .join(
+            OnboardingTemplateTask,
+            OnboardingTask.template_task_id == OnboardingTemplateTask.id,
+        )
+        .where(
+            OnboardingTask.tenant_id == context.tenant_id,
+            OnboardingTask.onboarding_instance_id == task.onboarding_instance_id,
+            OnboardingTemplateTask.onboarding_template_id
+            == template_task.onboarding_template_id,
+            OnboardingTemplateTask.position < template_task.position,
+            OnboardingTask.status != OnboardingTaskStatus.COMPLETED,
+        )
+        .order_by(OnboardingTemplateTask.position)
+        .limit(1)
+    )
+    if blocking_task is not None:
+        raise OnboardingValidationError(
+            "Complete the earlier onboarding tasks before changing this task."
+        )
+
+
 async def assign_onboarding_task(
     session: AsyncSession,
     *,
@@ -806,6 +856,11 @@ async def assign_onboarding_task(
             actual_version=task.version,
             expected_version=expected_task_version,
             entity_name="onboarding task",
+        )
+        await _require_task_predecessors_complete(
+            session,
+            context=context,
+            task=task,
         )
 
         if task.status in {
@@ -883,6 +938,11 @@ async def update_onboarding_task_status(
             actual_version=task.version,
             expected_version=command.expected_version,
             entity_name="onboarding task",
+        )
+        await _require_task_predecessors_complete(
+            session,
+            context=context,
+            task=task,
         )
 
         previous_status = task.status

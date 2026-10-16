@@ -854,13 +854,13 @@ async def invalid_hiring_decision(
 
 async def invalid_onboarding_request(
     request: Request,
-    _: Exception,
+    error: Exception,
 ) -> JSONResponse:
-    """Return a safe validation error for onboarding workflow input."""
+    """Return a readable validation error for onboarding workflow input."""
     return _error_response(
         request,
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-        detail="Invalid onboarding request.",
+        detail=str(error),
     )
 
 
