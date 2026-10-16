@@ -18,12 +18,26 @@ type OnboardingTemplateCreated = Pick<
   "id" | "name" | "version" | "is_active" | "created_at"
 >;
 
+export interface OnboardingOverviewParams {
+  page?: number;
+  limit?: number;
+  query?: string;
+  status?: OnboardingInstanceResponse["status"];
+  overdue_only?: boolean;
+}
+
 export function listOnboardingTemplates(options?: RequestOptions) {
   return get<OnboardingTemplateListResponse>("/onboarding-templates", options);
 }
 
-export function listOnboardingOverview(options?: RequestOptions) {
-  return get<OnboardingOverviewResponse>("/onboarding-instances", options);
+export function listOnboardingOverview(
+  params: OnboardingOverviewParams = {},
+  options?: RequestOptions,
+) {
+  return get<OnboardingOverviewResponse>("/onboarding-instances", {
+    ...options,
+    params: { ...options?.params, ...params },
+  });
 }
 
 export function getApplicationOnboarding(

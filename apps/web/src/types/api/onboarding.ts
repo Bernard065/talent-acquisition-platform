@@ -80,6 +80,11 @@ export interface OnboardingOverviewItemResponse {
 
 export interface OnboardingOverviewResponse {
   items: OnboardingOverviewItemResponse[];
+  total: number;
+  page: number;
+  limit: number;
+  active_plan_count: number;
+  overdue_task_count: number;
 }
 
 export interface StartOnboardingRequest {

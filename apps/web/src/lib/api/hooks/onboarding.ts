@@ -21,20 +21,26 @@ import type {
   StartOnboardingRequest,
   UpdateOnboardingTaskStatusRequest,
 } from "@/types/api/onboarding";
+import type { OnboardingOverviewParams } from "../services/onboarding";
 
 export const onboardingQueryKeys = {
   all: ["onboarding"] as const,
   templates: () => [...onboardingQueryKeys.all, "templates"] as const,
   overview: () => [...onboardingQueryKeys.all, "overview"] as const,
+  overviewList: (params: OnboardingOverviewParams) =>
+    [...onboardingQueryKeys.overview(), params] as const,
   application: (applicationId: string) =>
     [...onboardingQueryKeys.all, "application", applicationId] as const,
 };
 
-export function useOnboardingOverview(enabled = true) {
+export function useOnboardingOverview(
+  params: OnboardingOverviewParams,
+  enabled = true,
+) {
   const { status } = useSession();
   return useQuery({
-    queryKey: onboardingQueryKeys.overview(),
-    queryFn: ({ signal }) => listOnboardingOverview({ signal }),
+    queryKey: onboardingQueryKeys.overviewList(params),
+    queryFn: ({ signal }) => listOnboardingOverview(params, { signal }),
     enabled: status === "authenticated" && enabled,
   });
 }

@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useOnboardingOverview } from "@/lib/api/hooks/onboarding";
 import type { OnboardingInstanceStatus } from "@/types/api/onboarding";
 
 type StatusFilter = "all" | OnboardingInstanceStatus;
+const PAGE_SIZE = 25;
 
 const statusLabels: Record<OnboardingInstanceStatus, string> = {
   active: "In progress",
@@ -27,25 +28,35 @@ function progressLabel(completed: number, total: number): string {
 
 export default function OnboardingPage() {
   const { status: sessionStatus } = useSession();
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
-  const [search, setSearch] = useState("");
-  const overview = useOnboardingOverview();
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [searchInput, setSearchInput] = useState("");
+  const [query, setQuery] = useState("");
+  const [overdueOnly, setOverdueOnly] = useState(false);
+  const [page, setPage] = useState(1);
+  const params = useMemo(() => ({
+    page,
+    limit: PAGE_SIZE,
+    query: query || undefined,
+    status: statusFilter === "all" ? undefined : statusFilter,
+    overdue_only: overdueOnly || undefined,
+  }), [overdueOnly, page, query, statusFilter]);
+  const overview = useOnboardingOverview(params);
   const items = useMemo(() => overview.data?.items ?? [], [overview.data?.items]);
 
-  const visibleItems = useMemo(() => {
-    const normalizedSearch = search.trim().toLocaleLowerCase();
-    return items.filter((item) => {
-      const statusMatches = statusFilter === "all" || item.instance.status === statusFilter;
-      const searchMatches = !normalizedSearch ||
-        item.employee_name.toLocaleLowerCase().includes(normalizedSearch) ||
-        item.job_title.toLocaleLowerCase().includes(normalizedSearch);
-      return statusMatches && searchMatches;
-    });
-  }, [items, search, statusFilter]);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setQuery(searchInput.trim());
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   const isLoading = sessionStatus === "loading" || overview.isLoading;
-  const activeCount = items.filter((item) => item.instance.status === "active").length;
-  const overdueCount = items.reduce((total, item) => total + item.overdue_tasks, 0);
+  const total = overview.data?.total ?? 0;
+  const activeCount = overview.data?.active_plan_count ?? 0;
+  const overdueCount = overview.data?.overdue_task_count ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const hasFilters = Boolean(query || statusFilter !== "all" || overdueOnly);
 
   return (
     <div className="mx-auto flex w-full max-w-375 flex-col gap-6">
@@ -72,8 +83,8 @@ export default function OnboardingPage() {
           Search new hires or roles
           <input
             type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
             placeholder="Name or job title"
             className="h-10 rounded-lg border border-gray-200 px-3 text-sm font-normal text-gray-900 outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
           />
@@ -82,7 +93,10 @@ export default function OnboardingPage() {
           Plan status
           <select
             value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+            onChange={(event) => {
+              setStatusFilter(event.target.value as StatusFilter);
+              setPage(1);
+            }}
             className="h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm font-normal text-gray-900 outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
           >
             <option value="active">In progress</option>
@@ -90,6 +104,18 @@ export default function OnboardingPage() {
             <option value="completed">Completed</option>
             <option value="cancelled">Cancelled</option>
           </select>
+        </label>
+        <label className="flex items-center gap-2 text-sm text-gray-700 sm:col-span-2">
+          <input
+            type="checkbox"
+            checked={overdueOnly}
+            onChange={(event) => {
+              setOverdueOnly(event.target.checked);
+              setPage(1);
+            }}
+            className="h-4 w-4 rounded border-gray-300 text-sr-green focus:ring-sr-green"
+          />
+          Show plans with overdue tasks only
         </label>
       </section>
 
@@ -106,19 +132,26 @@ export default function OnboardingPage() {
             <p className="text-sm text-red-800" role="alert">We couldn’t load onboarding plans from your workspace.</p>
             <button type="button" onClick={() => void overview.refetch()} className="mt-3 text-sm font-medium text-sr-text-blue underline">Try again</button>
           </div>
-        ) : visibleItems.length === 0 ? (
+        ) : items.length === 0 ? (
           <div className="px-5 py-12 text-center">
-            <h3 className="font-semibold text-sr-text-blue">{items.length ? "No plans match these filters" : "No onboarding plans yet"}</h3>
+            <h3 className="font-semibold text-sr-text-blue">{hasFilters ? "No plans match these filters" : "No onboarding plans yet"}</h3>
             <p className="mx-auto mt-2 max-w-lg text-sm text-gray-600">
-              {items.length
+              {hasFilters
                 ? "Change the search or status filter to see other plans."
                 : "Start onboarding from a hired application after creating a reusable plan in Settings → Onboarding."}
             </p>
+            {hasFilters && <button type="button" onClick={() => {
+              setSearchInput("");
+              setQuery("");
+              setStatusFilter("all");
+              setOverdueOnly(false);
+              setPage(1);
+            }} className="mt-4 text-sm font-medium text-sr-text-blue underline">Clear filters</button>}
           </div>
         ) : (
           <>
             <div className="divide-y divide-gray-100 md:hidden">
-              {visibleItems.map((item) => (
+              {items.map((item) => (
                 <article key={item.instance.id} className="space-y-3 p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -153,7 +186,7 @@ export default function OnboardingPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {visibleItems.map((item) => (
+                  {items.map((item) => (
                     <tr key={item.instance.id} className="hover:bg-gray-50">
                       <td className="px-5 py-4">
                         <Link href={`/dashboard/applications/${item.instance.application_id}`} className="font-medium text-sr-text-blue hover:underline">{item.employee_name}</Link>
@@ -169,9 +202,16 @@ export default function OnboardingPage() {
                 </tbody>
               </table>
             </div>
-            <p className="border-t border-gray-100 px-5 py-3 text-xs text-gray-500">
-              Showing {visibleItems.length} of up to 100 recent onboarding plans.
-            </p>
+            <footer className="flex flex-col gap-3 border-t border-gray-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <p aria-live="polite" className="text-sm text-gray-600">
+                Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total} plans
+              </p>
+              <div className="flex items-center gap-2 self-end sm:self-auto">
+                <button type="button" disabled={page <= 1 || isLoading} onClick={() => setPage((current) => current - 1)} className="h-9 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 disabled:cursor-not-allowed disabled:opacity-50">Previous</button>
+                <span className="px-1 text-sm text-gray-600">Page {page} of {pageCount}</span>
+                <button type="button" disabled={page >= pageCount || isLoading} onClick={() => setPage((current) => current + 1)} className="h-9 rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 disabled:cursor-not-allowed disabled:opacity-50">Next</button>
+              </div>
+            </footer>
           </>
         )}
       </section>
