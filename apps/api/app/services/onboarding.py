@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authorization import Role, TenantContext
 from app.db.models.application import Application
+from app.db.models.candidate import Candidate
 from app.db.models.employee import Employee
 from app.db.models.identity import User, UserRoleAssignment
 from app.db.models.onboarding import (
@@ -65,6 +66,75 @@ _ONBOARDING_WRITE_ROLES = frozenset(
 _MAX_NAME_LENGTH = 200
 _MAX_DESCRIPTION_LENGTH = 5_000
 _MAX_BLOCK_REASON_LENGTH = 2_000
+
+
+async def list_onboarding_overview(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+) -> list[tuple[OnboardingInstance, str, str, int, int, int]]:
+    """List recent tenant onboarding plans with task progress summaries."""
+    _require_role(context, _ONBOARDING_WRITE_ROLES)
+
+    rows = await session.execute(
+        select(OnboardingInstance, Candidate.full_name, Employee.job_title)
+        .join(
+            Application,
+            (Application.id == OnboardingInstance.application_id)
+            & (Application.tenant_id == OnboardingInstance.tenant_id),
+        )
+        .join(
+            Candidate,
+            (Candidate.id == Application.candidate_id)
+            & (Candidate.tenant_id == Application.tenant_id),
+        )
+        .join(
+            Employee,
+            (Employee.application_id == Application.id)
+            & (Employee.tenant_id == Application.tenant_id),
+        )
+        .where(OnboardingInstance.tenant_id == context.tenant_id)
+        .order_by(OnboardingInstance.started_at.desc(), OnboardingInstance.id)
+        .limit(100)
+    )
+    plans = list(rows.tuples())
+    if not plans:
+        return []
+
+    instance_ids = [instance.id for instance, _, _ in plans]
+    tasks = await session.scalars(
+        select(OnboardingTask).where(
+            OnboardingTask.tenant_id == context.tenant_id,
+            OnboardingTask.onboarding_instance_id.in_(instance_ids),
+        )
+    )
+    tasks_by_instance: dict[UUID, list[OnboardingTask]] = {
+        instance_id: [] for instance_id in instance_ids
+    }
+    for task in tasks:
+        tasks_by_instance[task.onboarding_instance_id].append(task)
+
+    now = datetime.now(UTC)
+    return [
+        (
+            instance,
+            employee_name,
+            job_title,
+            len(instance_tasks := tasks_by_instance[instance.id]),
+            sum(task.status is OnboardingTaskStatus.COMPLETED for task in instance_tasks),
+            sum(
+                task.due_at is not None
+                and task.due_at < now
+                and task.status
+                not in {
+                    OnboardingTaskStatus.COMPLETED,
+                    OnboardingTaskStatus.CANCELLED,
+                }
+                for task in instance_tasks
+            ),
+        )
+        for instance, employee_name, job_title in plans
+    ]
 
 
 async def list_active_onboarding_templates(

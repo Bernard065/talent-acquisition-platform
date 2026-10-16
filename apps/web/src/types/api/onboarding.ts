@@ -69,6 +69,19 @@ export interface ApplicationOnboardingResponse {
   tasks: OnboardingTaskResponse[];
 }
 
+export interface OnboardingOverviewItemResponse {
+  instance: OnboardingInstanceResponse;
+  employee_name: string;
+  job_title: string;
+  total_tasks: number;
+  completed_tasks: number;
+  overdue_tasks: number;
+}
+
+export interface OnboardingOverviewResponse {
+  items: OnboardingOverviewItemResponse[];
+}
+
 export interface StartOnboardingRequest {
   onboarding_template_id: string;
 }

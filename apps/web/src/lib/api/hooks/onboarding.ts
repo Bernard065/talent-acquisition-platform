@@ -9,6 +9,7 @@ import {
   completeOnboarding,
   createOnboardingTemplate,
   getApplicationOnboarding,
+  listOnboardingOverview,
   listOnboardingTemplates,
   startApplicationOnboarding,
   updateOnboardingTaskStatus,
@@ -24,9 +25,19 @@ import type {
 export const onboardingQueryKeys = {
   all: ["onboarding"] as const,
   templates: () => [...onboardingQueryKeys.all, "templates"] as const,
+  overview: () => [...onboardingQueryKeys.all, "overview"] as const,
   application: (applicationId: string) =>
     [...onboardingQueryKeys.all, "application", applicationId] as const,
 };
+
+export function useOnboardingOverview(enabled = true) {
+  const { status } = useSession();
+  return useQuery({
+    queryKey: onboardingQueryKeys.overview(),
+    queryFn: ({ signal }) => listOnboardingOverview({ signal }),
+    enabled: status === "authenticated" && enabled,
+  });
+}
 
 export function useOnboardingTemplates(enabled = true) {
   const { status } = useSession();
@@ -75,6 +86,9 @@ export function useStartApplicationOnboarding() {
         queryClient.invalidateQueries({
           queryKey: employeeRecordQueryKeys.application(applicationId),
         }),
+        queryClient.invalidateQueries({
+          queryKey: onboardingQueryKeys.overview(),
+        }),
       ]);
     },
   });
@@ -93,6 +107,9 @@ export function useAssignOnboardingTask() {
       await queryClient.invalidateQueries({
         queryKey: onboardingQueryKeys.application(applicationId),
       });
+      await queryClient.invalidateQueries({
+        queryKey: onboardingQueryKeys.overview(),
+      });
     },
   });
 }
@@ -109,6 +126,9 @@ export function useUpdateOnboardingTaskStatus() {
     onSuccess: async (_task, { applicationId }) => {
       await queryClient.invalidateQueries({
         queryKey: onboardingQueryKeys.application(applicationId),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: onboardingQueryKeys.overview(),
       });
     },
   });
@@ -127,6 +147,9 @@ export function useCompleteOnboarding() {
       await queryClient.invalidateQueries({
         queryKey: onboardingQueryKeys.application(applicationId),
       });
+      await queryClient.invalidateQueries({
+        queryKey: onboardingQueryKeys.overview(),
+      });
     },
   });
 }
@@ -143,6 +166,9 @@ export function useCancelOnboarding() {
     onSuccess: async (_instance, { applicationId }) => {
       await queryClient.invalidateQueries({
         queryKey: onboardingQueryKeys.application(applicationId),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: onboardingQueryKeys.overview(),
       });
     },
   });

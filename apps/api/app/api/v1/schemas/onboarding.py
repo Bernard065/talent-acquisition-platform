@@ -170,3 +170,22 @@ class ApplicationOnboardingResponse(BaseModel):
 
     instance: OnboardingInstanceResponse | None
     tasks: list[OnboardingTaskResponse]
+
+
+class OnboardingOverviewItemResponse(BaseModel):
+    """One workspace onboarding plan with safe operational summary fields."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    instance: OnboardingInstanceResponse
+    employee_name: str
+    job_title: str
+    total_tasks: int
+    completed_tasks: int
+    overdue_tasks: int
+
+
+class OnboardingOverviewResponse(BaseModel):
+    """Workspace onboarding plans, ordered newest first."""
+
+    items: list[OnboardingOverviewItemResponse]
