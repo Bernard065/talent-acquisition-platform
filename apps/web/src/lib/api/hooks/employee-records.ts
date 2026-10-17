@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import type {
   CreateEmployeeRecordRequest,
+  LinkEmployeeAccountRequest,
   UpdateEmployeeRecordRequest,
 } from "@/types/api/employee-records";
 import type { EmployeeDirectoryParams } from "../services/employee-records";
@@ -12,6 +13,7 @@ import {
   getEmployeeDirectoryFilterOptions,
   getApplicationEmployeeRecord,
   listEmployeeRecords,
+  linkEmployeeAccount,
   updateEmployeeRecord,
 } from "../services/employee-records";
 
@@ -99,6 +101,30 @@ export function useUpdateEmployeeRecord() {
         }),
         queryClient.invalidateQueries({ queryKey: employeeRecordQueryKeys.lists() }),
         queryClient.invalidateQueries({ queryKey: employeeRecordQueryKeys.filterOptions() }),
+      ]);
+    },
+  });
+}
+
+export function useLinkEmployeeAccount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      employeeId,
+      request,
+      idempotencyKey,
+    }: {
+      employeeId: string;
+      applicationId: string;
+      request: LinkEmployeeAccountRequest;
+      idempotencyKey: string;
+    }) => linkEmployeeAccount(employeeId, request, idempotencyKey),
+    onSuccess: async (_account, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: employeeRecordQueryKeys.application(variables.applicationId),
+        }),
+        queryClient.invalidateQueries({ queryKey: employeeRecordQueryKeys.lists() }),
       ]);
     },
   });
