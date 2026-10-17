@@ -2,11 +2,26 @@
 
 import { useState, type FormEvent } from "react";
 import { useCreateOnboardingTemplate, useOnboardingTemplates } from "@/lib/api/hooks/onboarding";
-import type { CreateOnboardingTemplateRequest } from "@/types/api/onboarding";
+import type {
+  CreateOnboardingTemplateRequest,
+  OnboardingTaskResponsibility,
+} from "@/types/api/onboarding";
 import type { Role } from "@/types/api/auth";
 
-type TemplateTaskDraft = { title: string; description: string; dueDays: string; assigneeRole: Role | "" };
-const blankTask = (): TemplateTaskDraft => ({ title: "", description: "", dueDays: "", assigneeRole: "" });
+type TemplateTaskDraft = {
+  title: string;
+  description: string;
+  dueDays: string;
+  assigneeRole: Role | "";
+  responsibleParty: OnboardingTaskResponsibility;
+};
+const blankTask = (): TemplateTaskDraft => ({
+  title: "",
+  description: "",
+  dueDays: "",
+  assigneeRole: "",
+  responsibleParty: "workspace",
+});
 
 export function OnboardingTemplateManager() {
   const templates = useOnboardingTemplates();
@@ -27,7 +42,9 @@ export function OnboardingTemplateManager() {
         title: task.title.trim(),
         description: task.description.trim() || null,
         due_offset_days: task.dueDays === "" ? null : Number(task.dueDays),
-        default_assignee_role: task.assigneeRole || null,
+        default_assignee_role:
+          task.responsibleParty === "workspace" ? task.assigneeRole || null : null,
+        responsible_party: task.responsibleParty,
       })),
     };
     createTemplate.mutate({ request, idempotencyKey: crypto.randomUUID() }, {
@@ -60,7 +77,7 @@ export function OnboardingTemplateManager() {
               <p className="font-medium text-gray-900">{template.name}</p>
               <p className="mt-1 text-sm text-gray-600">Version {template.version} · {template.tasks.length} tasks</p>
               <ol className="mt-3 space-y-1 text-sm text-gray-700">
-                {template.tasks.map((task, index) => <li key={task.id}>{index + 1}. {task.title}</li>)}
+                {template.tasks.map((task, index) => <li key={task.id}>{index + 1}. {task.title} · {task.responsible_party === "employee" ? "Employee" : "Workspace team"}</li>)}
               </ol>
             </li>
           ))}
@@ -94,16 +111,25 @@ export function OnboardingTemplateManager() {
                 <span className="mb-1 block text-sm text-gray-700">Due after start (days)</span>
                 <input type="number" min={0} value={task.dueDays} onChange={(event) => setTasks((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, dueDays: event.target.value } : item))} className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm" placeholder="No due date" />
               </label>
-              <label className="sm:col-span-2">
-                <span className="mb-1 block text-sm text-gray-700">Default assignee role (optional)</span>
-                <select value={task.assigneeRole} onChange={(event) => setTasks((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, assigneeRole: event.target.value as Role | "" } : item))} className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm">
-                  <option value="">Assign later</option>
-                  <option value="people_operations">People Ops</option>
-                  <option value="tenant_admin">Workspace admin</option>
-                  <option value="recruiter">Recruiter</option>
-                  <option value="hiring_manager">Hiring manager</option>
+              <label>
+                <span className="mb-1 block text-sm text-gray-700">Who is responsible?</span>
+                <select value={task.responsibleParty} onChange={(event) => setTasks((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, responsibleParty: event.target.value as OnboardingTaskResponsibility, assigneeRole: "" } : item))} className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm">
+                  <option value="workspace">Workspace team</option>
+                  <option value="employee">Employee</option>
                 </select>
               </label>
+              {task.responsibleParty === "workspace" && (
+                <label>
+                  <span className="mb-1 block text-sm text-gray-700">Default assignee role (optional)</span>
+                  <select value={task.assigneeRole} onChange={(event) => setTasks((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, assigneeRole: event.target.value as Role | "" } : item))} className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm">
+                    <option value="">Assign later</option>
+                    <option value="people_operations">People Ops</option>
+                    <option value="tenant_admin">Workspace admin</option>
+                    <option value="recruiter">Recruiter</option>
+                    <option value="hiring_manager">Hiring manager</option>
+                  </select>
+                </label>
+              )}
               {tasks.length > 1 && <button type="button" className="justify-self-start text-sm font-medium text-red-700 underline" onClick={() => setTasks((current) => current.filter((_, itemIndex) => itemIndex !== index))}>Remove task</button>}
             </fieldset>
           ))}

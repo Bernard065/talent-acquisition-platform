@@ -8,12 +8,14 @@ export type OnboardingTaskStatus =
   | "completed"
   | "blocked"
   | "cancelled";
+export type OnboardingTaskResponsibility = "workspace" | "employee";
 
 export interface OnboardingTemplateTaskRequest {
   title: string;
   description: string | null;
   due_offset_days: number | null;
   default_assignee_role: Role | null;
+  responsible_party: OnboardingTaskResponsibility;
 }
 
 export interface CreateOnboardingTemplateRequest {
@@ -48,6 +50,7 @@ export interface OnboardingTaskResponse {
   description: string | null;
   due_at: string | null;
   assignee_user_id: string | null;
+  responsible_party: OnboardingTaskResponsibility;
   status: OnboardingTaskStatus;
   completed_at: string | null;
   blocked_reason: string | null;
@@ -93,9 +96,11 @@ export interface EmployeePortalTaskResponse {
   title: string;
   description: string | null;
   due_at: string | null;
+  responsible_party: OnboardingTaskResponsibility;
   status: OnboardingTaskStatus;
   completed_at: string | null;
   version: number;
+  can_update: boolean;
 }
 
 export interface EmployeePortalOnboardingResponse {
@@ -127,6 +132,11 @@ export interface UpdateOnboardingTaskStatusRequest {
   expected_version: number;
   target_status: OnboardingTaskStatus;
   blocked_reason?: string | null;
+}
+
+export interface UpdateEmployeePortalTaskStatusRequest {
+  expected_version: number;
+  target_status: "in_progress" | "completed";
 }
 
 export interface ExpectedInstanceVersionRequest {

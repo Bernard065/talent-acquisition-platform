@@ -1,7 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { ApiError } from "@/lib/api";
-import { useEmployeePortalOnboarding } from "@/lib/api/hooks/onboarding";
+import {
+  useEmployeePortalOnboarding,
+  useUpdateEmployeePortalTaskStatus,
+} from "@/lib/api/hooks/onboarding";
 import type {
   EmployeePortalTaskResponse,
   OnboardingInstanceStatus,
@@ -39,7 +43,21 @@ function taskStatusStyle(status: OnboardingTaskStatus): string {
   return "bg-amber-50 text-amber-900";
 }
 
-function TaskItem({ task, position }: { task: EmployeePortalTaskResponse; position: number }) {
+function TaskItem({
+  task,
+  position,
+  blockedByEarlierStep,
+  planActive,
+  updatePending,
+  onUpdate,
+}: {
+  task: EmployeePortalTaskResponse;
+  position: number;
+  blockedByEarlierStep: boolean;
+  planActive: boolean;
+  updatePending: boolean;
+  onUpdate: (task: EmployeePortalTaskResponse) => void;
+}) {
   return (
     <li className="flex gap-4 px-4 py-5 sm:px-6">
       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-sm font-semibold text-gray-600">
@@ -60,9 +78,36 @@ function TaskItem({ task, position }: { task: EmployeePortalTaskResponse; positi
           </span>
         </div>
         <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-500">
+          <span>{task.responsible_party === "employee" ? "Your step" : "Workspace team step"}</span>
           <span>Due {formatDate(task.due_at)}</span>
           {task.completed_at && <span>Completed {formatDate(task.completed_at)}</span>}
         </div>
+        {task.responsible_party === "employee" && task.status !== "completed" && task.status !== "cancelled" && (
+          task.can_update ? (
+            <button
+              type="button"
+              disabled={updatePending}
+              onClick={() => onUpdate(task)}
+              className="mt-4 inline-flex min-h-10 cursor-pointer items-center justify-center rounded-lg bg-sr-text-blue px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {updatePending
+                ? "Saving…"
+                : task.status === "not_started"
+                  ? "Start this task"
+                  : "Mark as complete"}
+            </button>
+          ) : (
+            <p className="mt-3 text-xs text-gray-500">
+              {task.status === "blocked"
+                ? "Contact People Operations for help with this step."
+                : !planActive
+                  ? "This onboarding plan is not active. Contact People Operations if you need help."
+                  : blockedByEarlierStep
+                    ? "This step will be available after the earlier onboarding steps are complete."
+                    : "This step is currently unavailable. Contact People Operations for help."}
+            </p>
+          )
+        )}
       </div>
     </li>
   );
@@ -70,6 +115,23 @@ function TaskItem({ task, position }: { task: EmployeePortalTaskResponse; positi
 
 export default function MyOnboardingPage() {
   const onboarding = useEmployeePortalOnboarding();
+  const updateTask = useUpdateEmployeePortalTaskStatus();
+  const [taskActionError, setTaskActionError] = useState<string | null>(null);
+
+  function updateEmployeeTask(task: EmployeePortalTaskResponse) {
+    if (!task.can_update) return;
+    setTaskActionError(null);
+    updateTask.mutate({
+      taskId: task.id,
+      request: {
+        expected_version: task.version,
+        target_status: task.status === "not_started" ? "in_progress" : "completed",
+      },
+      idempotencyKey: crypto.randomUUID(),
+    }, {
+      onError: () => setTaskActionError("We couldn’t update this step. Refresh the checklist and try again."),
+    });
+  }
 
   if (onboarding.isLoading) {
     return (
@@ -189,6 +251,11 @@ export default function MyOnboardingPage() {
             </div>
           )}
         </div>
+        {taskActionError && (
+          <p className="border-b border-red-100 bg-red-50 px-5 py-3 text-sm text-red-800" role="alert">
+            {taskActionError}
+          </p>
+        )}
 
         {data.onboarding_status === null ? (
           <div className="px-5 py-10 text-center sm:px-6">
@@ -200,7 +267,17 @@ export default function MyOnboardingPage() {
         ) : tasks.length > 0 ? (
           <ol className="divide-y divide-gray-100">
             {tasks.map((task, index) => (
-              <TaskItem key={task.id} task={task} position={index + 1} />
+              <TaskItem
+                key={task.id}
+                task={task}
+                position={index + 1}
+                blockedByEarlierStep={tasks
+                  .slice(0, index)
+                  .some((earlierTask) => earlierTask.status !== "completed")}
+                planActive={data.onboarding_status === "active"}
+                updatePending={updateTask.isPending}
+                onUpdate={updateEmployeeTask}
+              />
             ))}
           </ol>
         ) : (

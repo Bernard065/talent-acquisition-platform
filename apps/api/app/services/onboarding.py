@@ -29,6 +29,7 @@ from app.domains.onboarding.enums import (
     OnboardingInstanceEventType,
     OnboardingInstanceStatus,
     OnboardingTaskEventType,
+    OnboardingTaskResponsibility,
     OnboardingTaskStatus,
 )
 from app.domains.onboarding.transitions import (
@@ -314,17 +315,12 @@ async def get_application_onboarding(
     return instance, tasks
 
 
-async def get_employee_portal_onboarding(
+async def _get_employee_for_subject(
     session: AsyncSession,
     *,
     context: TenantContext,
-) -> tuple[
-    Employee,
-    str,
-    OnboardingInstance | None,
-    tuple[OnboardingTask, ...],
-]:
-    """Return onboarding only for the employee linked to the verified subject."""
+) -> tuple[Employee, str]:
+    """Resolve an active employee profile from the verified tenant subject."""
     user_id = await session.scalar(
         select(User.id).where(
             User.tenant_id == context.tenant_id,
@@ -354,6 +350,25 @@ async def get_employee_portal_onboarding(
     employee, full_name = employee_row
     if employee.status is EmployeeStatus.INACTIVE:
         raise EmployeePortalRecordNotFoundError("Employee record was not found.")
+
+    return employee, full_name
+
+
+async def get_employee_portal_onboarding(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+) -> tuple[
+    Employee,
+    str,
+    OnboardingInstance | None,
+    tuple[OnboardingTask, ...],
+]:
+    """Return onboarding only for the employee linked to the verified subject."""
+    employee, full_name = await _get_employee_for_subject(
+        session,
+        context=context,
+    )
 
     instance = await session.scalar(
         select(OnboardingInstance).where(
@@ -389,6 +404,9 @@ class OnboardingTemplateTaskDefinition:
     description: str | None = None
     due_offset_days: int | None = None
     default_assignee_role: Role | None = None
+    responsible_party: OnboardingTaskResponsibility = (
+        OnboardingTaskResponsibility.WORKSPACE
+    )
 
     def __post_init__(self) -> None:
         normalized_title = self.title.strip()
@@ -418,6 +436,14 @@ class OnboardingTemplateTaskDefinition:
         if self.due_offset_days is not None and self.due_offset_days < 0:
             raise OnboardingValidationError(
                 "Template task due offset cannot be negative."
+            )
+
+        if (
+            self.responsible_party is OnboardingTaskResponsibility.EMPLOYEE
+            and self.default_assignee_role is not None
+        ):
+            raise OnboardingValidationError(
+                "Employee-owned tasks cannot have a default workspace assignee role."
             )
 
         object.__setattr__(self, "title", normalized_title)
@@ -599,6 +625,7 @@ async def create_onboarding_template(
                     description=task.description,
                     due_offset_days=task.due_offset_days,
                     default_assignee_role=task.default_assignee_role,
+                    responsible_party=task.responsible_party,
                 )
                 for position, task in enumerate(command.tasks, start=1)
             ]
@@ -724,6 +751,7 @@ async def start_onboarding(
                         if task.default_assignee_role is not None
                         else None
                     ),
+                    "responsible_party": task.responsible_party.value,
                 }
                 for task in template_tasks
             ],
@@ -753,6 +781,7 @@ async def start_onboarding(
                     if template_task.due_offset_days is not None
                     else None
                 ),
+                responsible_party=template_task.responsible_party,
                 status=OnboardingTaskStatus.NOT_STARTED,
                 assignee_user_id=(
                     users_by_role[template_task.default_assignee_role][0]
@@ -932,6 +961,11 @@ async def assign_onboarding_task(
             task=task,
         )
 
+        if task.responsible_party is OnboardingTaskResponsibility.EMPLOYEE:
+            raise OnboardingValidationError(
+                "Employee-owned tasks cannot be assigned to workspace members."
+            )
+
         if task.status in {
             OnboardingTaskStatus.COMPLETED,
             OnboardingTaskStatus.CANCELLED,
@@ -987,6 +1021,94 @@ async def assign_onboarding_task(
     return task
 
 
+async def _apply_onboarding_task_status_update(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    task: OnboardingTask,
+    command: UpdateOnboardingTaskStatusCommand,
+) -> OnboardingTask:
+    """Apply shared task transition, audit, and notification behavior."""
+    _validate_version(
+        actual_version=task.version,
+        expected_version=command.expected_version,
+        entity_name="onboarding task",
+    )
+    await _require_task_predecessors_complete(
+        session,
+        context=context,
+        task=task,
+    )
+
+    previous_status = task.status
+    validate_task_transition(previous_status, command.target_status)
+    task.status = command.target_status
+
+    if command.target_status is OnboardingTaskStatus.COMPLETED:
+        task.completed_at = datetime.now(UTC)
+        task.blocked_reason = None
+        event_type = OnboardingTaskEventType.COMPLETED
+    elif command.target_status is OnboardingTaskStatus.BLOCKED:
+        task.completed_at = None
+        task.blocked_reason = command.blocked_reason
+        event_type = OnboardingTaskEventType.BLOCKED
+    elif command.target_status is OnboardingTaskStatus.CANCELLED:
+        task.completed_at = None
+        task.blocked_reason = None
+        event_type = OnboardingTaskEventType.CANCELLED
+    else:
+        task.completed_at = None
+        task.blocked_reason = None
+        event_type = OnboardingTaskEventType.STATUS_CHANGED
+
+    _append_task_history(
+        session,
+        context=context,
+        task=task,
+        event_type=event_type,
+        from_status=previous_status,
+        to_status=task.status,
+    )
+    record_audit_event(
+        session,
+        context=context,
+        action="onboarding_task.status_changed",
+        entity_type="onboarding_task",
+        entity_id=str(task.id),
+        details={
+            "from_status": previous_status.value,
+            "to_status": task.status.value,
+        },
+    )
+    if event_type in {
+        OnboardingTaskEventType.BLOCKED,
+        OnboardingTaskEventType.COMPLETED,
+    }:
+        notification_event_type = (
+            NotificationEventType.ONBOARDING_TASK_BLOCKED
+            if event_type is OnboardingTaskEventType.BLOCKED
+            else NotificationEventType.ONBOARDING_TASK_COMPLETED
+        )
+        template_key = (
+            "onboarding_task_blocked"
+            if event_type is OnboardingTaskEventType.BLOCKED
+            else "onboarding_task_completed"
+        )
+        await enqueue_notifications_for_roles(
+            session,
+            context=context,
+            roles=(Role.PEOPLE_OPERATIONS,),
+            notification_event_type=notification_event_type,
+            entity_type="onboarding_task",
+            entity_id=task.id,
+            template_key=template_key,
+        )
+
+    await session.flush()
+    await session.refresh(task)
+    return task
+
+
 async def update_onboarding_task_status(
     session: AsyncSession,
     *,
@@ -994,7 +1116,7 @@ async def update_onboarding_task_status(
     onboarding_task_id: UUID,
     command: UpdateOnboardingTaskStatusCommand,
 ) -> OnboardingTask:
-    """Transition one active task and record immutable history atomically."""
+    """Transition one active workspace task and record immutable history."""
     _require_role(context, _ONBOARDING_WRITE_ROLES)
 
     async with transactional(session):
@@ -1003,83 +1125,54 @@ async def update_onboarding_task_status(
             context=context,
             onboarding_task_id=onboarding_task_id,
         )
-        _validate_version(
-            actual_version=task.version,
-            expected_version=command.expected_version,
-            entity_name="onboarding task",
-        )
-        await _require_task_predecessors_complete(
+        await _apply_onboarding_task_status_update(
             session,
             context=context,
             task=task,
+            command=command,
         )
 
-        previous_status = task.status
-        validate_task_transition(previous_status, command.target_status)
-        task.status = command.target_status
+    return task
 
-        if command.target_status is OnboardingTaskStatus.COMPLETED:
-            task.completed_at = datetime.now(UTC)
-            task.blocked_reason = None
-            event_type = OnboardingTaskEventType.COMPLETED
-        elif command.target_status is OnboardingTaskStatus.BLOCKED:
-            task.completed_at = None
-            task.blocked_reason = command.blocked_reason
-            event_type = OnboardingTaskEventType.BLOCKED
-        elif command.target_status is OnboardingTaskStatus.CANCELLED:
-            task.completed_at = None
-            task.blocked_reason = None
-            event_type = OnboardingTaskEventType.CANCELLED
-        else:
-            task.completed_at = None
-            task.blocked_reason = None
-            event_type = OnboardingTaskEventType.STATUS_CHANGED
 
-        _append_task_history(
+async def update_employee_portal_task_status(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    onboarding_task_id: UUID,
+    command: UpdateOnboardingTaskStatusCommand,
+) -> OnboardingTask:
+    """Allow the authenticated employee to progress their own employee task."""
+    if command.target_status not in {
+        OnboardingTaskStatus.IN_PROGRESS,
+        OnboardingTaskStatus.COMPLETED,
+    }:
+        raise OnboardingValidationError(
+            "Employees can only start or complete their own onboarding tasks."
+        )
+
+    async with transactional(session):
+        task, instance = await _load_active_task(
+            session,
+            context=context,
+            onboarding_task_id=onboarding_task_id,
+        )
+        if task.responsible_party is not OnboardingTaskResponsibility.EMPLOYEE:
+            raise OnboardingTaskNotFoundError("Onboarding task was not found.")
+
+        employee, _ = await _get_employee_for_subject(
+            session,
+            context=context,
+        )
+        if employee.application_id != instance.application_id:
+            raise OnboardingTaskNotFoundError("Onboarding task was not found.")
+
+        await _apply_onboarding_task_status_update(
             session,
             context=context,
             task=task,
-            event_type=event_type,
-            from_status=previous_status,
-            to_status=task.status,
+            command=command,
         )
-        record_audit_event(
-            session,
-            context=context,
-            action="onboarding_task.status_changed",
-            entity_type="onboarding_task",
-            entity_id=str(task.id),
-            details={
-                "from_status": previous_status.value,
-                "to_status": task.status.value,
-            },
-        )
-        if event_type in {
-            OnboardingTaskEventType.BLOCKED,
-            OnboardingTaskEventType.COMPLETED,
-        }:
-            notification_event_type = (
-                NotificationEventType.ONBOARDING_TASK_BLOCKED
-                if event_type is OnboardingTaskEventType.BLOCKED
-                else NotificationEventType.ONBOARDING_TASK_COMPLETED
-            )
-            template_key = (
-                "onboarding_task_blocked"
-                if event_type is OnboardingTaskEventType.BLOCKED
-                else "onboarding_task_completed"
-            )
-            await enqueue_notifications_for_roles(
-                session,
-                context=context,
-                roles=(Role.PEOPLE_OPERATIONS,),
-                notification_event_type=notification_event_type,
-                entity_type="onboarding_task",
-                entity_id=task.id,
-                template_key=template_key,
-            )
-
-        await session.flush()
-        await session.refresh(task)
 
     return task
 

@@ -1,6 +1,7 @@
 """Strict HTTP contracts for private onboarding workflow operations."""
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -9,6 +10,7 @@ from app.api.v1.schemas.employee_records import EmployeePortalProfileResponse
 from app.core.authorization import Role
 from app.domains.onboarding.enums import (
     OnboardingInstanceStatus,
+    OnboardingTaskResponsibility,
     OnboardingTaskStatus,
 )
 
@@ -22,6 +24,21 @@ class OnboardingTemplateTaskRequest(BaseModel):
     description: str | None = Field(default=None, max_length=5000)
     due_offset_days: int | None = Field(default=None, ge=0)
     default_assignee_role: Role | None = None
+    responsible_party: OnboardingTaskResponsibility = (
+        OnboardingTaskResponsibility.WORKSPACE
+    )
+
+    @model_validator(mode="after")
+    def validate_responsible_party(self) -> "OnboardingTemplateTaskRequest":
+        """Employee-owned tasks cannot have a workspace role assignee."""
+        if (
+            self.responsible_party is OnboardingTaskResponsibility.EMPLOYEE
+            and self.default_assignee_role is not None
+        ):
+            raise ValueError(
+                "Employee-owned tasks cannot have a default workspace assignee role."
+            )
+        return self
 
 
 class CreateOnboardingTemplateRequest(BaseModel):
@@ -119,6 +136,7 @@ class OnboardingTemplateTaskResponse(BaseModel):
     description: str | None
     due_offset_days: int | None
     default_assignee_role: Role | None
+    responsible_party: OnboardingTaskResponsibility
 
 
 class OnboardingTemplateListItemResponse(OnboardingTemplateResponse):
@@ -160,6 +178,7 @@ class OnboardingTaskResponse(BaseModel):
     description: str | None
     due_at: datetime | None
     assignee_user_id: UUID | None
+    responsible_party: OnboardingTaskResponsibility
     status: OnboardingTaskStatus
     completed_at: datetime | None
     blocked_reason: str | None
@@ -180,9 +199,23 @@ class EmployeePortalTaskResponse(BaseModel):
     title: str
     description: str | None
     due_at: datetime | None
+    responsible_party: OnboardingTaskResponsibility
     status: OnboardingTaskStatus
     completed_at: datetime | None
     version: int
+    can_update: bool
+
+
+class UpdateEmployeePortalTaskStatusRequest(BaseModel):
+    """Allow an employee to start or complete only their own task."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+    target_status: Literal[
+        OnboardingTaskStatus.IN_PROGRESS,
+        OnboardingTaskStatus.COMPLETED,
+    ]
 
 
 class EmployeePortalOnboardingResponse(BaseModel):
