@@ -1,9 +1,11 @@
-import { get, patch, post, type RequestOptions } from "../client";
+import { get, patch, post, put, type RequestOptions } from "../client";
 import type {
   CreateEmployeeRecordRequest,
   EmployeeDirectoryFilterOptionsResponse,
   EmployeeDirectoryResponse,
   EmployeeRecordResponse,
+  LinkEmployeeAccountRequest,
+  LinkEmployeeAccountResponse,
   UpdateEmployeeRecordRequest,
 } from "@/types/api/employee-records";
 
@@ -64,6 +66,19 @@ export function updateEmployeeRecord(
 ) {
   return patch<EmployeeRecordResponse>(
     `/employee-records/${employeeId}`,
+    request,
+    { ...options, idempotencyKey },
+  );
+}
+
+export function linkEmployeeAccount(
+  employeeId: string,
+  request: LinkEmployeeAccountRequest,
+  idempotencyKey: string,
+  options?: RequestOptions,
+) {
+  return put<LinkEmployeeAccountResponse>(
+    `/employee-records/${employeeId}/account`,
     request,
     { ...options, idempotencyKey },
   );

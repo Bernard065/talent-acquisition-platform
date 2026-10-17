@@ -36,10 +36,10 @@ async def list_workspace_members(
     session: DatabaseSession,
     response: Response,
 ) -> TeamMemberListResponse:
-    """List all existing workspace members for administrator role management."""
-    if Role.TENANT_ADMIN not in context.roles:
+    """List members for workspace administration and employee account linking."""
+    if context.roles.isdisjoint({Role.TENANT_ADMIN, Role.PEOPLE_OPERATIONS}):
         raise CandidateAccessDeniedError(
-            "Only workspace admins can view the workspace member roster."
+            "Only workspace admins and People Operations can view the workspace member roster."
         )
 
     members = list(

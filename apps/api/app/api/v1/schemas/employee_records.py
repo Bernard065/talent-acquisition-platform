@@ -67,6 +67,7 @@ class EmployeeRecordResponse(BaseModel):
     department: str | None
     location: str | None
     manager_user_id: UUID | None
+    user_id: UUID | None
     status: EmployeeStatus
     version: int
     created_at: datetime

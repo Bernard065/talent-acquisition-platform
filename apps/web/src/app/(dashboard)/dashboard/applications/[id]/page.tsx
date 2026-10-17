@@ -810,6 +810,7 @@ export default function ApplicationDetailsPage() {
           <ApplicationEmployeeRecordSection
             applicationId={application.id}
             applicationStatus={application.status}
+            candidateEmail={candidate?.email ?? null}
           />
           <ApplicationOnboardingSection
             applicationId={application.id}

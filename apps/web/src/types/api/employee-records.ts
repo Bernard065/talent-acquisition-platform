@@ -11,6 +11,7 @@ export interface EmployeeRecordResponse {
   department: string | null;
   location: string | null;
   manager_user_id: string | null;
+  user_id: string | null;
   status: EmployeeStatus;
   version: number;
   created_at: string;
@@ -50,4 +51,15 @@ export interface UpdateEmployeeRecordRequest {
   location?: string | null;
   manager_user_id?: string | null;
   status?: EmployeeStatus;
+}
+
+export interface LinkEmployeeAccountRequest {
+  user_id: string | null;
+  expected_version: number;
+}
+
+export interface LinkEmployeeAccountResponse {
+  employee_id: string;
+  user_id: string | null;
+  version: number;
 }
