@@ -28,6 +28,7 @@ from app.domains.onboarding.enums import (
     OnboardingInstanceEventType,
     OnboardingInstanceStatus,
     OnboardingTaskEventType,
+    OnboardingTaskResponsibility,
     OnboardingTaskStatus,
 )
 
@@ -96,6 +97,10 @@ class OnboardingTemplateTask(Base):
             "due_offset_days IS NULL OR due_offset_days >= 0",
             name="ck_onboarding_template_tasks_due_offset_non_negative",
         ),
+        CheckConstraint(
+            "responsible_party != 'employee' OR default_assignee_role IS NULL",
+            name="ck_onboarding_template_tasks_employee_no_assignee_role",
+        ),
         UniqueConstraint(
             "onboarding_template_id",
             "position",
@@ -128,6 +133,16 @@ class OnboardingTemplateTask(Base):
             create_type=False,
         ),
         nullable=True,
+    )
+    responsible_party: Mapped[OnboardingTaskResponsibility] = mapped_column(
+        Enum(
+            OnboardingTaskResponsibility,
+            name="onboarding_task_responsibility",
+            values_callable=lambda values: [value.value for value in values],
+        ),
+        nullable=False,
+        default=OnboardingTaskResponsibility.WORKSPACE,
+        server_default=OnboardingTaskResponsibility.WORKSPACE.value,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -232,6 +247,10 @@ class OnboardingTask(Base):
             "(status != 'completed') OR completed_at IS NOT NULL",
             name="ck_onboarding_tasks_completed_at_required",
         ),
+        CheckConstraint(
+            "responsible_party != 'employee' OR assignee_user_id IS NULL",
+            name="ck_onboarding_tasks_employee_unassigned",
+        ),
         Index(
             "ix_onboarding_tasks_tenant_status_due_at",
             "tenant_id",
@@ -274,6 +293,17 @@ class OnboardingTask(Base):
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
+    )
+    responsible_party: Mapped[OnboardingTaskResponsibility] = mapped_column(
+        Enum(
+            OnboardingTaskResponsibility,
+            name="onboarding_task_responsibility",
+            values_callable=lambda values: [value.value for value in values],
+            create_type=False,
+        ),
+        nullable=False,
+        default=OnboardingTaskResponsibility.WORKSPACE,
+        server_default=OnboardingTaskResponsibility.WORKSPACE.value,
     )
     status: Mapped[OnboardingTaskStatus] = mapped_column(
         Enum(

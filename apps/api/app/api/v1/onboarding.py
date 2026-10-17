@@ -26,10 +26,15 @@ from app.api.v1.schemas.onboarding import (
     OnboardingTemplateResponse,
     OnboardingTemplateTaskResponse,
     StartOnboardingRequest,
+    UpdateEmployeePortalTaskStatusRequest,
     UpdateOnboardingTaskStatusRequest,
 )
 from app.core.authorization import TenantContext
-from app.domains.onboarding.enums import OnboardingInstanceStatus
+from app.domains.onboarding.enums import (
+    OnboardingInstanceStatus,
+    OnboardingTaskResponsibility,
+    OnboardingTaskStatus,
+)
 from app.services.idempotency import IdempotencyResult, execute_idempotently
 from app.services.onboarding import (
     CreateOnboardingTemplateCommand,
@@ -44,6 +49,7 @@ from app.services.onboarding import (
     list_active_onboarding_templates,
     list_onboarding_overview,
     start_onboarding,
+    update_employee_portal_task_status,
     update_onboarding_task_status,
 )
 
@@ -215,13 +221,81 @@ async def get_employee_portal_onboarding_endpoint(
                 title=task.title,
                 description=task.description,
                 due_at=task.due_at,
+                responsible_party=task.responsible_party,
                 status=task.status,
                 completed_at=task.completed_at,
                 version=task.version,
+                can_update=(
+                    instance is not None
+                    and instance.status is OnboardingInstanceStatus.ACTIVE
+                    and task.responsible_party is OnboardingTaskResponsibility.EMPLOYEE
+                    and task.status
+                    in {
+                        OnboardingTaskStatus.NOT_STARTED,
+                        OnboardingTaskStatus.IN_PROGRESS,
+                    }
+                    and all(
+                        earlier_task.status is OnboardingTaskStatus.COMPLETED
+                        for earlier_task in tasks[:index]
+                    )
+                ),
             )
-            for task in tasks
+            for index, task in enumerate(tasks)
         ],
     )
+
+
+@router.patch(
+    "/employee-portal/me/onboarding/tasks/{onboarding_task_id}/status",
+    response_model=EmployeePortalTaskResponse,
+    summary="Update the authenticated employee's own onboarding task",
+)
+async def update_employee_portal_task_status_endpoint(
+    onboarding_task_id: UUID,
+    payload: UpdateEmployeePortalTaskStatusRequest,
+    context: CallerContext,
+    session: DatabaseSession,
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Let an employee start or complete only a task they own."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        task = await update_employee_portal_task_status(
+            session,
+            context=context,
+            onboarding_task_id=onboarding_task_id,
+            command=UpdateOnboardingTaskStatusCommand(
+                expected_version=payload.expected_version,
+                target_status=OnboardingTaskStatus(payload.target_status),
+            ),
+        )
+        return (
+            status.HTTP_200_OK,
+            EmployeePortalTaskResponse(
+                id=task.id,
+                title=task.title,
+                description=task.description,
+                due_at=task.due_at,
+                responsible_party=task.responsible_party,
+                status=task.status,
+                completed_at=task.completed_at,
+                version=task.version,
+                can_update=False,
+            ).model_dump(mode="json"),
+        )
+
+    result = await execute_idempotently(
+        session,
+        context=context,
+        key=idempotency_key,
+        operation_name=(
+            "employee_portal_onboarding_task.update_status:"
+            f"{onboarding_task_id}"
+        ),
+        payload=payload.model_dump(mode="json"),
+        operation=operation,
+    )
+    return _private_response(result)
 
 
 @router.post(
@@ -251,6 +325,7 @@ async def create_onboarding_template_endpoint(
                         description=task.description,
                         due_offset_days=task.due_offset_days,
                         default_assignee_role=task.default_assignee_role,
+                        responsible_party=task.responsible_party,
                     )
                     for task in payload.tasks
                 ),

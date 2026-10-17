@@ -21,6 +21,13 @@ class OnboardingTaskStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class OnboardingTaskResponsibility(StrEnum):
+    """Identify whether the employee or workspace team owns a task."""
+
+    WORKSPACE = "workspace"
+    EMPLOYEE = "employee"
+
+
 class OnboardingInstanceEventType(StrEnum):
     """Immutable lifecycle events for an onboarding instance."""
 
