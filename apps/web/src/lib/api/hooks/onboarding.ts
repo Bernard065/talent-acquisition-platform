@@ -13,6 +13,7 @@ import {
   listOnboardingOverview,
   listOnboardingTemplates,
   startApplicationOnboarding,
+  updateEmployeePortalTaskStatus,
   updateOnboardingTaskStatus,
 } from "../services/onboarding";
 import type {
@@ -20,6 +21,7 @@ import type {
   CreateOnboardingTemplateRequest,
   ExpectedInstanceVersionRequest,
   StartOnboardingRequest,
+  UpdateEmployeePortalTaskStatusRequest,
   UpdateOnboardingTaskStatusRequest,
 } from "@/types/api/onboarding";
 import type { OnboardingOverviewParams } from "../services/onboarding";
@@ -71,6 +73,32 @@ export function useEmployeePortalOnboarding(enabled = true) {
     queryKey: onboardingQueryKeys.employeePortal(),
     queryFn: ({ signal }) => getEmployeePortalOnboarding({ signal }),
     enabled: status === "authenticated" && enabled,
+  });
+}
+
+export function useUpdateEmployeePortalTaskStatus() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, request, idempotencyKey }: {
+      taskId: string;
+      request: UpdateEmployeePortalTaskStatusRequest;
+      idempotencyKey: string;
+    }) => updateEmployeePortalTaskStatus(taskId, request, idempotencyKey),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: onboardingQueryKeys.employeePortal(),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: onboardingQueryKeys.overview(),
+        }),
+      ]);
+    },
+    onError: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: onboardingQueryKeys.employeePortal(),
+      });
+    },
   });
 }
 

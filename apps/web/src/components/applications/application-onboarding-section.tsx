@@ -86,6 +86,9 @@ function TaskRow({
               </span>
             </div>
             {task.description && <p className="mt-1 whitespace-pre-wrap text-sm text-gray-600">{task.description}</p>}
+            <p className="mt-2 text-xs font-medium text-gray-600">
+              {task.responsible_party === "employee" ? "Employee-owned step" : "Workspace-owned step"}
+            </p>
             <p className="mt-2 text-xs text-gray-500">{task.due_at ? `Due ${dateLabel(task.due_at)}` : "No due date"}</p>
             {blockingTask && <p className="mt-2 text-sm text-gray-600">
               {blockingTask.status === "cancelled"
@@ -108,23 +111,27 @@ function TaskRow({
       </div>
       {active && (
         <div className="mt-4 grid gap-3 border-t border-gray-100 pt-4 sm:grid-cols-2">
-          <label>
-            <span className="mb-1 block text-xs font-medium text-gray-600">Assigned to</span>
-            <select value={task.assignee_user_id ?? ""} disabled={!active || members.isLoading || !members.data || assignTask.isPending} onChange={(event) => {
-              const assignee = event.target.value;
-              if (!assignee || assignee === task.assignee_user_id) return;
-              assignTask.mutate({
-                taskId: task.id,
-                applicationId,
-                request: { assignee_user_id: assignee, expected_task_version: task.version },
-                idempotencyKey: crypto.randomUUID(),
-              }, { onError: (cause) => setError(errorMessage(cause, "The task could not be assigned. Refresh and try again.")) });
-            }} className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm">
-              <option value="">Unassigned</option>
-              {members.data?.items.map((member) => <option key={member.id} value={member.id}>{member.display_name}</option>)}
-            </select>
-          </label>
-          {members.isError && <p className="text-sm text-red-800 sm:col-span-2">We couldn’t load workspace members to assign tasks.</p>}
+          {task.responsible_party === "workspace" && (
+            <>
+              <label>
+                <span className="mb-1 block text-xs font-medium text-gray-600">Assigned to</span>
+                <select value={task.assignee_user_id ?? ""} disabled={!active || members.isLoading || !members.data || assignTask.isPending} onChange={(event) => {
+                  const assignee = event.target.value;
+                  if (!assignee || assignee === task.assignee_user_id) return;
+                  assignTask.mutate({
+                    taskId: task.id,
+                    applicationId,
+                    request: { assignee_user_id: assignee, expected_task_version: task.version },
+                    idempotencyKey: crypto.randomUUID(),
+                  }, { onError: (cause) => setError(errorMessage(cause, "The task could not be assigned. Refresh and try again.")) });
+                }} className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm">
+                  <option value="">Unassigned</option>
+                  {members.data?.items.map((member) => <option key={member.id} value={member.id}>{member.display_name}</option>)}
+                </select>
+              </label>
+              {members.isError && <p className="text-sm text-red-800 sm:col-span-2">We couldn’t load workspace members to assign tasks.</p>}
+            </>
+          )}
           <label>
             <span className="mb-1 block text-xs font-medium text-gray-600">Block reason (required to mark blocked)</span>
             <input value={blockedReason} onChange={(event) => setBlockedReason(event.target.value)} maxLength={2000} className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm" />

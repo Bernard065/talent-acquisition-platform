@@ -11,6 +11,7 @@ import type {
   OnboardingTemplateListResponse,
   OnboardingTemplateResponse,
   StartOnboardingRequest,
+  UpdateEmployeePortalTaskStatusRequest,
   UpdateOnboardingTaskStatusRequest,
 } from "@/types/api/onboarding";
 
@@ -103,6 +104,19 @@ export function updateOnboardingTaskStatus(
 ) {
   return patch<OnboardingTaskResponse>(
     `/onboarding-tasks/${taskId}/status`,
+    request,
+    { ...options, idempotencyKey },
+  );
+}
+
+export function updateEmployeePortalTaskStatus(
+  taskId: string,
+  request: UpdateEmployeePortalTaskStatusRequest,
+  idempotencyKey: string,
+  options?: RequestOptions,
+) {
+  return patch<EmployeePortalOnboardingResponse["tasks"][number]>(
+    `/employee-portal/me/onboarding/tasks/${taskId}/status`,
     request,
     { ...options, idempotencyKey },
   );
