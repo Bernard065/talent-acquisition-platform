@@ -1,4 +1,5 @@
 import type { Role } from "./auth";
+import type { EmployeeStatus } from "./employee-records";
 
 export type OnboardingInstanceStatus = "active" | "completed" | "cancelled";
 export type OnboardingTaskStatus =
@@ -85,6 +86,32 @@ export interface OnboardingOverviewResponse {
   limit: number;
   active_plan_count: number;
   overdue_task_count: number;
+}
+
+export interface EmployeePortalTaskResponse {
+  id: string;
+  title: string;
+  description: string | null;
+  due_at: string | null;
+  status: OnboardingTaskStatus;
+  completed_at: string | null;
+  version: number;
+}
+
+export interface EmployeePortalOnboardingResponse {
+  profile: {
+    full_name: string;
+    work_email: string | null;
+    start_date: string | null;
+    job_title: string;
+    department: string | null;
+    location: string | null;
+    status: EmployeeStatus;
+  };
+  onboarding_status: OnboardingInstanceStatus | null;
+  started_at: string | null;
+  completed_at: string | null;
+  tasks: EmployeePortalTaskResponse[];
 }
 
 export interface StartOnboardingRequest {

@@ -3,6 +3,7 @@ import type {
   ApplicationOnboardingResponse,
   AssignOnboardingTaskRequest,
   CreateOnboardingTemplateRequest,
+  EmployeePortalOnboardingResponse,
   ExpectedInstanceVersionRequest,
   OnboardingInstanceResponse,
   OnboardingOverviewResponse,
@@ -46,6 +47,13 @@ export function getApplicationOnboarding(
 ) {
   return get<ApplicationOnboardingResponse>(
     `/applications/${applicationId}/onboarding`,
+    options,
+  );
+}
+
+export function getEmployeePortalOnboarding(options?: RequestOptions) {
+  return get<EmployeePortalOnboardingResponse>(
+    "/employee-portal/me/onboarding",
     options,
   );
 }

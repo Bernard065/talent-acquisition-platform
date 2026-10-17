@@ -9,6 +9,7 @@ import {
   completeOnboarding,
   createOnboardingTemplate,
   getApplicationOnboarding,
+  getEmployeePortalOnboarding,
   listOnboardingOverview,
   listOnboardingTemplates,
   startApplicationOnboarding,
@@ -31,6 +32,7 @@ export const onboardingQueryKeys = {
     [...onboardingQueryKeys.overview(), params] as const,
   application: (applicationId: string) =>
     [...onboardingQueryKeys.all, "application", applicationId] as const,
+  employeePortal: () => [...onboardingQueryKeys.all, "employee-portal"] as const,
 };
 
 export function useOnboardingOverview(
@@ -60,6 +62,15 @@ export function useApplicationOnboarding(applicationId: string, enabled = true) 
     queryKey: onboardingQueryKeys.application(applicationId),
     queryFn: ({ signal }) => getApplicationOnboarding(applicationId, { signal }),
     enabled: status === "authenticated" && enabled && Boolean(applicationId),
+  });
+}
+
+export function useEmployeePortalOnboarding(enabled = true) {
+  const { status } = useSession();
+  return useQuery({
+    queryKey: onboardingQueryKeys.employeePortal(),
+    queryFn: ({ signal }) => getEmployeePortalOnboarding({ signal }),
+    enabled: status === "authenticated" && enabled,
   });
 }
 
