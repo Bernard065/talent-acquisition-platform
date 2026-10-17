@@ -1,12 +1,15 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
+import { ApiError } from "@/lib/api";
 import {
   useApplicationEmployeeRecord,
   useCreateApplicationEmployeeRecord,
+  useLinkEmployeeAccount,
   useUpdateEmployeeRecord,
 } from "@/lib/api/hooks/employee-records";
-import { useTeamMembers } from "@/lib/api/hooks/team";
+import { useCurrentIdentity } from "@/lib/api/hooks/auth";
+import { useTeamMembers, useWorkspaceMembers } from "@/lib/api/hooks/team";
 import type {
   EmployeeRecordResponse,
   EmployeeStatus,
@@ -143,16 +146,149 @@ function EmployeeRecordForm({
   );
 }
 
+function EmployeeAccountLinkSection({
+  applicationId,
+  employee,
+  candidateEmail,
+}: {
+  applicationId: string;
+  employee: EmployeeRecordResponse;
+  candidateEmail: string | null;
+}) {
+  const members = useWorkspaceMembers();
+  const linkAccount = useLinkEmployeeAccount();
+  const [selectedUserId, setSelectedUserId] = useState(employee.user_id ?? "");
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const eligibleEmails = useMemo(() => new Set(
+    [candidateEmail, employee.work_email]
+      .map((email) => email?.trim().toLowerCase())
+      .filter((email): email is string => Boolean(email)),
+  ), [candidateEmail, employee.work_email]);
+
+  const linkableMembers = useMemo(() => {
+    const workspaceMembers = members.data?.items ?? [];
+    return workspaceMembers.filter((member) =>
+      eligibleEmails.has(member.email.trim().toLowerCase()) ||
+      member.id === employee.user_id,
+    );
+  }, [eligibleEmails, employee.user_id, members.data?.items]);
+
+  const currentMember = members.data?.items.find(
+    (member) => member.id === employee.user_id,
+  );
+  function saveLink() {
+    setError(null);
+    setMessage(null);
+    linkAccount.mutate({
+      employeeId: employee.id,
+      applicationId,
+      request: {
+        user_id: selectedUserId || null,
+        expected_version: employee.version,
+      },
+      idempotencyKey: crypto.randomUUID(),
+    }, {
+      onSuccess: (linkedAccount) => {
+        setSelectedUserId(linkedAccount.user_id ?? "");
+        setMessage(linkedAccount.user_id
+          ? "Employee portal account linked."
+          : "Employee portal account unlinked.");
+      },
+      onError: (cause) => setError(
+        cause instanceof ApiError
+          ? cause.detail
+          : "The account link could not be saved. Refresh and try again.",
+      ),
+    });
+  }
+
+  return (
+    <div className="mt-5 border-t border-gray-200 pt-5">
+      <h3 className="text-sm font-semibold text-gray-900">Employee portal access</h3>
+      <p className="mt-1 text-sm text-gray-600">
+        Link an existing workspace account whose email matches the candidate or work email. The employee can then view their own onboarding checklist.
+      </p>
+      {members.isLoading ? (
+        <p role="status" className="mt-3 text-sm text-gray-600">Loading eligible workspace accounts…</p>
+      ) : members.isError ? (
+        <div className="mt-3">
+          <p role="alert" className="text-sm text-red-800">Workspace accounts could not be loaded.</p>
+          <button type="button" onClick={() => void members.refetch()} className="mt-1 text-sm font-medium text-sr-text-blue underline">Try again</button>
+        </div>
+      ) : (
+        <>
+          <p className="mt-3 text-sm text-gray-700">
+            {employee.user_id
+              ? `Linked to ${currentMember?.display_name ?? "a workspace account"}${currentMember ? ` (${currentMember.email})` : ""}.`
+              : "No workspace account is linked."}
+          </p>
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
+            <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm font-medium text-gray-700">
+              Workspace account
+              <select
+                value={selectedUserId}
+                onChange={(event) => {
+                  setSelectedUserId(event.target.value);
+                  setError(null);
+                  setMessage(null);
+                }}
+                disabled={linkAccount.isPending || linkableMembers.length === 0}
+                className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm font-normal text-gray-900 disabled:bg-gray-50"
+              >
+                <option value="">No account linked</option>
+                {linkableMembers.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.display_name} · {member.email}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={saveLink}
+              disabled={linkAccount.isPending || selectedUserId === (employee.user_id ?? "") || (!selectedUserId && !employee.user_id)}
+              className="h-10 rounded-lg bg-sr-text-blue px-4 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {linkAccount.isPending
+                ? "Saving…"
+                : selectedUserId
+                  ? "Link account"
+                  : "Unlink account"}
+            </button>
+          </div>
+          {linkableMembers.length === 0 && !employee.user_id && (
+            <p className="mt-2 text-sm text-amber-800">
+              {eligibleEmails.size === 0
+                ? "Add the candidate or work email to the employee record to find a matching workspace account."
+                : "No existing workspace account matches the candidate or work email. The account must exist in this workspace and use one of those email addresses."}
+            </p>
+          )}
+          {message && <p role="status" className="mt-2 text-sm text-emerald-800">{message}</p>}
+          {error && <p role="alert" className="mt-2 text-sm text-red-800">{error}</p>}
+        </>
+      )}
+    </div>
+  );
+}
+
 export function ApplicationEmployeeRecordSection({
   applicationId,
   applicationStatus,
+  candidateEmail,
 }: {
   applicationId: string;
   applicationStatus: string;
+  candidateEmail: string | null;
 }) {
   const eligible = applicationStatus === "hired";
   const employeeQuery = useApplicationEmployeeRecord(applicationId, eligible);
+  const identityQuery = useCurrentIdentity();
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const canManagePortalAccess = identityQuery.data?.roles.some(
+    (role) => role === "tenant_admin" || role === "people_operations",
+  ) ?? false;
   if (!eligible) return null;
 
   return (
@@ -170,6 +306,13 @@ export function ApplicationEmployeeRecordSection({
             employee={employeeQuery.data ?? null}
             onSaved={() => setStatusMessage("Employee details saved in MindHire.")}
           />
+          {canManagePortalAccess && employeeQuery.data && (
+            <EmployeeAccountLinkSection
+              applicationId={applicationId}
+              employee={employeeQuery.data}
+              candidateEmail={candidateEmail}
+            />
+          )}
         </>
       )}
     </section>
