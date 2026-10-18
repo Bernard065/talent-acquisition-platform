@@ -413,7 +413,7 @@ class OnboardingInstanceHistory(Base):
 
 
 class OnboardingTaskHistory(Base):
-    """Append-only lifecycle and assignment history for an onboarding task."""
+    """Append-only lifecycle, assignment, and due-date history for a task."""
 
     __tablename__ = "onboarding_task_history"
     __table_args__ = (

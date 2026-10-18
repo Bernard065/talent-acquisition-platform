@@ -29,6 +29,7 @@ from app.api.v1.schemas.onboarding import (
     OnboardingTemplateTaskResponse,
     StartOnboardingRequest,
     UpdateEmployeePortalTaskStatusRequest,
+    UpdateOnboardingTaskDueDateRequest,
     UpdateOnboardingTaskStatusRequest,
 )
 from app.core.authorization import TenantContext
@@ -53,6 +54,7 @@ from app.services.onboarding import (
     list_onboarding_task_activity,
     start_onboarding,
     update_employee_portal_task_status,
+    update_onboarding_task_due_date,
     update_onboarding_task_status,
 )
 
@@ -473,6 +475,44 @@ async def assign_onboarding_task_endpoint(
         context=context,
         key=idempotency_key,
         operation_name=f"onboarding_task.assign:{onboarding_task_id}",
+        payload=payload.model_dump(mode="json"),
+        operation=operation,
+    )
+    return _private_response(result)
+
+
+@router.patch(
+    "/onboarding-tasks/{onboarding_task_id}/due-date",
+    response_model=OnboardingTaskResponse,
+    summary="Update an onboarding task due date",
+)
+async def update_onboarding_task_due_date_endpoint(
+    onboarding_task_id: UUID,
+    payload: UpdateOnboardingTaskDueDateRequest,
+    context: CallerContext,
+    session: DatabaseSession,
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Change or clear a task due date with optimistic concurrency."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        task = await update_onboarding_task_due_date(
+            session,
+            context=context,
+            onboarding_task_id=onboarding_task_id,
+            due_date=payload.due_date,
+            expected_task_version=payload.expected_task_version,
+        )
+        return (
+            status.HTTP_200_OK,
+            OnboardingTaskResponse.model_validate(task).model_dump(mode="json"),
+        )
+
+    result = await execute_idempotently(
+        session,
+        context=context,
+        key=idempotency_key,
+        operation_name=f"onboarding_task.update_due_date:{onboarding_task_id}",
         payload=payload.model_dump(mode="json"),
         operation=operation,
     )

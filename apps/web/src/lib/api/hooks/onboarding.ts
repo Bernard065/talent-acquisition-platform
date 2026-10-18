@@ -14,6 +14,7 @@ import {
   listOnboardingOverview,
   listOnboardingTemplates,
   startApplicationOnboarding,
+  updateOnboardingTaskDueDate,
   updateEmployeePortalTaskStatus,
   updateOnboardingTaskStatus,
 } from "../services/onboarding";
@@ -22,6 +23,7 @@ import type {
   CreateOnboardingTemplateRequest,
   ExpectedInstanceVersionRequest,
   StartOnboardingRequest,
+  UpdateOnboardingTaskDueDateRequest,
   UpdateEmployeePortalTaskStatusRequest,
   UpdateOnboardingTaskStatusRequest,
 } from "@/types/api/onboarding";
@@ -163,6 +165,31 @@ export function useAssignOnboardingTask() {
       idempotencyKey: string;
       applicationId: string;
     }) => assignOnboardingTask(taskId, request, idempotencyKey),
+    onSuccess: async (_task, { applicationId, taskId }) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: onboardingQueryKeys.application(applicationId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: onboardingQueryKeys.taskActivity(taskId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: onboardingQueryKeys.overview(),
+        }),
+      ]);
+    },
+  });
+}
+
+export function useUpdateOnboardingTaskDueDate() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, request, idempotencyKey }: {
+      taskId: string;
+      request: UpdateOnboardingTaskDueDateRequest;
+      idempotencyKey: string;
+      applicationId: string;
+    }) => updateOnboardingTaskDueDate(taskId, request, idempotencyKey),
     onSuccess: async (_task, { applicationId, taskId }) => {
       await Promise.all([
         queryClient.invalidateQueries({
