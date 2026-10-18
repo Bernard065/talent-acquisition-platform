@@ -20,6 +20,8 @@ from app.api.v1.schemas.onboarding import (
     OnboardingInstanceResponse,
     OnboardingOverviewItemResponse,
     OnboardingOverviewResponse,
+    OnboardingTaskActivityItemResponse,
+    OnboardingTaskActivityResponse,
     OnboardingTaskResponse,
     OnboardingTemplateListItemResponse,
     OnboardingTemplateListResponse,
@@ -48,6 +50,7 @@ from app.services.onboarding import (
     get_employee_portal_onboarding,
     list_active_onboarding_templates,
     list_onboarding_overview,
+    list_onboarding_task_activity,
     start_onboarding,
     update_employee_portal_task_status,
     update_onboarding_task_status,
@@ -183,6 +186,40 @@ async def get_application_onboarding_endpoint(
     return ApplicationOnboardingResponse(
         instance=OnboardingInstanceResponse.model_validate(instance),
         tasks=[OnboardingTaskResponse.model_validate(task) for task in tasks],
+    )
+
+
+@router.get(
+    "/onboarding-tasks/{onboarding_task_id}/activity",
+    response_model=OnboardingTaskActivityResponse,
+    summary="Get activity for an onboarding task",
+)
+async def get_onboarding_task_activity_endpoint(
+    onboarding_task_id: UUID,
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+) -> OnboardingTaskActivityResponse:
+    """Return task activity to its employee owner or authorized workspace staff."""
+    items = await list_onboarding_task_activity(
+        session,
+        context=context,
+        onboarding_task_id=onboarding_task_id,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return OnboardingTaskActivityResponse(
+        items=[
+            OnboardingTaskActivityItemResponse(
+                id=item.id,
+                event_type=item.event_type,
+                from_status=item.from_status,
+                to_status=item.to_status,
+                note=item.note,
+                actor_display_name=item.actor_display_name,
+                occurred_at=item.occurred_at,
+            )
+            for item in items
+        ]
     )
 
 
