@@ -201,13 +201,14 @@ class EmployeePortalTaskResponse(BaseModel):
     due_at: datetime | None
     responsible_party: OnboardingTaskResponsibility
     status: OnboardingTaskStatus
+    blocked_reason: str | None
     completed_at: datetime | None
     version: int
     can_update: bool
 
 
 class UpdateEmployeePortalTaskStatusRequest(BaseModel):
-    """Allow an employee to start or complete only their own task."""
+    """Allow an employee to progress or request help on their own task."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -215,7 +216,31 @@ class UpdateEmployeePortalTaskStatusRequest(BaseModel):
     target_status: Literal[
         OnboardingTaskStatus.IN_PROGRESS,
         OnboardingTaskStatus.COMPLETED,
+        OnboardingTaskStatus.BLOCKED,
     ]
+    blocked_reason: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def validate_blocked_reason(self) -> "UpdateEmployeePortalTaskStatusRequest":
+        """Require a concise explanation when the employee requests help."""
+        normalized_reason = (
+            self.blocked_reason.strip()
+            if self.blocked_reason is not None
+            else None
+        )
+
+        if self.target_status is OnboardingTaskStatus.BLOCKED:
+            if not normalized_reason:
+                raise ValueError(
+                    "blocked_reason is required when requesting help."
+                )
+        elif normalized_reason is not None:
+            raise ValueError(
+                "blocked_reason is allowed only when requesting help."
+            )
+
+        self.blocked_reason = normalized_reason
+        return self
 
 
 class EmployeePortalOnboardingResponse(BaseModel):

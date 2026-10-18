@@ -56,8 +56,29 @@ function TaskItem({
   blockedByEarlierStep: boolean;
   planActive: boolean;
   updatePending: boolean;
-  onUpdate: (task: EmployeePortalTaskResponse) => void;
+  onUpdate: (
+    task: EmployeePortalTaskResponse,
+    targetStatus: "in_progress" | "completed" | "blocked",
+    blockedReason?: string,
+  ) => void;
 }) {
+  const [showHelpForm, setShowHelpForm] = useState(false);
+  const [helpReason, setHelpReason] = useState("");
+  const [helpError, setHelpError] = useState<string | null>(null);
+
+  function requestHelp() {
+    const reason = helpReason.trim();
+    if (!reason) {
+      setHelpError("Tell People Operations what you need help with.");
+      return;
+    }
+    if (!task.can_update) return;
+    setHelpError(null);
+    onUpdate(task, "blocked", reason);
+    setShowHelpForm(false);
+    setHelpReason("");
+  }
+
   return (
     <li className="flex gap-4 px-4 py-5 sm:px-6">
       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-sm font-semibold text-gray-600">
@@ -82,29 +103,82 @@ function TaskItem({
           <span>Due {formatDate(task.due_at)}</span>
           {task.completed_at && <span>Completed {formatDate(task.completed_at)}</span>}
         </div>
-        {task.responsible_party === "employee" && task.status !== "completed" && task.status !== "cancelled" && (
+        {task.responsible_party === "employee" && task.status === "blocked" && (
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
+            <p className="text-sm font-medium text-amber-950">People Operations has been notified.</p>
+            <p className="mt-1 text-sm text-amber-900">They’ll update this step when they’ve followed up.</p>
+            {task.blocked_reason && (
+              <p className="mt-2 whitespace-pre-wrap text-sm text-amber-900">
+                <span className="font-medium">Your note: </span>{task.blocked_reason}
+              </p>
+            )}
+          </div>
+        )}
+        {task.responsible_party === "employee" && task.status !== "completed" && task.status !== "cancelled" && task.status !== "blocked" && (
           task.can_update ? (
-            <button
-              type="button"
-              disabled={updatePending}
-              onClick={() => onUpdate(task)}
-              className="mt-4 inline-flex min-h-10 cursor-pointer items-center justify-center rounded-lg bg-sr-text-blue px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {updatePending
-                ? "Saving…"
-                : task.status === "not_started"
-                  ? "Start this task"
-                  : "Mark as complete"}
-            </button>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {!showHelpForm && (
+                <button
+                  type="button"
+                  disabled={updatePending}
+                  onClick={() => onUpdate(
+                    task,
+                    task.status === "not_started" ? "in_progress" : "completed",
+                  )}
+                  className="inline-flex min-h-10 cursor-pointer items-center justify-center rounded-lg bg-sr-text-blue px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {updatePending
+                    ? "Saving…"
+                    : task.status === "not_started"
+                      ? "Start this task"
+                      : "Mark as complete"}
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={updatePending}
+                onClick={() => {
+                  setHelpError(null);
+                  setShowHelpForm((visible) => !visible);
+                }}
+                className="inline-flex min-h-10 cursor-pointer items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {showHelpForm ? "Cancel" : "Need help?"}
+              </button>
+              {showHelpForm && (
+                <div className="w-full rounded-lg border border-gray-200 bg-gray-50 p-4">
+                  <label className="block">
+                    <span className="mb-1 block text-sm font-medium text-gray-700">
+                      What do you need help with?
+                    </span>
+                    <textarea
+                      required
+                      maxLength={2000}
+                      rows={3}
+                      value={helpReason}
+                      onChange={(event) => setHelpReason(event.target.value)}
+                      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
+                    />
+                  </label>
+                  {helpError && <p className="mt-2 text-sm text-red-800" role="alert">{helpError}</p>}
+                  <button
+                    type="button"
+                    disabled={updatePending || !helpReason.trim()}
+                    onClick={requestHelp}
+                    className="mt-3 inline-flex min-h-10 cursor-pointer items-center justify-center rounded-lg bg-amber-700 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {updatePending ? "Sending…" : "Send to People Operations"}
+                  </button>
+                </div>
+              )}
+            </div>
           ) : (
             <p className="mt-3 text-xs text-gray-500">
-              {task.status === "blocked"
-                ? "Contact People Operations for help with this step."
-                : !planActive
-                  ? "This onboarding plan is not active. Contact People Operations if you need help."
-                  : blockedByEarlierStep
-                    ? "This step will be available after the earlier onboarding steps are complete."
-                    : "This step is currently unavailable. Contact People Operations for help."}
+              {!planActive
+                ? "This onboarding plan is not active. Contact People Operations if you need help."
+                : blockedByEarlierStep
+                  ? "This step will be available after the earlier onboarding steps are complete."
+                  : "This step is currently unavailable. Contact People Operations for help."}
             </p>
           )
         )}
@@ -118,14 +192,19 @@ export default function MyOnboardingPage() {
   const updateTask = useUpdateEmployeePortalTaskStatus();
   const [taskActionError, setTaskActionError] = useState<string | null>(null);
 
-  function updateEmployeeTask(task: EmployeePortalTaskResponse) {
+  function updateEmployeeTask(
+    task: EmployeePortalTaskResponse,
+    targetStatus: "in_progress" | "completed" | "blocked",
+    blockedReason?: string,
+  ) {
     if (!task.can_update) return;
     setTaskActionError(null);
     updateTask.mutate({
       taskId: task.id,
       request: {
         expected_version: task.version,
-        target_status: task.status === "not_started" ? "in_progress" : "completed",
+        target_status: targetStatus,
+        blocked_reason: targetStatus === "blocked" ? blockedReason : null,
       },
       idempotencyKey: crypto.randomUUID(),
     }, {
