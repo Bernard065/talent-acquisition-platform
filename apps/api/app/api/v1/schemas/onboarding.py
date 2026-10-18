@@ -79,6 +79,7 @@ class UpdateOnboardingTaskStatusRequest(BaseModel):
     expected_version: int = Field(ge=1)
     target_status: OnboardingTaskStatus
     blocked_reason: str | None = Field(default=None, max_length=2000)
+    resolution_note: str | None = Field(default=None, max_length=2000)
 
     @model_validator(mode="after")
     def validate_blocked_reason(
@@ -88,6 +89,11 @@ class UpdateOnboardingTaskStatusRequest(BaseModel):
         normalized_reason = (
             self.blocked_reason.strip()
             if self.blocked_reason is not None
+            else None
+        )
+        normalized_resolution_note = (
+            self.resolution_note.strip()
+            if self.resolution_note is not None
             else None
         )
 
@@ -101,7 +107,16 @@ class UpdateOnboardingTaskStatusRequest(BaseModel):
                 "blocked_reason is allowed only when target_status is blocked."
             )
 
+        if (
+            normalized_resolution_note is not None
+            and self.target_status is not OnboardingTaskStatus.IN_PROGRESS
+        ):
+            raise ValueError(
+                "resolution_note is allowed only when target_status is in progress."
+            )
+
         self.blocked_reason = normalized_reason
+        self.resolution_note = normalized_resolution_note
         return self
 
 
@@ -182,6 +197,7 @@ class OnboardingTaskResponse(BaseModel):
     status: OnboardingTaskStatus
     completed_at: datetime | None
     blocked_reason: str | None
+    resolution_note: str | None
     version: int
 
 
@@ -202,6 +218,7 @@ class EmployeePortalTaskResponse(BaseModel):
     responsible_party: OnboardingTaskResponsibility
     status: OnboardingTaskStatus
     blocked_reason: str | None
+    resolution_note: str | None
     completed_at: datetime | None
     version: int
     can_update: bool

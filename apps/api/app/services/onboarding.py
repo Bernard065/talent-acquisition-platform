@@ -489,11 +489,17 @@ class UpdateOnboardingTaskStatusCommand:
     expected_version: int
     target_status: OnboardingTaskStatus
     blocked_reason: str | None = None
+    resolution_note: str | None = None
 
     def __post_init__(self) -> None:
         normalized_reason = (
             self.blocked_reason.strip()
             if self.blocked_reason is not None
+            else None
+        )
+        normalized_resolution_note = (
+            self.resolution_note.strip()
+            if self.resolution_note is not None
             else None
         )
 
@@ -513,6 +519,14 @@ class UpdateOnboardingTaskStatusCommand:
             )
 
         if (
+            normalized_resolution_note is not None
+            and self.target_status is not OnboardingTaskStatus.IN_PROGRESS
+        ):
+            raise OnboardingValidationError(
+                "A resolution note is allowed only when reopening a task."
+            )
+
+        if (
             normalized_reason is not None
             and len(normalized_reason) > _MAX_BLOCK_REASON_LENGTH
         ):
@@ -520,7 +534,16 @@ class UpdateOnboardingTaskStatusCommand:
                 "Blocked reason must not exceed 2000 characters."
             )
 
+        if (
+            normalized_resolution_note is not None
+            and len(normalized_resolution_note) > _MAX_BLOCK_REASON_LENGTH
+        ):
+            raise OnboardingValidationError(
+                "Resolution note must not exceed 2000 characters."
+            )
+
         object.__setattr__(self, "blocked_reason", normalized_reason)
+        object.__setattr__(self, "resolution_note", normalized_resolution_note)
 
 
 def _require_role(
@@ -582,6 +605,7 @@ def _append_task_history(
     event_type: OnboardingTaskEventType,
     from_status: OnboardingTaskStatus | None,
     to_status: OnboardingTaskStatus,
+    note: str | None = None,
 ) -> None:
     """Append immutable onboarding task history."""
     session.add(
@@ -591,6 +615,7 @@ def _append_task_history(
             event_type=event_type,
             from_status=from_status,
             to_status=to_status,
+            note=note,
             occurred_by_subject=context.subject,
         )
     )
@@ -1043,6 +1068,7 @@ async def _apply_onboarding_task_status_update(
     previous_status = task.status
     validate_task_transition(previous_status, command.target_status)
     task.status = command.target_status
+    history_note: str | None = None
 
     if command.target_status is OnboardingTaskStatus.COMPLETED:
         task.completed_at = datetime.now(UTC)
@@ -1051,6 +1077,8 @@ async def _apply_onboarding_task_status_update(
     elif command.target_status is OnboardingTaskStatus.BLOCKED:
         task.completed_at = None
         task.blocked_reason = command.blocked_reason
+        task.resolution_note = None
+        history_note = command.blocked_reason
         event_type = OnboardingTaskEventType.BLOCKED
     elif command.target_status is OnboardingTaskStatus.CANCELLED:
         task.completed_at = None
@@ -1059,6 +1087,9 @@ async def _apply_onboarding_task_status_update(
     else:
         task.completed_at = None
         task.blocked_reason = None
+        if previous_status is OnboardingTaskStatus.BLOCKED:
+            task.resolution_note = command.resolution_note
+            history_note = command.resolution_note
         event_type = OnboardingTaskEventType.STATUS_CHANGED
 
     _append_task_history(
@@ -1068,6 +1099,7 @@ async def _apply_onboarding_task_status_update(
         event_type=event_type,
         from_status=previous_status,
         to_status=task.status,
+        note=history_note,
     )
     record_audit_event(
         session,
@@ -1120,17 +1152,51 @@ async def update_onboarding_task_status(
     _require_role(context, _ONBOARDING_WRITE_ROLES)
 
     async with transactional(session):
-        task, _ = await _load_active_task(
+        task, instance = await _load_active_task(
             session,
             context=context,
             onboarding_task_id=onboarding_task_id,
         )
+        resolves_employee_blocker = (
+            task.responsible_party is OnboardingTaskResponsibility.EMPLOYEE
+            and task.status is OnboardingTaskStatus.BLOCKED
+            and command.target_status is OnboardingTaskStatus.IN_PROGRESS
+        )
+        if resolves_employee_blocker and not command.resolution_note:
+            raise OnboardingValidationError(
+                "Add a response for the employee before reopening this task."
+            )
+        if command.resolution_note is not None and not resolves_employee_blocker:
+            raise OnboardingValidationError(
+                "A response can be added only when resolving an employee blocker."
+            )
+
         await _apply_onboarding_task_status_update(
             session,
             context=context,
             task=task,
             command=command,
         )
+        if resolves_employee_blocker:
+            employee_user_id = await session.scalar(
+                select(Employee.user_id).where(
+                    Employee.tenant_id == context.tenant_id,
+                    Employee.application_id == instance.application_id,
+                )
+            )
+            if employee_user_id is not None:
+                enqueue_notification_request(
+                    session,
+                    context=context,
+                    recipient_user_id=employee_user_id,
+                    notification_event_type=(
+                        NotificationEventType.ONBOARDING_TASK_UNBLOCKED
+                    ),
+                    entity_type="onboarding_task",
+                    entity_id=task.id,
+                    template_key="onboarding_task_unblocked",
+                    occurrence_key=task.version,
+                )
 
     return task
 
@@ -1167,6 +1233,13 @@ async def update_employee_portal_task_status(
         )
         if employee.application_id != instance.application_id:
             raise OnboardingTaskNotFoundError("Onboarding task was not found.")
+        if (
+            task.status is OnboardingTaskStatus.BLOCKED
+            and command.target_status is OnboardingTaskStatus.IN_PROGRESS
+        ):
+            raise OnboardingValidationError(
+                "Only People Operations can reopen a blocked onboarding task."
+            )
 
         await _apply_onboarding_task_status_update(
             session,

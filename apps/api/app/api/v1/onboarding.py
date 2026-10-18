@@ -229,6 +229,12 @@ async def get_employee_portal_onboarding_endpoint(
                     is OnboardingTaskResponsibility.EMPLOYEE
                     else None
                 ),
+                resolution_note=(
+                    task.resolution_note
+                    if task.responsible_party
+                    is OnboardingTaskResponsibility.EMPLOYEE
+                    else None
+                ),
                 completed_at=task.completed_at,
                 version=task.version,
                 can_update=(
@@ -286,6 +292,7 @@ async def update_employee_portal_task_status_endpoint(
                 responsible_party=task.responsible_party,
                 status=task.status,
                 blocked_reason=task.blocked_reason,
+                resolution_note=task.resolution_note,
                 completed_at=task.completed_at,
                 version=task.version,
                 can_update=False,
@@ -458,6 +465,7 @@ async def update_onboarding_task_status_endpoint(
                 expected_version=payload.expected_version,
                 target_status=payload.target_status,
                 blocked_reason=payload.blocked_reason,
+                resolution_note=payload.resolution_note,
             ),
         )
         return (
