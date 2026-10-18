@@ -5,6 +5,7 @@ import { ApiError } from "@/lib/api";
 import { OnboardingTaskActivity } from "@/components/onboarding/onboarding-task-activity";
 import {
   useEmployeePortalOnboarding,
+  useUploadEmployeeOnboardingTaskDocument,
   useUpdateEmployeePortalTaskStatus,
 } from "@/lib/api/hooks/onboarding";
 import type {
@@ -66,6 +67,12 @@ function TaskItem({
   const [showHelpForm, setShowHelpForm] = useState(false);
   const [helpReason, setHelpReason] = useState("");
   const [helpError, setHelpError] = useState<string | null>(null);
+  const uploadDocument = useUploadEmployeeOnboardingTaskDocument();
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const hasAvailableDocument = task.documents.some(
+    (document) => document.status === "available",
+  );
+  const canComplete = !task.requires_document_upload || hasAvailableDocument;
 
   function requestHelp() {
     const reason = helpReason.trim();
@@ -78,6 +85,18 @@ function TaskItem({
     onUpdate(task, "blocked", reason);
     setShowHelpForm(false);
     setHelpReason("");
+  }
+
+  function uploadFile(file: File | undefined) {
+    if (!file || !task.can_update) return;
+    setUploadError(null);
+    uploadDocument.mutate({ taskId: task.id, file }, {
+      onError: (error) => setUploadError(
+        error instanceof Error
+          ? error.message
+          : "The file could not be uploaded. Please try again.",
+      ),
+    });
   }
 
   return (
@@ -121,6 +140,52 @@ function TaskItem({
             )}
           </div>
         )}
+        {task.responsible_party === "employee" && task.requires_document_upload && (
+          <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50 p-4">
+            <p className="text-sm font-semibold text-blue-950">Document required for this step</p>
+            <p className="mt-1 text-sm text-blue-900">
+              Upload a PDF or DOCX file up to 10 MB. MindHire scans it automatically before you can complete this step.
+            </p>
+            {task.documents.length > 0 && (
+              <ul className="mt-3 space-y-2" aria-label="Uploaded task documents">
+                {task.documents.map((document) => (
+                  <li key={document.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-white px-3 py-2 text-sm">
+                    <span className="min-w-0 truncate font-medium text-gray-800">{document.original_filename}</span>
+                    <span className={`shrink-0 text-xs font-medium ${document.status === "available" ? "text-emerald-800" : document.status === "quarantined" || document.status === "rejected" ? "text-red-800" : "text-blue-800"}`}>
+                      {document.status === "available"
+                        ? "Scan complete"
+                        : document.status === "quarantined"
+                          ? "Blocked by security scan"
+                          : document.status === "rejected"
+                            ? "Upload could not be verified"
+                            : document.status === "pending_upload"
+                              ? "Upload not finished"
+                              : document.status === "uploaded"
+                                ? "Waiting for security scan"
+                                : "Scanning…"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {task.can_update && !hasAvailableDocument && (
+              <label className="mt-3 inline-flex min-h-10 cursor-pointer items-center justify-center rounded-lg bg-sr-text-blue px-4 py-2 text-sm font-semibold text-white hover:opacity-90 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60">
+                <span>{uploadDocument.isPending ? "Uploading and scanning…" : task.documents.some((document) => document.status === "pending_upload") ? "Retry upload" : task.documents.length > 0 ? "Upload another file" : "Choose file to upload"}</span>
+                <input
+                  type="file"
+                  accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  disabled={uploadDocument.isPending}
+                  onChange={(event) => {
+                    uploadFile(event.currentTarget.files?.[0]);
+                    event.currentTarget.value = "";
+                  }}
+                  className="sr-only"
+                />
+              </label>
+            )}
+            {uploadError && <p className="mt-2 text-sm text-red-800" role="alert">{uploadError}</p>}
+          </div>
+        )}
         {task.responsible_party === "employee" && (
           <OnboardingTaskActivity
             taskId={task.id}
@@ -133,7 +198,7 @@ function TaskItem({
               {!showHelpForm && (
                 <button
                   type="button"
-                  disabled={updatePending}
+                  disabled={updatePending || (task.status === "in_progress" && !canComplete)}
                   onClick={() => onUpdate(
                     task,
                     task.status === "not_started" ? "in_progress" : "completed",
@@ -146,6 +211,11 @@ function TaskItem({
                       ? "Start this task"
                       : "Mark as complete"}
                 </button>
+              )}
+              {task.status === "in_progress" && !canComplete && (
+                <p className="w-full text-xs text-gray-600">
+                  Upload the requested file and wait for the scan to finish before completing this step.
+                </p>
               )}
               <button
                 type="button"

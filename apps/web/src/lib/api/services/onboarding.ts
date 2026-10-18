@@ -2,12 +2,16 @@ import { get, patch, post, type RequestOptions } from "../client";
 import type {
   ApplicationOnboardingResponse,
   AssignOnboardingTaskRequest,
+  CreateOnboardingTaskDocumentRequest,
   CreateOnboardingTemplateRequest,
   EmployeePortalOnboardingResponse,
   ExpectedInstanceVersionRequest,
   OnboardingInstanceResponse,
   OnboardingOverviewResponse,
   OnboardingTaskActivityResponse,
+  OnboardingTaskDocumentDownloadAuthorizationResponse,
+  OnboardingTaskDocumentResponse,
+  OnboardingTaskDocumentUploadAuthorizationResponse,
   OnboardingTaskResponse,
   OnboardingTaskWorklistResponse,
   OnboardingTaskWorklistView,
@@ -89,6 +93,84 @@ export function getEmployeePortalOnboarding(options?: RequestOptions) {
   return get<EmployeePortalOnboardingResponse>(
     "/employee-portal/me/onboarding",
     options,
+  );
+}
+
+export async function uploadEmployeeOnboardingTaskDocument(
+  taskId: string,
+  file: File,
+): Promise<OnboardingTaskDocumentResponse> {
+  const extension = file.name.toLowerCase().split(".").at(-1);
+  const extensionContentType = extension === "pdf"
+    ? "application/pdf"
+    : extension === "docx"
+      ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      : "";
+  const contentType = file.type === "application/pdf" ||
+    file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ? file.type
+    : extensionContentType;
+  if (
+    contentType !== "application/pdf" &&
+    contentType !== "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  ) {
+    throw new Error("Choose a PDF or DOCX file.");
+  }
+  if (file.size < 1 || file.size > 10 * 1024 * 1024) {
+    throw new Error("The file must be smaller than 10 MB.");
+  }
+
+  const checksumBuffer = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  const checksumSha256 = Array.from(new Uint8Array(checksumBuffer))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+  const request: CreateOnboardingTaskDocumentRequest = {
+    original_filename: file.name,
+    declared_content_type: contentType,
+    expected_byte_size: file.size,
+    checksum_sha256: checksumSha256,
+  };
+  const document = await post<OnboardingTaskDocumentResponse>(
+    `/employee-portal/me/onboarding/tasks/${taskId}/documents`,
+    request,
+    { idempotencyKey: crypto.randomUUID() },
+  );
+  const authorization = await post<OnboardingTaskDocumentUploadAuthorizationResponse>(
+    `/onboarding-task-documents/${document.id}/upload-authorizations`,
+    {},
+  );
+  const uploadResponse = await fetch(authorization.upload_url, {
+    method: "PUT",
+    headers: authorization.required_headers,
+    body: file,
+  });
+  if (!uploadResponse.ok) {
+    throw new Error("The file could not be uploaded. Please try again.");
+  }
+  return post<OnboardingTaskDocumentResponse>(
+    `/onboarding-task-documents/${document.id}/confirm-upload`,
+    {},
+    { idempotencyKey: crypto.randomUUID() },
+  );
+}
+
+export function getOnboardingTaskDocumentDownloadAuthorization(
+  documentId: string,
+  signal?: AbortSignal,
+) {
+  return get<OnboardingTaskDocumentDownloadAuthorizationResponse>(
+    `/onboarding-task-documents/${documentId}/download-authorizations`,
+    { signal },
+  );
+}
+
+export function getOnboardingTaskDocumentPreviewAuthorization(
+  documentId: string,
+  signal?: AbortSignal,
+) {
+  return get<OnboardingTaskDocumentDownloadAuthorizationResponse>(
+    `/onboarding-task-documents/${documentId}/preview-authorizations`,
+    { signal },
   );
 }
 

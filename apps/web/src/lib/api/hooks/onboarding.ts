@@ -12,6 +12,8 @@ import {
   getApplicationOnboarding,
   getEmployeePortalOnboarding,
   getOnboardingTaskActivity,
+  getOnboardingTaskDocumentDownloadAuthorization,
+  getOnboardingTaskDocumentPreviewAuthorization,
   listOnboardingOverview,
   listOnboardingTaskWorklist,
   listOnboardingTemplates,
@@ -19,6 +21,7 @@ import {
   updateOnboardingTaskDueDate,
   updateEmployeePortalTaskStatus,
   updateOnboardingTaskStatus,
+  uploadEmployeeOnboardingTaskDocument,
 } from "../services/onboarding";
 import type {
   AssignOnboardingTaskRequest,
@@ -71,6 +74,14 @@ export function useOnboardingTaskWorklist(
     queryKey: onboardingQueryKeys.taskWorklistList(params),
     queryFn: ({ signal }) => listOnboardingTaskWorklist(params, { signal }),
     enabled: status === "authenticated" && enabled,
+    refetchInterval: (query) =>
+      query.state.data?.items.some((item) =>
+        item.task.documents.some((document) =>
+          document.status === "uploaded" || document.status === "scanning",
+        ),
+      )
+        ? 2_000
+        : false,
   });
 }
 
@@ -89,6 +100,14 @@ export function useApplicationOnboarding(applicationId: string, enabled = true) 
     queryKey: onboardingQueryKeys.application(applicationId),
     queryFn: ({ signal }) => getApplicationOnboarding(applicationId, { signal }),
     enabled: status === "authenticated" && enabled && Boolean(applicationId),
+    refetchInterval: (query) =>
+      query.state.data?.tasks.some((task) =>
+        task.documents.some((document) =>
+          document.status === "uploaded" || document.status === "scanning",
+        ),
+      )
+        ? 2_000
+        : false,
   });
 }
 
@@ -107,6 +126,55 @@ export function useEmployeePortalOnboarding(enabled = true) {
     queryKey: onboardingQueryKeys.employeePortal(),
     queryFn: ({ signal }) => getEmployeePortalOnboarding({ signal }),
     enabled: status === "authenticated" && enabled,
+    refetchInterval: (query) =>
+      query.state.data?.tasks.some((task) =>
+        task.documents.some((document) =>
+          document.status === "uploaded" ||
+          document.status === "scanning",
+        ),
+      )
+        ? 2_000
+        : false,
+  });
+}
+
+export function useUploadEmployeeOnboardingTaskDocument() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, file }: { taskId: string; file: File }) =>
+      uploadEmployeeOnboardingTaskDocument(taskId, file),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: onboardingQueryKeys.employeePortal(),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: onboardingQueryKeys.overview(),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: onboardingQueryKeys.taskWorklist(),
+        }),
+      ]);
+    },
+    onError: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: onboardingQueryKeys.employeePortal(),
+      });
+    },
+  });
+}
+
+export function useOnboardingTaskDocumentDownload() {
+  return useMutation({
+    mutationFn: (documentId: string) =>
+      getOnboardingTaskDocumentDownloadAuthorization(documentId),
+  });
+}
+
+export function useOnboardingTaskDocumentPreview() {
+  return useMutation({
+    mutationFn: (documentId: string) =>
+      getOnboardingTaskDocumentPreviewAuthorization(documentId),
   });
 }
 
