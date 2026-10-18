@@ -10,6 +10,7 @@ from app.api.v1.schemas.employee_records import EmployeePortalProfileResponse
 from app.core.authorization import Role
 from app.domains.onboarding.enums import (
     OnboardingInstanceStatus,
+    OnboardingTaskDocumentStatus,
     OnboardingTaskEventType,
     OnboardingTaskResponsibility,
     OnboardingTaskStatus,
@@ -29,6 +30,7 @@ class OnboardingTemplateTaskRequest(BaseModel):
     responsible_party: OnboardingTaskResponsibility = (
         OnboardingTaskResponsibility.WORKSPACE
     )
+    requires_document_upload: bool = False
 
     @model_validator(mode="after")
     def validate_responsible_party(self) -> "OnboardingTemplateTaskRequest":
@@ -40,6 +42,11 @@ class OnboardingTemplateTaskRequest(BaseModel):
             raise ValueError(
                 "Employee-owned tasks cannot have a default workspace assignee role."
             )
+        if (
+            self.requires_document_upload
+            and self.responsible_party is not OnboardingTaskResponsibility.EMPLOYEE
+        ):
+            raise ValueError("Only employee-owned tasks can request file uploads.")
         return self
 
 
@@ -163,6 +170,7 @@ class OnboardingTemplateTaskResponse(BaseModel):
     due_offset_days: int | None
     default_assignee_role: Role | None
     responsible_party: OnboardingTaskResponsibility
+    requires_document_upload: bool
 
 
 class OnboardingTemplateListItemResponse(OnboardingTemplateResponse):
@@ -192,6 +200,23 @@ class OnboardingInstanceResponse(BaseModel):
     version: int
 
 
+class OnboardingTaskDocumentResponse(BaseModel):
+    """Safe metadata for an onboarding attachment, without storage credentials."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    onboarding_task_id: UUID
+    original_filename: str
+    declared_content_type: str
+    expected_byte_size: int
+    status: OnboardingTaskDocumentStatus
+    uploaded_at: datetime | None
+    scan_started_at: datetime | None
+    scan_completed_at: datetime | None
+    created_at: datetime
+
+
 class OnboardingTaskResponse(BaseModel):
     """Private operational data for one onboarding task."""
 
@@ -205,11 +230,68 @@ class OnboardingTaskResponse(BaseModel):
     due_at: datetime | None
     assignee_user_id: UUID | None
     responsible_party: OnboardingTaskResponsibility
+    requires_document_upload: bool
     status: OnboardingTaskStatus
     completed_at: datetime | None
     blocked_reason: str | None
     resolution_note: str | None
     version: int
+    documents: list[OnboardingTaskDocumentResponse] = Field(default_factory=list)
+
+
+class OnboardingTaskDocumentCreateRequest(BaseModel):
+    """Immutable upload metadata supplied by the authenticated employee."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    original_filename: str = Field(min_length=1, max_length=255)
+    declared_content_type: Literal[
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ]
+    expected_byte_size: int = Field(ge=1, le=10 * 1024 * 1024)
+    checksum_sha256: str = Field(
+        min_length=64,
+        max_length=64,
+        pattern=r"^[a-fA-F0-9]{64}$",
+    )
+
+    @model_validator(mode="after")
+    def validate_upload_metadata(self) -> "OnboardingTaskDocumentCreateRequest":
+        """Keep path and control characters out of stored filenames."""
+        if "/" in self.original_filename or "\\" in self.original_filename:
+            raise ValueError("Document filename must not contain a path.")
+        if any(ord(character) < 32 for character in self.original_filename):
+            raise ValueError("Document filename contains invalid characters.")
+        self.checksum_sha256 = self.checksum_sha256.lower()
+        return self
+
+
+class OnboardingTaskDocumentUploadAuthorizationRequest(BaseModel):
+    """Empty body; all upload parameters come from the persisted intent."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class OnboardingTaskDocumentConfirmUploadRequest(BaseModel):
+    """Empty body; object storage verifies uploaded metadata server-side."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class OnboardingTaskDocumentUploadAuthorizationResponse(BaseModel):
+    """Short-lived URL for direct upload to private object storage."""
+
+    upload_url: str = Field(min_length=1)
+    required_headers: dict[str, str]
+    expires_at: datetime
+
+
+class OnboardingTaskDocumentDownloadAuthorizationResponse(BaseModel):
+    """Short-lived URL for a scanned onboarding attachment."""
+
+    url: str = Field(min_length=1)
+    expires_at: datetime
 
 
 class OnboardingTaskWorklistAssigneeResponse(BaseModel):
@@ -276,12 +358,14 @@ class EmployeePortalTaskResponse(BaseModel):
     description: str | None
     due_at: datetime | None
     responsible_party: OnboardingTaskResponsibility
+    requires_document_upload: bool
     status: OnboardingTaskStatus
     blocked_reason: str | None
     resolution_note: str | None
     completed_at: datetime | None
     version: int
     can_update: bool
+    documents: list[OnboardingTaskDocumentResponse] = Field(default_factory=list)
 
 
 class UpdateEmployeePortalTaskStatusRequest(BaseModel):

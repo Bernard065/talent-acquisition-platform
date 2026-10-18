@@ -18,6 +18,7 @@ from app.db.models.onboarding import (
     OnboardingInstance,
     OnboardingInstanceHistory,
     OnboardingTask,
+    OnboardingTaskDocument,
     OnboardingTaskHistory,
     OnboardingTemplate,
     OnboardingTemplateTask,
@@ -29,6 +30,7 @@ from app.domains.notifications.enums import NotificationEventType
 from app.domains.onboarding.enums import (
     OnboardingInstanceEventType,
     OnboardingInstanceStatus,
+    OnboardingTaskDocumentStatus,
     OnboardingTaskEventType,
     OnboardingTaskResponsibility,
     OnboardingTaskStatus,
@@ -767,6 +769,7 @@ class OnboardingTemplateTaskDefinition:
     responsible_party: OnboardingTaskResponsibility = (
         OnboardingTaskResponsibility.WORKSPACE
     )
+    requires_document_upload: bool = False
 
     def __post_init__(self) -> None:
         normalized_title = self.title.strip()
@@ -804,6 +807,14 @@ class OnboardingTemplateTaskDefinition:
         ):
             raise OnboardingValidationError(
                 "Employee-owned tasks cannot have a default workspace assignee role."
+            )
+
+        if (
+            self.requires_document_upload
+            and self.responsible_party is not OnboardingTaskResponsibility.EMPLOYEE
+        ):
+            raise OnboardingValidationError(
+                "Only employee-owned tasks can request a file upload."
             )
 
         object.__setattr__(self, "title", normalized_title)
@@ -1011,6 +1022,7 @@ async def create_onboarding_template(
                     due_offset_days=task.due_offset_days,
                     default_assignee_role=task.default_assignee_role,
                     responsible_party=task.responsible_party,
+                    requires_document_upload=task.requires_document_upload,
                 )
                 for position, task in enumerate(command.tasks, start=1)
             ]
@@ -1137,6 +1149,7 @@ async def start_onboarding(
                         else None
                     ),
                     "responsible_party": task.responsible_party.value,
+                    "requires_document_upload": task.requires_document_upload,
                 }
                 for task in template_tasks
             ],
@@ -1167,6 +1180,7 @@ async def start_onboarding(
                     else None
                 ),
                 responsible_party=template_task.responsible_party,
+                requires_document_upload=template_task.requires_document_upload,
                 status=OnboardingTaskStatus.NOT_STARTED,
                 assignee_user_id=(
                     users_by_role[template_task.default_assignee_role][0]
@@ -1645,6 +1659,13 @@ async def update_onboarding_task_status(
                 "A response can be added only when resolving an employee blocker."
             )
 
+        await _require_required_onboarding_document(
+            session,
+            context=context,
+            task=task,
+            target_status=command.target_status,
+        )
+
         await _apply_onboarding_task_status_update(
             session,
             context=context,
@@ -1715,6 +1736,13 @@ async def update_employee_portal_task_status(
                 "Only People Operations can reopen a blocked onboarding task."
             )
 
+        await _require_required_onboarding_document(
+            session,
+            context=context,
+            task=task,
+            target_status=command.target_status,
+        )
+
         await _apply_onboarding_task_status_update(
             session,
             context=context,
@@ -1723,6 +1751,34 @@ async def update_employee_portal_task_status(
         )
 
     return task
+
+
+async def _require_required_onboarding_document(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    task: OnboardingTask,
+    target_status: OnboardingTaskStatus,
+) -> None:
+    """Require at least one successfully scanned file before task completion."""
+    if (
+        target_status is not OnboardingTaskStatus.COMPLETED
+        or not task.requires_document_upload
+    ):
+        return
+
+    available_document_id = await session.scalar(
+        select(OnboardingTaskDocument.id).where(
+            OnboardingTaskDocument.tenant_id == context.tenant_id,
+            OnboardingTaskDocument.onboarding_task_id == task.id,
+            OnboardingTaskDocument.status
+            == OnboardingTaskDocumentStatus.AVAILABLE,
+        ).limit(1)
+    )
+    if available_document_id is None:
+        raise OnboardingValidationError(
+            "Upload a document and wait for its security scan before completing this task."
+        )
 
 
 async def _load_instance_for_update(

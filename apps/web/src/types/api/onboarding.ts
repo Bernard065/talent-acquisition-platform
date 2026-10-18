@@ -25,6 +25,7 @@ export interface OnboardingTemplateTaskRequest {
   due_offset_days: number | null;
   default_assignee_role: Role | null;
   responsible_party: OnboardingTaskResponsibility;
+  requires_document_upload: boolean;
 }
 
 export interface CreateOnboardingTemplateRequest {
@@ -60,11 +61,13 @@ export interface OnboardingTaskResponse {
   due_at: string | null;
   assignee_user_id: string | null;
   responsible_party: OnboardingTaskResponsibility;
+  requires_document_upload: boolean;
   status: OnboardingTaskStatus;
   blocked_reason: string | null;
   resolution_note: string | null;
   completed_at: string | null;
   version: number;
+  documents: OnboardingTaskDocumentResponse[];
 }
 
 export interface OnboardingTaskActivityItem {
@@ -146,12 +149,55 @@ export interface EmployeePortalTaskResponse {
   description: string | null;
   due_at: string | null;
   responsible_party: OnboardingTaskResponsibility;
+  requires_document_upload: boolean;
   status: OnboardingTaskStatus;
   blocked_reason: string | null;
   resolution_note: string | null;
   completed_at: string | null;
   version: number;
   can_update: boolean;
+  documents: OnboardingTaskDocumentResponse[];
+}
+
+export type OnboardingTaskDocumentStatus =
+  | "pending_upload"
+  | "uploaded"
+  | "scanning"
+  | "available"
+  | "quarantined"
+  | "rejected";
+
+export interface OnboardingTaskDocumentResponse {
+  id: string;
+  onboarding_task_id: string;
+  original_filename: string;
+  declared_content_type: string;
+  expected_byte_size: number;
+  status: OnboardingTaskDocumentStatus;
+  uploaded_at: string | null;
+  scan_started_at: string | null;
+  scan_completed_at: string | null;
+  created_at: string;
+}
+
+export interface CreateOnboardingTaskDocumentRequest {
+  original_filename: string;
+  declared_content_type:
+    | "application/pdf"
+    | "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  expected_byte_size: number;
+  checksum_sha256: string;
+}
+
+export interface OnboardingTaskDocumentUploadAuthorizationResponse {
+  upload_url: string;
+  required_headers: Record<string, string>;
+  expires_at: string;
+}
+
+export interface OnboardingTaskDocumentDownloadAuthorizationResponse {
+  url: string;
+  expires_at: string;
 }
 
 export interface EmployeePortalOnboardingResponse {
