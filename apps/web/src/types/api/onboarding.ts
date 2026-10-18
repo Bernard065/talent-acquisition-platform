@@ -9,6 +9,7 @@ export type OnboardingTaskStatus =
   | "blocked"
   | "cancelled";
 export type OnboardingTaskResponsibility = "workspace" | "employee";
+export type OnboardingTaskWorklistView = "open" | "due_soon" | "overdue" | "completed";
 export type OnboardingTaskEventType =
   | "created"
   | "assigned"
@@ -112,6 +113,31 @@ export interface OnboardingOverviewResponse {
   limit: number;
   active_plan_count: number;
   overdue_task_count: number;
+}
+
+export interface OnboardingTaskWorklistItemResponse {
+  task: OnboardingTaskResponse;
+  application_id: string;
+  instance_status: OnboardingInstanceStatus;
+  employee_name: string;
+  job_title: string;
+  assignee_display_name: string | null;
+  step_number: number;
+  can_update: boolean;
+}
+
+export interface OnboardingTaskWorklistAssigneeResponse {
+  id: string;
+  display_name: string;
+}
+
+export interface OnboardingTaskWorklistResponse {
+  items: OnboardingTaskWorklistItemResponse[];
+  assignees: OnboardingTaskWorklistAssigneeResponse[];
+  total: number;
+  page: number;
+  limit: number;
+  view: OnboardingTaskWorklistView;
 }
 
 export interface EmployeePortalTaskResponse {

@@ -6,6 +6,7 @@ from uuid import UUID
 
 from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.authorization import Role, TenantContext
@@ -31,6 +32,7 @@ from app.domains.onboarding.enums import (
     OnboardingTaskEventType,
     OnboardingTaskResponsibility,
     OnboardingTaskStatus,
+    OnboardingTaskWorklistView,
 )
 from app.domains.onboarding.transitions import (
     validate_instance_transition,
@@ -70,6 +72,7 @@ _ONBOARDING_WRITE_ROLES = frozenset(
 _MAX_NAME_LENGTH = 200
 _MAX_DESCRIPTION_LENGTH = 5_000
 _MAX_BLOCK_REASON_LENGTH = 2_000
+_ONBOARDING_TASK_DUE_SOON_WINDOW = timedelta(days=7)
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +86,20 @@ class OnboardingTaskActivityItem:
     note: str | None
     actor_display_name: str
     occurred_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class OnboardingTaskWorklistItem:
+    """A workspace task plus minimal employee and assignment context."""
+
+    task: OnboardingTask
+    application_id: UUID
+    instance_status: OnboardingInstanceStatus
+    employee_name: str
+    job_title: str
+    assignee_display_name: str | None
+    step_number: int
+    can_update: bool
 
 
 async def list_onboarding_overview(
@@ -236,6 +253,260 @@ async def list_onboarding_overview(
         )
     )
     return items, total or 0, active_count or 0, overdue_count or 0
+
+
+async def list_onboarding_task_worklist(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    page: int,
+    limit: int,
+    view: OnboardingTaskWorklistView = OnboardingTaskWorklistView.OPEN,
+    query: str | None = None,
+    assignee_user_id: UUID | None = None,
+    unassigned_only: bool = False,
+) -> tuple[
+    list[OnboardingTaskWorklistItem],
+    list[tuple[UUID, str]],
+    int,
+]:
+    """Return a paginated, tenant-scoped task queue for onboarding staff."""
+    _require_role(context, _ONBOARDING_WRITE_ROLES)
+    if unassigned_only and assignee_user_id is not None:
+        raise OnboardingValidationError(
+            "Choose either an assignee or unassigned tasks, not both."
+        )
+
+    now = datetime.now(UTC)
+    filters: list[ColumnElement[bool]] = [
+        OnboardingTask.tenant_id == context.tenant_id,
+        OnboardingInstance.tenant_id == context.tenant_id,
+        OnboardingInstance.status != OnboardingInstanceStatus.CANCELLED,
+    ]
+    active_task_statuses = {
+        OnboardingTaskStatus.COMPLETED,
+        OnboardingTaskStatus.CANCELLED,
+    }
+    if view is OnboardingTaskWorklistView.COMPLETED:
+        filters.append(OnboardingTask.status == OnboardingTaskStatus.COMPLETED)
+    else:
+        filters.extend(
+            (
+                OnboardingInstance.status == OnboardingInstanceStatus.ACTIVE,
+                OnboardingTask.status.not_in(active_task_statuses),
+            )
+        )
+        if view is OnboardingTaskWorklistView.DUE_SOON:
+            filters.extend(
+                (
+                    OnboardingTask.due_at >= now,
+                    OnboardingTask.due_at <= now + _ONBOARDING_TASK_DUE_SOON_WINDOW,
+                )
+            )
+        elif view is OnboardingTaskWorklistView.OVERDUE:
+            filters.append(OnboardingTask.due_at < now)
+
+    if assignee_user_id is not None:
+        filters.append(OnboardingTask.assignee_user_id == assignee_user_id)
+    elif unassigned_only:
+        filters.append(OnboardingTask.assignee_user_id.is_(None))
+
+    if query and query.strip():
+        search_term = f"%{query.strip()}%"
+        filters.append(
+            or_(
+                OnboardingTask.title.ilike(search_term),
+                Candidate.full_name.ilike(search_term),
+                Employee.job_title.ilike(search_term),
+            )
+        )
+
+    common_joins = (
+        select(OnboardingTask)
+        .join(
+            OnboardingInstance,
+            and_(
+                OnboardingInstance.id == OnboardingTask.onboarding_instance_id,
+                OnboardingInstance.tenant_id == OnboardingTask.tenant_id,
+            ),
+        )
+        .join(
+            Application,
+            and_(
+                Application.id == OnboardingInstance.application_id,
+                Application.tenant_id == OnboardingInstance.tenant_id,
+            ),
+        )
+        .join(
+            Candidate,
+            and_(
+                Candidate.id == Application.candidate_id,
+                Candidate.tenant_id == Application.tenant_id,
+            ),
+        )
+        .join(
+            Employee,
+            and_(
+                Employee.application_id == Application.id,
+                Employee.tenant_id == Application.tenant_id,
+            ),
+        )
+    )
+    count = await session.scalar(
+        select(func.count(OnboardingTask.id))
+        .select_from(OnboardingTask)
+        .join(
+            OnboardingInstance,
+            and_(
+                OnboardingInstance.id == OnboardingTask.onboarding_instance_id,
+                OnboardingInstance.tenant_id == OnboardingTask.tenant_id,
+            ),
+        )
+        .join(
+            Application,
+            and_(
+                Application.id == OnboardingInstance.application_id,
+                Application.tenant_id == OnboardingInstance.tenant_id,
+            ),
+        )
+        .join(
+            Candidate,
+            and_(
+                Candidate.id == Application.candidate_id,
+                Candidate.tenant_id == Application.tenant_id,
+            ),
+        )
+        .join(
+            Employee,
+            and_(
+                Employee.application_id == Application.id,
+                Employee.tenant_id == Application.tenant_id,
+            ),
+        )
+        .where(*filters)
+    )
+    assignee = aliased(User)
+    result = await session.execute(
+        common_joins.with_only_columns(
+            OnboardingTask,
+            OnboardingInstance.status,
+            Application.id,
+            Candidate.full_name,
+            Employee.job_title,
+            assignee.display_name,
+            OnboardingTemplateTask.position,
+        )
+        .join(
+            OnboardingTemplateTask,
+            OnboardingTemplateTask.id == OnboardingTask.template_task_id,
+        )
+        .outerjoin(
+            assignee,
+            and_(
+                assignee.id == OnboardingTask.assignee_user_id,
+                assignee.tenant_id == OnboardingTask.tenant_id,
+            ),
+        )
+        .where(*filters)
+        .order_by(
+            (
+                OnboardingTask.completed_at.desc().nullslast()
+                if view is OnboardingTaskWorklistView.COMPLETED
+                else OnboardingTask.due_at.asc().nullslast()
+            ),
+            OnboardingTask.created_at,
+            OnboardingTask.id,
+        )
+        .offset((page - 1) * limit)
+        .limit(limit)
+    )
+    rows = result.all()
+
+    instance_ids = {row[0].onboarding_instance_id for row in rows}
+    can_update_by_task_id: dict[UUID, bool] = {}
+    if instance_ids:
+        task_states = await session.execute(
+            select(
+                OnboardingTask.onboarding_instance_id,
+                OnboardingTask.id,
+                OnboardingTask.status,
+                OnboardingTemplateTask.position,
+            )
+            .join(
+                OnboardingTemplateTask,
+                OnboardingTemplateTask.id == OnboardingTask.template_task_id,
+            )
+            .where(
+                OnboardingTask.tenant_id == context.tenant_id,
+                OnboardingTask.onboarding_instance_id.in_(instance_ids),
+            )
+            .order_by(
+                OnboardingTask.onboarding_instance_id,
+                OnboardingTemplateTask.position,
+            )
+        )
+        instance_has_blocker: dict[UUID, bool] = {}
+        for instance_id, task_id, task_status, _position in task_states.all():
+            can_update_by_task_id[task_id] = (
+                not instance_has_blocker.get(instance_id, False)
+                and task_status
+                not in {
+                    OnboardingTaskStatus.COMPLETED,
+                    OnboardingTaskStatus.CANCELLED,
+                }
+            )
+            if task_status is not OnboardingTaskStatus.COMPLETED:
+                instance_has_blocker[instance_id] = True
+
+    worklist_items = [
+        OnboardingTaskWorklistItem(
+            task=task,
+            application_id=application_id,
+            instance_status=instance_status,
+            employee_name=employee_name,
+            job_title=job_title,
+            assignee_display_name=assignee_display_name,
+            step_number=step_number,
+            can_update=(
+                instance_status is OnboardingInstanceStatus.ACTIVE
+                and can_update_by_task_id.get(task.id, False)
+            ),
+        )
+        for (
+            task,
+            instance_status,
+            application_id,
+            employee_name,
+            job_title,
+            assignee_display_name,
+            step_number,
+        ) in rows
+    ]
+
+    assignee_rows = await session.execute(
+        select(User.id, User.display_name)
+        .join(
+            OnboardingTask,
+            and_(
+                OnboardingTask.assignee_user_id == User.id,
+                OnboardingTask.tenant_id == User.tenant_id,
+            ),
+        )
+        .join(
+            OnboardingInstance,
+            and_(
+                OnboardingInstance.id == OnboardingTask.onboarding_instance_id,
+                OnboardingInstance.tenant_id == OnboardingTask.tenant_id,
+            ),
+        )
+        .where(
+            User.tenant_id == context.tenant_id,
+            OnboardingInstance.status != OnboardingInstanceStatus.CANCELLED,
+        )
+        .distinct()
+        .order_by(User.display_name, User.id)
+    )
+    return worklist_items, list(assignee_rows.tuples()), count or 0
 
 
 async def list_active_onboarding_templates(

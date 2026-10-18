@@ -23,6 +23,9 @@ from app.api.v1.schemas.onboarding import (
     OnboardingTaskActivityItemResponse,
     OnboardingTaskActivityResponse,
     OnboardingTaskResponse,
+    OnboardingTaskWorklistAssigneeResponse,
+    OnboardingTaskWorklistItemResponse,
+    OnboardingTaskWorklistResponse,
     OnboardingTemplateListItemResponse,
     OnboardingTemplateListResponse,
     OnboardingTemplateResponse,
@@ -37,6 +40,7 @@ from app.domains.onboarding.enums import (
     OnboardingInstanceStatus,
     OnboardingTaskResponsibility,
     OnboardingTaskStatus,
+    OnboardingTaskWorklistView,
 )
 from app.services.idempotency import IdempotencyResult, execute_idempotently
 from app.services.onboarding import (
@@ -52,6 +56,7 @@ from app.services.onboarding import (
     list_active_onboarding_templates,
     list_onboarding_overview,
     list_onboarding_task_activity,
+    list_onboarding_task_worklist,
     start_onboarding,
     update_employee_portal_task_status,
     update_onboarding_task_due_date,
@@ -69,6 +74,62 @@ def _private_response(result: IdempotencyResult) -> JSONResponse:
     response = idempotency_response(result)
     response.headers["Cache-Control"] = "private, no-store"
     return response
+
+
+@router.get(
+    "/onboarding-tasks",
+    response_model=OnboardingTaskWorklistResponse,
+    summary="List onboarding tasks for workspace follow-up",
+)
+async def list_onboarding_task_worklist_endpoint(
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+    page: Annotated[int, Query(ge=1)] = 1,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    view: OnboardingTaskWorklistView = OnboardingTaskWorklistView.OPEN,
+    query: Annotated[str | None, Query(max_length=200)] = None,
+    assignee_user_id: UUID | None = None,
+    unassigned_only: bool = False,
+) -> OnboardingTaskWorklistResponse:
+    """Search and paginate task-level onboarding work for the tenant."""
+    items, assignees, total = await list_onboarding_task_worklist(
+        session,
+        context=context,
+        page=page,
+        limit=limit,
+        view=view,
+        query=query,
+        assignee_user_id=assignee_user_id,
+        unassigned_only=unassigned_only,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return OnboardingTaskWorklistResponse(
+        items=[
+            OnboardingTaskWorklistItemResponse(
+                task=OnboardingTaskResponse.model_validate(item.task),
+                application_id=item.application_id,
+                instance_status=item.instance_status,
+                employee_name=item.employee_name,
+                job_title=item.job_title,
+                assignee_display_name=item.assignee_display_name,
+                step_number=item.step_number,
+                can_update=item.can_update,
+            )
+            for item in items
+        ],
+        assignees=[
+            OnboardingTaskWorklistAssigneeResponse(
+                id=assignee_id,
+                display_name=display_name,
+            )
+            for assignee_id, display_name in assignees
+        ],
+        total=total,
+        page=page,
+        limit=limit,
+        view=view,
+    )
 
 
 @router.get(

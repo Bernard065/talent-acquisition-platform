@@ -13,6 +13,7 @@ from app.domains.onboarding.enums import (
     OnboardingTaskEventType,
     OnboardingTaskResponsibility,
     OnboardingTaskStatus,
+    OnboardingTaskWorklistView,
 )
 
 
@@ -209,6 +210,37 @@ class OnboardingTaskResponse(BaseModel):
     blocked_reason: str | None
     resolution_note: str | None
     version: int
+
+
+class OnboardingTaskWorklistAssigneeResponse(BaseModel):
+    """A current assignee that can be used to filter the worklist."""
+
+    id: UUID
+    display_name: str
+
+
+class OnboardingTaskWorklistItemResponse(BaseModel):
+    """A task row joined to safe new-hire and assignment context."""
+
+    task: OnboardingTaskResponse
+    application_id: UUID
+    instance_status: OnboardingInstanceStatus
+    employee_name: str
+    job_title: str
+    assignee_display_name: str | None
+    step_number: int
+    can_update: bool
+
+
+class OnboardingTaskWorklistResponse(BaseModel):
+    """Paginated workspace task worklist and available assignee filters."""
+
+    items: list[OnboardingTaskWorklistItemResponse]
+    assignees: list[OnboardingTaskWorklistAssigneeResponse]
+    total: int
+    page: int
+    limit: int
+    view: OnboardingTaskWorklistView
 
 
 class OnboardingTaskActivityItemResponse(BaseModel):

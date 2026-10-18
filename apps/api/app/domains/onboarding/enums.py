@@ -21,6 +21,15 @@ class OnboardingTaskStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class OnboardingTaskWorklistView(StrEnum):
+    """Saved operational slices available in the workspace task worklist."""
+
+    OPEN = "open"
+    DUE_SOON = "due_soon"
+    OVERDUE = "overdue"
+    COMPLETED = "completed"
+
+
 class OnboardingTaskResponsibility(StrEnum):
     """Identify whether the employee or workspace team owns a task."""
 
