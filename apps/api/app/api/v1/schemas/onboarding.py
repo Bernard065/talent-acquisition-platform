@@ -1,6 +1,6 @@
 """Strict HTTP contracts for private onboarding workflow operations."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
@@ -69,6 +69,15 @@ class AssignOnboardingTaskRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     assignee_user_id: UUID
+    expected_task_version: int = Field(ge=1)
+
+
+class UpdateOnboardingTaskDueDateRequest(BaseModel):
+    """Input for changing or clearing an onboarding task's due date."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    due_date: date | None
     expected_task_version: int = Field(ge=1)
 
 

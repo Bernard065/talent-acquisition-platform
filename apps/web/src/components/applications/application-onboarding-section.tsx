@@ -10,6 +10,7 @@ import {
   useAssignOnboardingTask,
   useCompleteOnboarding,
   useStartApplicationOnboarding,
+  useUpdateOnboardingTaskDueDate,
   useUpdateOnboardingTaskStatus,
 } from "@/lib/api/hooks/onboarding";
 import { useOnboardingTemplates } from "@/lib/api/hooks/onboarding";
@@ -41,19 +42,41 @@ function TaskRow({
   task,
   stepNumber,
   blockingTask,
+  canEditDueDate,
 }: {
   applicationId: string;
   task: OnboardingTaskResponse;
   stepNumber: number;
   blockingTask: OnboardingTaskResponse | null;
+  canEditDueDate: boolean;
 }) {
   const members = useTeamMembers();
   const assignTask = useAssignOnboardingTask();
   const updateStatus = useUpdateOnboardingTaskStatus();
+  const updateDueDate = useUpdateOnboardingTaskDueDate();
   const [blockedReason, setBlockedReason] = useState(task.blocked_reason ?? "");
   const [resolutionNote, setResolutionNote] = useState("");
+  const [dueDateDraft, setDueDateDraft] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const active = !blockingTask && task.status !== "completed" && task.status !== "cancelled";
+  const currentDueDate = task.due_at?.slice(0, 10) ?? "";
+  const selectedDueDate = dueDateDraft ?? currentDueDate;
+
+  function saveDueDate(dueDate: string | null) {
+    setError(null);
+    updateDueDate.mutate({
+      taskId: task.id,
+      applicationId,
+      request: {
+        due_date: dueDate,
+        expected_task_version: task.version,
+      },
+      idempotencyKey: crypto.randomUUID(),
+    }, {
+      onSuccess: () => setDueDateDraft(undefined),
+      onError: (cause) => setError(errorMessage(cause, "The due date could not be updated. Refresh and try again.")),
+    });
+  }
 
   function changeStatus(target: OnboardingTaskStatus) {
     if (target === "blocked" && !blockedReason.trim()) {
@@ -106,7 +129,7 @@ function TaskRow({
             <p className="mt-2 text-xs font-medium text-gray-600">
               {task.responsible_party === "employee" ? "Employee-owned step" : "Workspace-owned step"}
             </p>
-            <p className="mt-2 text-xs text-gray-500">{task.due_at ? `Due ${dateLabel(task.due_at)}` : "No due date"}</p>
+            <p className="mt-2 text-xs text-gray-500">{task.due_at ? `Due ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeZone: "UTC" }).format(new Date(task.due_at))}` : "No due date"}</p>
             {blockingTask && <p className="mt-2 text-sm text-gray-600">
               {blockingTask.status === "cancelled"
                 ? `“${blockingTask.title}” was cancelled. Ask People Ops to review the plan before continuing.`
@@ -165,6 +188,40 @@ function TaskRow({
           )}
         </div>
       )}
+      {canEditDueDate && task.status !== "completed" && task.status !== "cancelled" && (
+        <div className="mt-4 flex flex-col gap-2 border-t border-gray-100 pt-4 sm:flex-row sm:items-end">
+          <label className="min-w-0 flex-1">
+            <span className="mb-1 block text-xs font-medium text-gray-600">Due date · People Ops and workspace admins</span>
+            <input
+              type="date"
+              value={selectedDueDate}
+              disabled={updateDueDate.isPending}
+              onChange={(event) => setDueDateDraft(event.target.value)}
+              className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+            />
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={updateDueDate.isPending || selectedDueDate === currentDueDate}
+              onClick={() => saveDueDate(selectedDueDate || null)}
+              className="h-10 rounded-lg bg-sr-text-blue px-4 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {updateDueDate.isPending ? "Saving…" : selectedDueDate ? "Save due date" : "Remove due date"}
+            </button>
+            {currentDueDate && (
+              <button
+                type="button"
+                disabled={updateDueDate.isPending}
+                onClick={() => saveDueDate(null)}
+                className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Remove due date
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       {task.blocked_reason && <p className="mt-3 rounded-md bg-amber-50 p-3 text-sm text-amber-900">Blocked: {task.blocked_reason}</p>}
       <OnboardingTaskActivity
         taskId={task.id}
@@ -187,6 +244,7 @@ export function ApplicationOnboardingSection({
   const canManageTemplates = session?.roles?.some((role) =>
     role === "tenant_admin" || role === "people_operations",
   ) ?? false;
+  const canEditDueDates = canManageTemplates;
   const onboarding = useApplicationOnboarding(applicationId, eligible);
   const templates = useOnboardingTemplates(eligible);
   const start = useStartApplicationOnboarding();
@@ -297,7 +355,7 @@ export function ApplicationOnboardingSection({
           </div>
           {tasks.length ? <ol className="space-y-3" aria-label="Onboarding tasks in order">{tasks.map((task, index) => {
             const blockingTask = tasks.slice(0, index).find((previous) => previous.status !== "completed") ?? null;
-            return <TaskRow key={task.id} applicationId={applicationId} task={task} stepNumber={index + 1} blockingTask={blockingTask} />;
+            return <TaskRow key={task.id} applicationId={applicationId} task={task} stepNumber={index + 1} blockingTask={blockingTask} canEditDueDate={canEditDueDates && instance.status === "active"} />;
           })}</ol> : <p className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">This plan has no tasks. Ask a workspace admin or People Ops member to review the onboarding template.</p>}
         </div>
       )}
