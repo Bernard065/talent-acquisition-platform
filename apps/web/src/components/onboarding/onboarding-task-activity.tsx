@@ -103,6 +103,8 @@ export function OnboardingTaskActivity({
                     : item.from_status === "blocked" &&
                         item.to_status === "in_progress"
                       ? "People Operations response"
+                      : item.event_type === "assigned"
+                        ? "Assignment"
                       : "Note";
 
                 return (

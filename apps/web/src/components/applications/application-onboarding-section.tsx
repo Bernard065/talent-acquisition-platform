@@ -134,12 +134,12 @@ function TaskRow({
               <label>
                 <span className="mb-1 block text-xs font-medium text-gray-600">Assigned to</span>
                 <select value={task.assignee_user_id ?? ""} disabled={!active || members.isLoading || !members.data || assignTask.isPending} onChange={(event) => {
-                  const assignee = event.target.value;
-                  if (!assignee || assignee === task.assignee_user_id) return;
+                  const selectedAssignee = event.target.value || null;
+                  if (selectedAssignee === task.assignee_user_id) return;
                   assignTask.mutate({
                     taskId: task.id,
                     applicationId,
-                    request: { assignee_user_id: assignee, expected_task_version: task.version },
+                    request: { assignee_user_id: selectedAssignee, expected_task_version: task.version },
                     idempotencyKey: crypto.randomUUID(),
                   }, { onError: (cause) => setError(errorMessage(cause, "The task could not be assigned. Refresh and try again.")) });
                 }} className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm">
