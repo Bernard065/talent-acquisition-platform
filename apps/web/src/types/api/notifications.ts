@@ -1,6 +1,7 @@
 export type NotificationActionItemKind =
   | "overdue_follow_up"
   | "overdue_onboarding_task"
+  | "due_soon_onboarding_task"
   | "pending_interview_feedback";
 
 export interface NotificationActionItem {
