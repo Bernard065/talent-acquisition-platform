@@ -149,7 +149,7 @@ export interface StartOnboardingRequest {
 }
 
 export interface AssignOnboardingTaskRequest {
-  assignee_user_id: string;
+  assignee_user_id: string | null;
   expected_task_version: number;
 }
 

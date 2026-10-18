@@ -64,11 +64,11 @@ class StartOnboardingRequest(BaseModel):
 
 
 class AssignOnboardingTaskRequest(BaseModel):
-    """Input for assigning an onboarding task."""
+    """Input for assigning or unassigning an onboarding task."""
 
     model_config = ConfigDict(extra="forbid")
 
-    assignee_user_id: UUID
+    assignee_user_id: UUID | None
     expected_task_version: int = Field(ge=1)
 
 

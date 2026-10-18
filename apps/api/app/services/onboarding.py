@@ -1052,10 +1052,10 @@ async def assign_onboarding_task(
     *,
     context: TenantContext,
     onboarding_task_id: UUID,
-    assignee_user_id: UUID,
+    assignee_user_id: UUID | None,
     expected_task_version: int,
 ) -> OnboardingTask:
-    """Assign an active task to a user belonging to the same tenant."""
+    """Assign or unassign an active task and record its ownership change."""
     _require_role(context, _ONBOARDING_WRITE_ROLES)
 
     async with transactional(session):
@@ -1088,18 +1088,39 @@ async def assign_onboarding_task(
                 "Terminal onboarding tasks cannot be reassigned."
             )
 
-        assignee = await session.scalar(
-            select(User).where(
-                User.id == assignee_user_id,
-                User.tenant_id == context.tenant_id,
-            )
-        )
-        if assignee is None:
-            raise OnboardingValidationError(
-                "Task assignee must belong to the tenant."
+        if task.assignee_user_id == assignee_user_id:
+            return task
+
+        previous_assignee_user_id = task.assignee_user_id
+        previous_assignee_name = "Unassigned"
+        if task.assignee_user_id is not None:
+            previous_assignee_name = (
+                await session.scalar(
+                    select(User.display_name).where(
+                        User.id == task.assignee_user_id,
+                        User.tenant_id == context.tenant_id,
+                    )
+                )
+                or "Former workspace member"
             )
 
-        task.assignee_user_id = assignee.id
+        assignee: User | None = None
+        if assignee_user_id is not None:
+            assignee = await session.scalar(
+                select(User).where(
+                    User.id == assignee_user_id,
+                    User.tenant_id == context.tenant_id,
+                )
+            )
+            if assignee is None:
+                raise OnboardingValidationError(
+                    "Task assignee must belong to the tenant."
+                )
+
+        task.assignee_user_id = assignee.id if assignee is not None else None
+        next_assignee_name = (
+            assignee.display_name if assignee is not None else "Unassigned"
+        )
 
         _append_task_history(
             session,
@@ -1108,6 +1129,10 @@ async def assign_onboarding_task(
             event_type=OnboardingTaskEventType.ASSIGNED,
             from_status=task.status,
             to_status=task.status,
+            note=(
+                "Assignee changed from "
+                f"{previous_assignee_name} to {next_assignee_name}."
+            ),
         )
         record_audit_event(
             session,
@@ -1116,18 +1141,26 @@ async def assign_onboarding_task(
             entity_type="onboarding_task",
             entity_id=str(task.id),
             details={
-                "assignee_user_id": str(assignee.id),
+                "previous_assignee_user_id": (
+                    str(previous_assignee_user_id)
+                    if previous_assignee_user_id is not None
+                    else None
+                ),
+                "assignee_user_id": (
+                    str(assignee.id) if assignee is not None else None
+                ),
             },
         )
-        enqueue_notification_request(
-            session,
-            context=context,
-            recipient_user_id=assignee.id,
-            notification_event_type=NotificationEventType.ONBOARDING_TASK_ASSIGNED,
-            entity_type="onboarding_task",
-            entity_id=task.id,
-            template_key="onboarding_task_assigned",
-        )
+        if assignee is not None:
+            enqueue_notification_request(
+                session,
+                context=context,
+                recipient_user_id=assignee.id,
+                notification_event_type=NotificationEventType.ONBOARDING_TASK_ASSIGNED,
+                entity_type="onboarding_task",
+                entity_id=task.id,
+                template_key="onboarding_task_assigned",
+            )
 
         await session.flush()
         await session.refresh(task)
