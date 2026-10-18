@@ -50,12 +50,21 @@ function TaskRow({
   const assignTask = useAssignOnboardingTask();
   const updateStatus = useUpdateOnboardingTaskStatus();
   const [blockedReason, setBlockedReason] = useState(task.blocked_reason ?? "");
+  const [resolutionNote, setResolutionNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const active = !blockingTask && task.status !== "completed" && task.status !== "cancelled";
 
   function changeStatus(target: OnboardingTaskStatus) {
     if (target === "blocked" && !blockedReason.trim()) {
       setError("Add a short reason before marking this task blocked.");
+      return;
+    }
+    const resolvingEmployeeBlocker =
+      task.responsible_party === "employee" &&
+      task.status === "blocked" &&
+      target === "in_progress";
+    if (resolvingEmployeeBlocker && !resolutionNote.trim()) {
+      setError("Add a response for the employee before reopening this task.");
       return;
     }
     setError(null);
@@ -66,9 +75,16 @@ function TaskRow({
         expected_version: task.version,
         target_status: target,
         blocked_reason: target === "blocked" ? blockedReason.trim() : null,
+        resolution_note: resolvingEmployeeBlocker ? resolutionNote.trim() : null,
       },
       idempotencyKey: crypto.randomUUID(),
-    }, { onError: (cause) => setError(errorMessage(cause, "The task changed elsewhere or could not be updated. Refresh and try again.")) });
+    }, {
+      onSuccess: () => {
+        setBlockedReason("");
+        setResolutionNote("");
+      },
+      onError: (cause) => setError(errorMessage(cause, "The task changed elsewhere or could not be updated. Refresh and try again.")),
+    });
   }
 
   return (
@@ -95,6 +111,7 @@ function TaskRow({
                 ? `“${blockingTask.title}” was cancelled. Ask People Ops to review the plan before continuing.`
                 : `Complete “${blockingTask.title}” first to unlock this task.`}
             </p>}
+            {task.resolution_note && <p className="mt-3 whitespace-pre-wrap rounded-md border border-blue-100 bg-blue-50 p-3 text-sm text-blue-950"><span className="font-semibold">People Operations response: </span>{task.resolution_note}</p>}
           </div>
         </div>
         {active && (
@@ -104,7 +121,7 @@ function TaskRow({
               <option value={task.status}>{taskLabels[task.status]}</option>
               {task.status === "not_started" && <><option value="in_progress">In progress</option><option value="blocked">Blocked</option></>}
               {task.status === "in_progress" && <><option value="completed">Completed</option><option value="blocked">Blocked</option></>}
-              {task.status === "blocked" && <option value="in_progress">In progress</option>}
+              {task.status === "blocked" && <option value="in_progress" disabled={task.responsible_party === "employee" && !resolutionNote.trim()}>{task.responsible_party === "employee" ? "Reopen after response" : "In progress"}</option>}
             </select>
           </label>
         )}
@@ -132,10 +149,19 @@ function TaskRow({
               {members.isError && <p className="text-sm text-red-800 sm:col-span-2">We couldn’t load workspace members to assign tasks.</p>}
             </>
           )}
-          <label>
-            <span className="mb-1 block text-xs font-medium text-gray-600">Block reason (required to mark blocked)</span>
-            <input value={blockedReason} onChange={(event) => setBlockedReason(event.target.value)} maxLength={2000} className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm" />
-          </label>
+          {task.status !== "blocked" && (
+            <label>
+              <span className="mb-1 block text-xs font-medium text-gray-600">Block reason (required to mark blocked)</span>
+              <input value={blockedReason} onChange={(event) => setBlockedReason(event.target.value)} maxLength={2000} className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm" />
+            </label>
+          )}
+          {task.status === "blocked" && task.responsible_party === "employee" && (
+            <label className="sm:col-span-2">
+              <span className="mb-1 block text-xs font-medium text-gray-700">Response for the employee (required to reopen)</span>
+              <textarea value={resolutionNote} onChange={(event) => setResolutionNote(event.target.value)} maxLength={2000} rows={3} className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20" placeholder="Explain what was done or what the employee should do next." />
+              <span className="mt-1 block text-xs text-gray-500">Enter the guidance, then choose “Reopen after response” from the status menu.</span>
+            </label>
+          )}
         </div>
       )}
       {task.blocked_reason && <p className="mt-3 rounded-md bg-amber-50 p-3 text-sm text-amber-900">Blocked: {task.blocked_reason}</p>}
