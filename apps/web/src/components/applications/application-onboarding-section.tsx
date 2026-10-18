@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { OnboardingTaskActivity } from "@/components/onboarding/onboarding-task-activity";
+import { OnboardingTaskDocumentList } from "@/components/onboarding/onboarding-task-document-list";
 import { ApiError } from "@/lib/api";
 import {
   useApplicationOnboarding,
@@ -59,6 +60,9 @@ function TaskRow({
   const [dueDateDraft, setDueDateDraft] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const active = !blockingTask && task.status !== "completed" && task.status !== "cancelled";
+  const hasAvailableDocument = task.documents.some(
+    (document) => document.status === "available",
+  );
   const currentDueDate = task.due_at?.slice(0, 10) ?? "";
   const selectedDueDate = dueDateDraft ?? currentDueDate;
 
@@ -79,6 +83,14 @@ function TaskRow({
   }
 
   function changeStatus(target: OnboardingTaskStatus) {
+    if (
+      target === "completed" &&
+      task.requires_document_upload &&
+      !hasAvailableDocument
+    ) {
+      setError("The employee’s file must pass its security scan before this task can be completed.");
+      return;
+    }
     if (target === "blocked" && !blockedReason.trim()) {
       setError("Add a short reason before marking this task blocked.");
       return;
@@ -144,12 +156,23 @@ function TaskRow({
             <select value={task.status} disabled={updateStatus.isPending} onChange={(event) => changeStatus(event.target.value as OnboardingTaskStatus)} className="h-10 w-full cursor-pointer rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto">
               <option value={task.status}>{taskLabels[task.status]}</option>
               {task.status === "not_started" && <><option value="in_progress">In progress</option><option value="blocked">Blocked</option></>}
-              {task.status === "in_progress" && <><option value="completed">Completed</option><option value="blocked">Blocked</option></>}
+              {task.status === "in_progress" && <><option value="completed" disabled={task.requires_document_upload && !hasAvailableDocument}>Completed</option><option value="blocked">Blocked</option></>}
               {task.status === "blocked" && <option value="in_progress" disabled={task.responsible_party === "employee" && !resolutionNote.trim()}>{task.responsible_party === "employee" ? "Reopen after response" : "In progress"}</option>}
             </select>
           </label>
         )}
       </div>
+      {task.requires_document_upload && (
+        <div className="mt-3">
+          <p className="text-xs font-medium text-gray-600">Employee must upload a file for this step.</p>
+          <OnboardingTaskDocumentList documents={task.documents} />
+          {task.status === "in_progress" && !hasAvailableDocument && (
+            <p className="mt-2 text-xs text-gray-600">
+              Completion is available after the employee’s file passes its security scan.
+            </p>
+          )}
+        </div>
+      )}
       {active && (
         <div className="mt-4 grid gap-3 border-t border-gray-100 pt-4 sm:grid-cols-2">
           {task.responsible_party === "workspace" && (

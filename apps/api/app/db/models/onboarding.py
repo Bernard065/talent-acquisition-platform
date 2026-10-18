@@ -5,6 +5,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -27,6 +28,7 @@ from app.db.base import Base
 from app.domains.onboarding.enums import (
     OnboardingInstanceEventType,
     OnboardingInstanceStatus,
+    OnboardingTaskDocumentStatus,
     OnboardingTaskEventType,
     OnboardingTaskResponsibility,
     OnboardingTaskStatus,
@@ -101,6 +103,10 @@ class OnboardingTemplateTask(Base):
             "responsible_party != 'employee' OR default_assignee_role IS NULL",
             name="ck_onboarding_template_tasks_employee_no_assignee_role",
         ),
+        CheckConstraint(
+            "responsible_party = 'employee' OR requires_document_upload = false",
+            name="ck_onboarding_template_tasks_uploads_employee_only",
+        ),
         UniqueConstraint(
             "onboarding_template_id",
             "position",
@@ -143,6 +149,12 @@ class OnboardingTemplateTask(Base):
         nullable=False,
         default=OnboardingTaskResponsibility.WORKSPACE,
         server_default=OnboardingTaskResponsibility.WORKSPACE.value,
+    )
+    requires_document_upload: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -251,6 +263,10 @@ class OnboardingTask(Base):
             "responsible_party != 'employee' OR assignee_user_id IS NULL",
             name="ck_onboarding_tasks_employee_unassigned",
         ),
+        CheckConstraint(
+            "responsible_party = 'employee' OR requires_document_upload = false",
+            name="ck_onboarding_tasks_uploads_employee_only",
+        ),
         Index(
             "ix_onboarding_tasks_tenant_status_due_at",
             "tenant_id",
@@ -305,6 +321,12 @@ class OnboardingTask(Base):
         default=OnboardingTaskResponsibility.WORKSPACE,
         server_default=OnboardingTaskResponsibility.WORKSPACE.value,
     )
+    requires_document_upload: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
     status: Mapped[OnboardingTaskStatus] = mapped_column(
         Enum(
             OnboardingTaskStatus,
@@ -343,6 +365,80 @@ class OnboardingTask(Base):
         nullable=False,
         default=1,
     )
+
+    __mapper_args__ = {"version_id_col": version}
+
+
+class OnboardingTaskDocument(Base):
+    """Private file metadata for a document submitted to an onboarding task."""
+
+    __tablename__ = "onboarding_task_documents"
+    __table_args__ = (
+        CheckConstraint(
+            "expected_byte_size > 0",
+            name="ck_onboarding_task_documents_size_positive",
+        ),
+        Index(
+            "ix_onboarding_task_documents_tenant_task_created_at",
+            "tenant_id",
+            "onboarding_task_id",
+            "created_at",
+        ),
+        Index(
+            "ix_onboarding_task_documents_tenant_status_updated_at",
+            "tenant_id",
+            "status",
+            "updated_at",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
+    tenant_id: Mapped[UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    onboarding_task_id: Mapped[UUID] = mapped_column(
+        ForeignKey("onboarding_tasks.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Server-generated; never accepted from or returned to the browser.
+    storage_key: Mapped[str] = mapped_column(String(512), nullable=False, unique=True)
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    declared_content_type: Mapped[str] = mapped_column(String(255), nullable=False)
+    expected_byte_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    checksum_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[OnboardingTaskDocumentStatus] = mapped_column(
+        Enum(
+            OnboardingTaskDocumentStatus,
+            name="onboarding_task_document_status",
+            values_callable=lambda statuses: [status.value for status in statuses],
+        ),
+        nullable=False,
+        default=OnboardingTaskDocumentStatus.PENDING_UPLOAD,
+        server_default=OnboardingTaskDocumentStatus.PENDING_UPLOAD.value,
+    )
+    uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    scan_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    scan_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+        onupdate=text("CURRENT_TIMESTAMP"),
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
     __mapper_args__ = {"version_id_col": version}
 

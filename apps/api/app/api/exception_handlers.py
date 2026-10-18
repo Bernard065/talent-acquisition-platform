@@ -176,6 +176,7 @@ from app.services.offer_errors import (
     OfferValidationError,
     OfferVersionConflictError,
 )
+from app.services.onboarding_documents import OnboardingDocumentStorageError
 from app.services.onboarding_errors import (
     EmployeePortalRecordNotFoundError,
     EmployeeRecordNotFoundError,
@@ -1886,6 +1887,10 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         OnboardingValidationError,
         invalid_onboarding_request,
+    )
+    application.add_exception_handler(
+        OnboardingDocumentStorageError,
+        document_storage_unavailable,
     )
 
     application.add_exception_handler(

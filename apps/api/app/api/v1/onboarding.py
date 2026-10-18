@@ -1,13 +1,18 @@
 """Version 1 private onboarding workflow HTTP endpoints."""
 
+from datetime import timedelta
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Body, Depends, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_db_session, get_tenant_context
+from app.api.dependencies import (
+    get_db_session,
+    get_object_storage,
+    get_tenant_context,
+)
 from app.api.idempotency import IdempotencyKey, idempotency_response
 from app.api.v1.schemas.employee_records import EmployeePortalProfileResponse
 from app.api.v1.schemas.onboarding import (
@@ -22,6 +27,12 @@ from app.api.v1.schemas.onboarding import (
     OnboardingOverviewResponse,
     OnboardingTaskActivityItemResponse,
     OnboardingTaskActivityResponse,
+    OnboardingTaskDocumentConfirmUploadRequest,
+    OnboardingTaskDocumentCreateRequest,
+    OnboardingTaskDocumentDownloadAuthorizationResponse,
+    OnboardingTaskDocumentResponse,
+    OnboardingTaskDocumentUploadAuthorizationRequest,
+    OnboardingTaskDocumentUploadAuthorizationResponse,
     OnboardingTaskResponse,
     OnboardingTaskWorklistAssigneeResponse,
     OnboardingTaskWorklistItemResponse,
@@ -36,6 +47,7 @@ from app.api.v1.schemas.onboarding import (
     UpdateOnboardingTaskStatusRequest,
 )
 from app.core.authorization import TenantContext
+from app.core.config import Settings
 from app.domains.onboarding.enums import (
     OnboardingInstanceStatus,
     OnboardingTaskResponsibility,
@@ -43,6 +55,7 @@ from app.domains.onboarding.enums import (
     OnboardingTaskWorklistView,
 )
 from app.services.idempotency import IdempotencyResult, execute_idempotently
+from app.services.object_storage import ObjectStorage
 from app.services.onboarding import (
     CreateOnboardingTemplateCommand,
     OnboardingTemplateTaskDefinition,
@@ -62,11 +75,21 @@ from app.services.onboarding import (
     update_onboarding_task_due_date,
     update_onboarding_task_status,
 )
+from app.services.onboarding_documents import (
+    CreateOnboardingTaskDocumentCommand,
+    confirm_employee_task_document_upload,
+    create_employee_task_document_upload_authorization,
+    create_employee_task_document_upload_intent,
+    create_onboarding_task_document_access_authorization,
+    list_documents_for_authorized_tasks,
+    list_onboarding_task_documents,
+)
 
 router = APIRouter(tags=["Onboarding"])
 
 CallerContext = Annotated[TenantContext, Depends(get_tenant_context)]
 DatabaseSession = Annotated[AsyncSession, Depends(get_db_session)]
+DocumentStorage = Annotated[ObjectStorage, Depends(get_object_storage)]
 
 
 def _private_response(result: IdempotencyResult) -> JSONResponse:
@@ -103,11 +126,26 @@ async def list_onboarding_task_worklist_endpoint(
         assignee_user_id=assignee_user_id,
         unassigned_only=unassigned_only,
     )
+    documents_by_task = await list_documents_for_authorized_tasks(
+        session,
+        tenant_id=context.tenant_id,
+        task_ids=tuple(item.task.id for item in items),
+    )
     response.headers["Cache-Control"] = "private, no-store"
     return OnboardingTaskWorklistResponse(
         items=[
             OnboardingTaskWorklistItemResponse(
-                task=OnboardingTaskResponse.model_validate(item.task),
+                task=OnboardingTaskResponse.model_validate(item.task).model_copy(
+                    update={
+                        "documents": [
+                            OnboardingTaskDocumentResponse.model_validate(document)
+                            for document in documents_by_task.get(
+                                item.task.id,
+                                (),
+                            )
+                        ]
+                    }
+                ),
                 application_id=item.application_id,
                 instance_status=item.instance_status,
                 employee_name=item.employee_name,
@@ -246,9 +284,24 @@ async def get_application_onboarding_endpoint(
         return ApplicationOnboardingResponse(instance=None, tasks=[])
 
     instance, tasks = result
+    documents_by_task = await list_documents_for_authorized_tasks(
+        session,
+        tenant_id=context.tenant_id,
+        task_ids=tuple(task.id for task in tasks),
+    )
     return ApplicationOnboardingResponse(
         instance=OnboardingInstanceResponse.model_validate(instance),
-        tasks=[OnboardingTaskResponse.model_validate(task) for task in tasks],
+        tasks=[
+            OnboardingTaskResponse.model_validate(task).model_copy(
+                update={
+                    "documents": [
+                        OnboardingTaskDocumentResponse.model_validate(document)
+                        for document in documents_by_task.get(task.id, ())
+                    ]
+                }
+            )
+            for task in tasks
+        ],
     )
 
 
@@ -287,6 +340,207 @@ async def get_onboarding_task_activity_endpoint(
 
 
 @router.get(
+    "/onboarding-tasks/{onboarding_task_id}/documents",
+    response_model=list[OnboardingTaskDocumentResponse],
+    summary="List documents submitted for an onboarding task",
+)
+async def list_onboarding_task_documents_endpoint(
+    onboarding_task_id: UUID,
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+) -> list[OnboardingTaskDocumentResponse]:
+    """Return safe metadata to workspace staff or the employee owner."""
+    documents = await list_onboarding_task_documents(
+        session,
+        context=context,
+        onboarding_task_id=onboarding_task_id,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return [OnboardingTaskDocumentResponse.model_validate(document) for document in documents]
+
+
+@router.post(
+    "/employee-portal/me/onboarding/tasks/{onboarding_task_id}/documents",
+    response_model=OnboardingTaskDocumentResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create an upload intent for an employee onboarding document",
+)
+async def create_employee_onboarding_task_document_endpoint(
+    onboarding_task_id: UUID,
+    payload: OnboardingTaskDocumentCreateRequest,
+    context: CallerContext,
+    session: DatabaseSession,
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Create a pending upload for the authenticated employee's own step."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        document = await create_employee_task_document_upload_intent(
+            session,
+            context=context,
+            onboarding_task_id=onboarding_task_id,
+            command=CreateOnboardingTaskDocumentCommand(
+                original_filename=payload.original_filename,
+                declared_content_type=payload.declared_content_type,
+                expected_byte_size=payload.expected_byte_size,
+                checksum_sha256=payload.checksum_sha256,
+            ),
+        )
+        return (
+            status.HTTP_201_CREATED,
+            OnboardingTaskDocumentResponse.model_validate(document).model_dump(
+                mode="json"
+            ),
+        )
+
+    result = await execute_idempotently(
+        session,
+        context=context,
+        key=idempotency_key,
+        operation_name=f"onboarding_task_document.create:{onboarding_task_id}",
+        payload={
+            "onboarding_task_id": str(onboarding_task_id),
+            **payload.model_dump(mode="json"),
+        },
+        operation=operation,
+    )
+    return _private_response(result)
+
+
+@router.post(
+    "/onboarding-task-documents/{document_id}/upload-authorizations",
+    response_model=OnboardingTaskDocumentUploadAuthorizationResponse,
+    summary="Create a short-lived onboarding document upload authorization",
+)
+async def create_onboarding_document_upload_authorization_endpoint(
+    document_id: UUID,
+    context: CallerContext,
+    session: DatabaseSession,
+    storage: DocumentStorage,
+    request: Request,
+    response: Response,
+    _: Annotated[OnboardingTaskDocumentUploadAuthorizationRequest, Body(...)],
+) -> OnboardingTaskDocumentUploadAuthorizationResponse:
+    """Authorize a direct upload using server-owned document metadata."""
+    settings: Settings = request.app.state.settings
+    upload = await create_employee_task_document_upload_authorization(
+        session,
+        context=context,
+        document_id=document_id,
+        storage=storage,
+        expires_in=timedelta(
+            seconds=settings.s3_presigned_upload_expiry_seconds
+        ),
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return OnboardingTaskDocumentUploadAuthorizationResponse(
+        upload_url=upload.url,
+        required_headers=dict(upload.required_headers),
+        expires_at=upload.expires_at,
+    )
+
+
+@router.post(
+    "/onboarding-task-documents/{document_id}/confirm-upload",
+    response_model=OnboardingTaskDocumentResponse,
+    summary="Verify and scan an uploaded onboarding document",
+)
+async def confirm_onboarding_document_upload_endpoint(
+    document_id: UUID,
+    payload: OnboardingTaskDocumentConfirmUploadRequest,
+    context: CallerContext,
+    session: DatabaseSession,
+    storage: DocumentStorage,
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Verify object metadata and queue malware scanning idempotently."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        document = await confirm_employee_task_document_upload(
+            session,
+            context=context,
+            document_id=document_id,
+            storage=storage,
+        )
+        return (
+            status.HTTP_200_OK,
+            OnboardingTaskDocumentResponse.model_validate(document).model_dump(
+                mode="json"
+            ),
+        )
+
+    result = await execute_idempotently(
+        session,
+        context=context,
+        key=idempotency_key,
+        operation_name=f"onboarding_task_document.confirm_upload:{document_id}",
+        payload={
+            "document_id": str(document_id),
+            **payload.model_dump(mode="json"),
+        },
+        operation=operation,
+    )
+    return _private_response(result)
+
+
+@router.get(
+    "/onboarding-task-documents/{document_id}/download-authorizations",
+    response_model=OnboardingTaskDocumentDownloadAuthorizationResponse,
+    summary="Authorize download of a clean onboarding document",
+)
+async def create_onboarding_document_download_authorization_endpoint(
+    document_id: UUID,
+    context: CallerContext,
+    session: DatabaseSession,
+    storage: DocumentStorage,
+    response: Response,
+) -> OnboardingTaskDocumentDownloadAuthorizationResponse:
+    """Give authorized staff or the employee a short-lived download URL."""
+    download = await create_onboarding_task_document_access_authorization(
+        session,
+        context=context,
+        document_id=document_id,
+        storage=storage,
+        expires_in=timedelta(minutes=5),
+        preview=False,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return OnboardingTaskDocumentDownloadAuthorizationResponse(
+        url=download.url,
+        expires_at=download.expires_at,
+    )
+
+
+@router.get(
+    "/onboarding-task-documents/{document_id}/preview-authorizations",
+    response_model=OnboardingTaskDocumentDownloadAuthorizationResponse,
+    summary="Authorize inline preview of a clean onboarding PDF",
+)
+async def create_onboarding_document_preview_authorization_endpoint(
+    document_id: UUID,
+    context: CallerContext,
+    session: DatabaseSession,
+    storage: DocumentStorage,
+    response: Response,
+) -> OnboardingTaskDocumentDownloadAuthorizationResponse:
+    """Give authorized staff or the employee a short-lived preview URL."""
+    preview = await create_onboarding_task_document_access_authorization(
+        session,
+        context=context,
+        document_id=document_id,
+        storage=storage,
+        expires_in=timedelta(minutes=5),
+        preview=True,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return OnboardingTaskDocumentDownloadAuthorizationResponse(
+        url=preview.url,
+        expires_at=preview.expires_at,
+    )
+
+
+@router.get(
     "/employee-portal/me/onboarding",
     response_model=EmployeePortalOnboardingResponse,
     summary="Get the authenticated employee's own onboarding checklist",
@@ -300,6 +554,11 @@ async def get_employee_portal_onboarding_endpoint(
     employee, full_name, instance, tasks = await get_employee_portal_onboarding(
         session,
         context=context,
+    )
+    documents_by_task = await list_documents_for_authorized_tasks(
+        session,
+        tenant_id=context.tenant_id,
+        task_ids=tuple(task.id for task in tasks),
     )
     response.headers["Cache-Control"] = "private, no-store"
     return EmployeePortalOnboardingResponse(
@@ -322,6 +581,7 @@ async def get_employee_portal_onboarding_endpoint(
                 description=task.description,
                 due_at=task.due_at,
                 responsible_party=task.responsible_party,
+                requires_document_upload=task.requires_document_upload,
                 status=task.status,
                 blocked_reason=(
                     task.blocked_reason
@@ -351,6 +611,10 @@ async def get_employee_portal_onboarding_endpoint(
                         for earlier_task in tasks[:index]
                     )
                 ),
+                documents=[
+                    OnboardingTaskDocumentResponse.model_validate(document)
+                    for document in documents_by_task.get(task.id, ())
+                ],
             )
             for index, task in enumerate(tasks)
         ],
@@ -390,12 +654,14 @@ async def update_employee_portal_task_status_endpoint(
                 description=task.description,
                 due_at=task.due_at,
                 responsible_party=task.responsible_party,
+                requires_document_upload=task.requires_document_upload,
                 status=task.status,
                 blocked_reason=task.blocked_reason,
                 resolution_note=task.resolution_note,
                 completed_at=task.completed_at,
                 version=task.version,
                 can_update=False,
+                documents=[],
             ).model_dump(mode="json"),
         )
 
@@ -441,6 +707,7 @@ async def create_onboarding_template_endpoint(
                         due_offset_days=task.due_offset_days,
                         default_assignee_role=task.default_assignee_role,
                         responsible_party=task.responsible_party,
+                        requires_document_upload=task.requires_document_upload,
                     )
                     for task in payload.tasks
                 ),

@@ -30,6 +30,17 @@ class OnboardingTaskWorklistView(StrEnum):
     COMPLETED = "completed"
 
 
+class OnboardingTaskDocumentStatus(StrEnum):
+    """Lifecycle states for a file attached to an employee onboarding task."""
+
+    PENDING_UPLOAD = "pending_upload"
+    UPLOADED = "uploaded"
+    SCANNING = "scanning"
+    AVAILABLE = "available"
+    QUARANTINED = "quarantined"
+    REJECTED = "rejected"
+
+
 class OnboardingTaskResponsibility(StrEnum):
     """Identify whether the employee or workspace team owns a task."""
 

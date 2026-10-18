@@ -11,6 +11,7 @@ import {
   useUpdateOnboardingTaskStatus,
 } from "@/lib/api/hooks/onboarding";
 import { useTeamMembers } from "@/lib/api/hooks/team";
+import { OnboardingTaskDocumentList } from "@/components/onboarding/onboarding-task-document-list";
 import type {
   OnboardingTaskStatus,
   OnboardingTaskWorklistItemResponse,
@@ -79,6 +80,9 @@ function TaskWorklistRow({
   const task = item.task;
   const isActive = item.instance_status === "active";
   const isIncomplete = task.status !== "completed" && task.status !== "cancelled";
+  const hasAvailableDocument = task.documents.some(
+    (document) => document.status === "available",
+  );
   const currentDueDate = task.due_at?.slice(0, 10) ?? "";
   const isPending = assignTask.isPending || updateStatus.isPending || updateDueDate.isPending;
   const memberOptions = task.assignee_user_id && item.assignee_display_name &&
@@ -89,7 +93,9 @@ function TaskWorklistRow({
   const statusAction = task.status === "not_started"
     ? { target: "in_progress" as const, label: "Start task" }
     : task.status === "in_progress"
-      ? { target: "completed" as const, label: "Mark complete" }
+      ? task.requires_document_upload && !hasAvailableDocument
+        ? null
+        : { target: "completed" as const, label: "Mark complete" }
       : task.status === "blocked" && task.responsible_party === "workspace"
         ? { target: "in_progress" as const, label: "Resume task" }
         : null;
@@ -219,6 +225,17 @@ function TaskWorklistRow({
           </span>
         )}
       </div>
+
+      {task.requires_document_upload && (
+        <div className="md:col-span-full">
+          <OnboardingTaskDocumentList documents={task.documents} />
+          {!hasAvailableDocument && task.status === "in_progress" && (
+            <p className="mt-2 text-xs text-gray-600">
+              The task can be completed after the employee’s file passes its security scan.
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <span className="mb-1 w-full text-xs font-medium text-gray-500 md:hidden">Status and actions</span>
