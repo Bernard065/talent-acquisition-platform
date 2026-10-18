@@ -123,6 +123,19 @@ def candidate_document_object_key(
     return f"v1/tenants/{tenant_id}/candidates/{candidate_id}/documents/{document_id}/content"
 
 
+def onboarding_task_document_object_key(
+    *,
+    tenant_id: UUID,
+    onboarding_task_id: UUID,
+    document_id: UUID,
+) -> str:
+    """Build a server-owned, non-PII key for an onboarding task attachment."""
+    return (
+        f"v1/tenants/{tenant_id}/onboarding-tasks/{onboarding_task_id}"
+        f"/documents/{document_id}/content"
+    )
+
+
 def public_application_resume_scan_object_key(
     *,
     tenant_id: UUID,
