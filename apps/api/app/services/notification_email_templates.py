@@ -111,6 +111,16 @@ _TEMPLATES: dict[tuple[NotificationEventType, str], NotificationEmailTemplate] =
         ),
     ),
     (
+        NotificationEventType.ONBOARDING_TASK_UNBLOCKED,
+        "onboarding_task_unblocked",
+    ): NotificationEmailTemplate(
+        subject="Update to your onboarding help request",
+        text_body=(
+            "People Operations responded to your onboarding help request.\n\n"
+            "Sign in to review the response and continue your onboarding checklist."
+        ),
+    ),
+    (
         NotificationEventType.INTERVIEW_SCHEDULED,
         "interview_scheduled",
     ): NotificationEmailTemplate(

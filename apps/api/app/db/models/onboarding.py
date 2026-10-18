@@ -323,6 +323,10 @@ class OnboardingTask(Base):
         Text,
         nullable=True,
     )
+    resolution_note: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -462,6 +466,7 @@ class OnboardingTaskHistory(Base):
         ),
         nullable=False,
     )
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
     occurred_by_subject: Mapped[str] = mapped_column(
         String(255),
         nullable=False,

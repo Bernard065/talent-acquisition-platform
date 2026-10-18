@@ -53,6 +53,7 @@ export interface OnboardingTaskResponse {
   responsible_party: OnboardingTaskResponsibility;
   status: OnboardingTaskStatus;
   blocked_reason: string | null;
+  resolution_note: string | null;
   completed_at: string | null;
   version: number;
 }
@@ -99,6 +100,7 @@ export interface EmployeePortalTaskResponse {
   responsible_party: OnboardingTaskResponsibility;
   status: OnboardingTaskStatus;
   blocked_reason: string | null;
+  resolution_note: string | null;
   completed_at: string | null;
   version: number;
   can_update: boolean;
@@ -133,6 +135,7 @@ export interface UpdateOnboardingTaskStatusRequest {
   expected_version: number;
   target_status: OnboardingTaskStatus;
   blocked_reason?: string | null;
+  resolution_note?: string | null;
 }
 
 export interface UpdateEmployeePortalTaskStatusRequest {

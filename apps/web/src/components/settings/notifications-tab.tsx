@@ -36,6 +36,12 @@ const notificationPreferences: Array<{
     description: "Email me if an interview calendar event cannot be delivered after automatic retries.",
     frequencyControl: false,
   },
+  {
+    eventType: "onboarding.task_unblocked",
+    title: "Onboarding help request responses",
+    description: "Email me when People Operations responds to a blocked onboarding task.",
+    frequencyControl: false,
+  },
 ];
 
 export function NotificationsTab() {

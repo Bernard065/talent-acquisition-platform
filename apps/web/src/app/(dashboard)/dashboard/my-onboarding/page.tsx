@@ -103,6 +103,12 @@ function TaskItem({
           <span>Due {formatDate(task.due_at)}</span>
           {task.completed_at && <span>Completed {formatDate(task.completed_at)}</span>}
         </div>
+        {task.responsible_party === "employee" && task.resolution_note && (
+          <p className="mt-3 whitespace-pre-wrap rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-950">
+            <span className="font-semibold">People Operations response: </span>
+            {task.resolution_note}
+          </p>
+        )}
         {task.responsible_party === "employee" && task.status === "blocked" && (
           <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
             <p className="text-sm font-medium text-amber-950">People Operations has been notified.</p>
