@@ -621,7 +621,16 @@ async def _render_action_item_digest(
     onboarding_task_count = sum(
         item.kind == "overdue_onboarding_task" for item in enabled_items
     )
-    if overdue_count + feedback_count + onboarding_task_count == 0:
+    due_soon_onboarding_task_count = sum(
+        item.kind == "due_soon_onboarding_task" for item in enabled_items
+    )
+    if (
+        overdue_count
+        + feedback_count
+        + onboarding_task_count
+        + due_soon_onboarding_task_count
+        == 0
+    ):
         raise StaleActionItemDigestError
 
     return render_action_item_digest_email(
@@ -631,6 +640,7 @@ async def _render_action_item_digest(
         overdue_follow_up_count=overdue_count,
         pending_feedback_count=feedback_count,
         overdue_onboarding_task_count=onboarding_task_count,
+        due_soon_onboarding_task_count=due_soon_onboarding_task_count,
         frequency=digest_frequency,
         web_app_base_url=web_app_base_url,
     )

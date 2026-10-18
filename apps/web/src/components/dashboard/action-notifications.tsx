@@ -46,7 +46,7 @@ export function ActionNotifications() {
             Needs your attention
           </h2>
           <p className="mt-1 text-sm text-gray-600">
-            Follow-ups and interview feedback remain here until completed.
+            Upcoming onboarding deadlines, overdue follow-ups, and interview feedback assigned to you.
           </p>
         </div>
         <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-amber-900 ring-1 ring-amber-200">
@@ -57,29 +57,41 @@ export function ActionNotifications() {
       <ul className="divide-y divide-gray-100">
         {items.map((item) => {
           const isFollowUp = item.kind === "overdue_follow_up";
-          const Icon = isFollowUp ? Clock3 : ClipboardCheck;
+          const isOnboardingTask =
+            item.kind === "overdue_onboarding_task" ||
+            item.kind === "due_soon_onboarding_task";
+          const isDueSoon = item.kind === "due_soon_onboarding_task";
+          const isInterviewFeedback = item.kind === "pending_interview_feedback";
+          const Icon = isInterviewFeedback ? ClipboardCheck : Clock3;
+          const isUrgent = isFollowUp || item.kind === "overdue_onboarding_task";
+          const titlePrefix = isDueSoon ? "Due soon: " : isUrgent ? "Overdue: " : "";
+          const datePrefix = isInterviewFeedback
+            ? "Interview ended"
+            : isOnboardingTask
+              ? "Task due"
+              : "Due";
           return (
             <li key={item.id}>
               <Link
                 href={item.href}
                 className="flex min-w-0 flex-col gap-3 px-5 py-4 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sr-green sm:flex-row sm:items-center sm:px-6"
               >
-                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${isFollowUp ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"}`}>
+                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${isUrgent ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"}`}>
                   <Icon aria-hidden="true" className="h-5 w-5" />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold text-gray-900">
-                    {isFollowUp ? `Overdue: ${item.title}` : item.title}
+                    {titlePrefix}{item.title}
                   </span>
                   <span className="mt-1 block truncate text-sm text-gray-600">
                     {item.candidate_name} · {item.requisition_title}
                   </span>
                   <span className="mt-1 block text-xs text-gray-500">
-                    {isFollowUp ? "Due" : "Interview ended"} {formatDueAt(item.due_at)} UTC
+                    {datePrefix} {formatDueAt(item.due_at)} UTC
                   </span>
                 </span>
                 <span className="shrink-0 text-sm font-semibold text-sr-green">
-                  {isFollowUp ? "Open application" : "Open interview"} →
+                  {isInterviewFeedback ? "Open interview" : "Open application"} →
                 </span>
               </Link>
             </li>

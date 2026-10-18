@@ -44,6 +44,15 @@ function safeNotificationHref(href: string): string {
 }
 
 function getPresentation(kind: NotificationActionItemKind) {
+  if (kind === "due_soon_onboarding_task") {
+    return {
+      Icon: Clock3,
+      iconClassName: "bg-blue-100 text-blue-800",
+      titlePrefix: "Due soon: ",
+      datePrefix: "Task due",
+    };
+  }
+
   if (kind !== "pending_interview_feedback") {
     return {
       Icon: Clock3,
@@ -105,7 +114,7 @@ function NotificationRow({
 }
 
 /**
- * Shows overdue actions and follow-up reminders for the current user.
+ * Shows due-soon and overdue actions for the current user.
  */
 export function NotificationCenter() {
   const [isOpen, setIsOpen] = useState(false);
@@ -193,7 +202,7 @@ export function NotificationCenter() {
                 <span className="text-xs text-gray-600">{attentionLabel}</span>
               )}
             </div>
-            <p className="mt-1 text-xs text-gray-600">Overdue follow-ups, onboarding tasks, and feedback still to submit.</p>
+            <p className="mt-1 text-xs text-gray-600">Upcoming onboarding deadlines, overdue follow-ups, and feedback still to submit.</p>
           </header>
 
           {query.isLoading && !query.data ? (
