@@ -1,7 +1,7 @@
 """Transactional tenant-safe onboarding template, task, and lifecycle services."""
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from uuid import UUID
 
 from sqlalchemy import and_, exists, func, or_, select
@@ -1161,6 +1161,87 @@ async def assign_onboarding_task(
                 entity_id=task.id,
                 template_key="onboarding_task_assigned",
             )
+
+        await session.flush()
+        await session.refresh(task)
+
+    return task
+
+
+async def update_onboarding_task_due_date(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    onboarding_task_id: UUID,
+    due_date: date | None,
+    expected_task_version: int,
+) -> OnboardingTask:
+    """Set or clear a due date and record the change for People Ops auditability."""
+    _require_role(context, _TEMPLATE_ADMIN_ROLES)
+
+    async with transactional(session):
+        task, _ = await _load_active_task(
+            session,
+            context=context,
+            onboarding_task_id=onboarding_task_id,
+        )
+        _validate_version(
+            actual_version=task.version,
+            expected_version=expected_task_version,
+            entity_name="onboarding task",
+        )
+
+        if task.status in {
+            OnboardingTaskStatus.COMPLETED,
+            OnboardingTaskStatus.CANCELLED,
+        }:
+            raise OnboardingValidationError(
+                "Due dates can be changed only for incomplete tasks."
+            )
+
+        previous_due_date = (
+            task.due_at.astimezone(UTC).date()
+            if task.due_at is not None
+            else None
+        )
+        if previous_due_date == due_date:
+            return task
+
+        task.due_at = (
+            datetime.combine(due_date, time.min, tzinfo=UTC)
+            if due_date is not None
+            else None
+        )
+        previous_label = (
+            previous_due_date.isoformat()
+            if previous_due_date is not None
+            else "No due date"
+        )
+        next_label = due_date.isoformat() if due_date is not None else "No due date"
+        _append_task_history(
+            session,
+            context=context,
+            task=task,
+            event_type=OnboardingTaskEventType.DUE_DATE_CHANGED,
+            from_status=task.status,
+            to_status=task.status,
+            note=f"Due date changed from {previous_label} to {next_label}.",
+        )
+        record_audit_event(
+            session,
+            context=context,
+            action="onboarding_task.due_date_changed",
+            entity_type="onboarding_task",
+            entity_id=str(task.id),
+            details={
+                "previous_due_date": (
+                    previous_due_date.isoformat()
+                    if previous_due_date is not None
+                    else None
+                ),
+                "due_date": due_date.isoformat() if due_date is not None else None,
+            },
+        )
 
         await session.flush()
         await session.refresh(task)

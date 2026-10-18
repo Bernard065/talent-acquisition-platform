@@ -95,17 +95,22 @@ export function OnboardingTaskActivity({
             <ol className="ml-1 border-l border-gray-200 pl-4">
               {activity.data.items.map((item) => {
                 const hasStatusChange = item.from_status !== item.to_status;
-                const noteLabel =
-                  item.event_type === "blocked"
-                    ? viewer === "employee" && item.actor_display_name === "You"
+                let noteLabel = "Note";
+                if (item.event_type === "blocked") {
+                  noteLabel =
+                    viewer === "employee" && item.actor_display_name === "You"
                       ? "Help request"
-                      : "Reason"
-                    : item.from_status === "blocked" &&
-                        item.to_status === "in_progress"
-                      ? "People Operations response"
-                      : item.event_type === "assigned"
-                        ? "Assignment"
-                      : "Note";
+                      : "Reason";
+                } else if (
+                  item.from_status === "blocked" &&
+                  item.to_status === "in_progress"
+                ) {
+                  noteLabel = "People Operations response";
+                } else if (item.event_type === "assigned") {
+                  noteLabel = "Assignment";
+                } else if (item.event_type === "due_date_changed") {
+                  noteLabel = "Due date";
+                }
 
                 return (
                   <li

@@ -153,6 +153,11 @@ export interface AssignOnboardingTaskRequest {
   expected_task_version: number;
 }
 
+export interface UpdateOnboardingTaskDueDateRequest {
+  due_date: string | null;
+  expected_task_version: number;
+}
+
 export interface UpdateOnboardingTaskStatusRequest {
   expected_version: number;
   target_status: OnboardingTaskStatus;

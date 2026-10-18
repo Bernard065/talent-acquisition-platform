@@ -12,6 +12,7 @@ import type {
   OnboardingTemplateListResponse,
   OnboardingTemplateResponse,
   StartOnboardingRequest,
+  UpdateOnboardingTaskDueDateRequest,
   UpdateEmployeePortalTaskStatusRequest,
   UpdateOnboardingTaskStatusRequest,
 } from "@/types/api/onboarding";
@@ -102,6 +103,19 @@ export function assignOnboardingTask(
 ) {
   return post<OnboardingTaskResponse>(
     `/onboarding-tasks/${taskId}/assignee`,
+    request,
+    { ...options, idempotencyKey },
+  );
+}
+
+export function updateOnboardingTaskDueDate(
+  taskId: string,
+  request: UpdateOnboardingTaskDueDateRequest,
+  idempotencyKey: string,
+  options?: RequestOptions,
+) {
+  return patch<OnboardingTaskResponse>(
+    `/onboarding-tasks/${taskId}/due-date`,
     request,
     { ...options, idempotencyKey },
   );
