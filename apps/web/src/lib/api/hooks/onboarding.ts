@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
+import { notificationQueryKeys } from "@/lib/api/hooks/notifications";
 import { employeeRecordQueryKeys } from "@/lib/api/hooks/employee-records";
 import {
   assignOnboardingTask,
@@ -12,6 +13,7 @@ import {
   getEmployeePortalOnboarding,
   getOnboardingTaskActivity,
   listOnboardingOverview,
+  listOnboardingTaskWorklist,
   listOnboardingTemplates,
   startApplicationOnboarding,
   updateOnboardingTaskDueDate,
@@ -27,7 +29,10 @@ import type {
   UpdateEmployeePortalTaskStatusRequest,
   UpdateOnboardingTaskStatusRequest,
 } from "@/types/api/onboarding";
-import type { OnboardingOverviewParams } from "../services/onboarding";
+import type {
+  OnboardingOverviewParams,
+  OnboardingTaskWorklistParams,
+} from "../services/onboarding";
 
 export const onboardingQueryKeys = {
   all: ["onboarding"] as const,
@@ -35,6 +40,9 @@ export const onboardingQueryKeys = {
   overview: () => [...onboardingQueryKeys.all, "overview"] as const,
   overviewList: (params: OnboardingOverviewParams) =>
     [...onboardingQueryKeys.overview(), params] as const,
+  taskWorklist: () => [...onboardingQueryKeys.all, "task-worklist"] as const,
+  taskWorklistList: (params: OnboardingTaskWorklistParams) =>
+    [...onboardingQueryKeys.taskWorklist(), params] as const,
   application: (applicationId: string) =>
     [...onboardingQueryKeys.all, "application", applicationId] as const,
   taskActivity: (taskId: string) =>
@@ -50,6 +58,18 @@ export function useOnboardingOverview(
   return useQuery({
     queryKey: onboardingQueryKeys.overviewList(params),
     queryFn: ({ signal }) => listOnboardingOverview(params, { signal }),
+    enabled: status === "authenticated" && enabled,
+  });
+}
+
+export function useOnboardingTaskWorklist(
+  params: OnboardingTaskWorklistParams,
+  enabled = true,
+) {
+  const { status } = useSession();
+  return useQuery({
+    queryKey: onboardingQueryKeys.taskWorklistList(params),
+    queryFn: ({ signal }) => listOnboardingTaskWorklist(params, { signal }),
     enabled: status === "authenticated" && enabled,
   });
 }
@@ -109,6 +129,12 @@ export function useUpdateEmployeePortalTaskStatus() {
         queryClient.invalidateQueries({
           queryKey: onboardingQueryKeys.overview(),
         }),
+        queryClient.invalidateQueries({
+          queryKey: onboardingQueryKeys.taskWorklist(),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: notificationQueryKeys.actionItems,
+        }),
       ]);
     },
     onError: async () => {
@@ -151,6 +177,12 @@ export function useStartApplicationOnboarding() {
         queryClient.invalidateQueries({
           queryKey: onboardingQueryKeys.overview(),
         }),
+        queryClient.invalidateQueries({
+          queryKey: onboardingQueryKeys.taskWorklist(),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: notificationQueryKeys.actionItems,
+        }),
       ]);
     },
   });
@@ -175,6 +207,12 @@ export function useAssignOnboardingTask() {
         }),
         queryClient.invalidateQueries({
           queryKey: onboardingQueryKeys.overview(),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: onboardingQueryKeys.taskWorklist(),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: notificationQueryKeys.actionItems,
         }),
       ]);
     },
@@ -201,6 +239,12 @@ export function useUpdateOnboardingTaskDueDate() {
         queryClient.invalidateQueries({
           queryKey: onboardingQueryKeys.overview(),
         }),
+        queryClient.invalidateQueries({
+          queryKey: onboardingQueryKeys.taskWorklist(),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: notificationQueryKeys.actionItems,
+        }),
       ]);
     },
   });
@@ -226,6 +270,12 @@ export function useUpdateOnboardingTaskStatus() {
         queryClient.invalidateQueries({
           queryKey: onboardingQueryKeys.overview(),
         }),
+        queryClient.invalidateQueries({
+          queryKey: onboardingQueryKeys.taskWorklist(),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: notificationQueryKeys.actionItems,
+        }),
       ]);
     },
   });
@@ -247,6 +297,12 @@ export function useCompleteOnboarding() {
       await queryClient.invalidateQueries({
         queryKey: onboardingQueryKeys.overview(),
       });
+      await queryClient.invalidateQueries({
+        queryKey: onboardingQueryKeys.taskWorklist(),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: notificationQueryKeys.actionItems,
+      });
     },
   });
 }
@@ -266,6 +322,12 @@ export function useCancelOnboarding() {
       });
       await queryClient.invalidateQueries({
         queryKey: onboardingQueryKeys.overview(),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: onboardingQueryKeys.taskWorklist(),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: notificationQueryKeys.actionItems,
       });
     },
   });

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useOnboardingOverview } from "@/lib/api/hooks/onboarding";
 import type { OnboardingInstanceStatus } from "@/types/api/onboarding";
+import { OnboardingTaskWorklist } from "@/components/onboarding/onboarding-task-worklist";
 
 type StatusFilter = "all" | OnboardingInstanceStatus;
 const PAGE_SIZE = 25;
@@ -66,6 +67,8 @@ export default function OnboardingPage() {
           Track new-hire plans, task progress, and overdue work across your workspace.
         </p>
       </header>
+
+      <OnboardingTaskWorklist />
 
       <section aria-label="Onboarding summary" className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-xl border border-gray-200 bg-white p-4">

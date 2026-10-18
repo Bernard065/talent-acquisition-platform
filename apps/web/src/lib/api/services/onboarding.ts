@@ -9,6 +9,8 @@ import type {
   OnboardingOverviewResponse,
   OnboardingTaskActivityResponse,
   OnboardingTaskResponse,
+  OnboardingTaskWorklistResponse,
+  OnboardingTaskWorklistView,
   OnboardingTemplateListResponse,
   OnboardingTemplateResponse,
   StartOnboardingRequest,
@@ -30,6 +32,15 @@ export interface OnboardingOverviewParams {
   overdue_only?: boolean;
 }
 
+export interface OnboardingTaskWorklistParams {
+  page?: number;
+  limit?: number;
+  view?: OnboardingTaskWorklistView;
+  query?: string;
+  assignee_user_id?: string;
+  unassigned_only?: boolean;
+}
+
 export function listOnboardingTemplates(options?: RequestOptions) {
   return get<OnboardingTemplateListResponse>("/onboarding-templates", options);
 }
@@ -39,6 +50,16 @@ export function listOnboardingOverview(
   options?: RequestOptions,
 ) {
   return get<OnboardingOverviewResponse>("/onboarding-instances", {
+    ...options,
+    params: { ...options?.params, ...params },
+  });
+}
+
+export function listOnboardingTaskWorklist(
+  params: OnboardingTaskWorklistParams = {},
+  options?: RequestOptions,
+) {
+  return get<OnboardingTaskWorklistResponse>("/onboarding-tasks", {
     ...options,
     params: { ...options?.params, ...params },
   });
