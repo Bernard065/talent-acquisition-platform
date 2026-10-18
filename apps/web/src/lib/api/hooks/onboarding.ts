@@ -10,6 +10,7 @@ import {
   createOnboardingTemplate,
   getApplicationOnboarding,
   getEmployeePortalOnboarding,
+  getOnboardingTaskActivity,
   listOnboardingOverview,
   listOnboardingTemplates,
   startApplicationOnboarding,
@@ -34,6 +35,8 @@ export const onboardingQueryKeys = {
     [...onboardingQueryKeys.overview(), params] as const,
   application: (applicationId: string) =>
     [...onboardingQueryKeys.all, "application", applicationId] as const,
+  taskActivity: (taskId: string) =>
+    [...onboardingQueryKeys.all, "task-activity", taskId] as const,
   employeePortal: () => [...onboardingQueryKeys.all, "employee-portal"] as const,
 };
 
@@ -67,6 +70,15 @@ export function useApplicationOnboarding(applicationId: string, enabled = true) 
   });
 }
 
+export function useOnboardingTaskActivity(taskId: string, enabled = true) {
+  const { status } = useSession();
+  return useQuery({
+    queryKey: onboardingQueryKeys.taskActivity(taskId),
+    queryFn: ({ signal }) => getOnboardingTaskActivity(taskId, { signal }),
+    enabled: status === "authenticated" && enabled && Boolean(taskId),
+  });
+}
+
 export function useEmployeePortalOnboarding(enabled = true) {
   const { status } = useSession();
   return useQuery({
@@ -84,10 +96,13 @@ export function useUpdateEmployeePortalTaskStatus() {
       request: UpdateEmployeePortalTaskStatusRequest;
       idempotencyKey: string;
     }) => updateEmployeePortalTaskStatus(taskId, request, idempotencyKey),
-    onSuccess: async () => {
+    onSuccess: async (_task, { taskId }) => {
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: onboardingQueryKeys.employeePortal(),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: onboardingQueryKeys.taskActivity(taskId),
         }),
         queryClient.invalidateQueries({
           queryKey: onboardingQueryKeys.overview(),
@@ -148,13 +163,18 @@ export function useAssignOnboardingTask() {
       idempotencyKey: string;
       applicationId: string;
     }) => assignOnboardingTask(taskId, request, idempotencyKey),
-    onSuccess: async (_task, { applicationId }) => {
-      await queryClient.invalidateQueries({
-        queryKey: onboardingQueryKeys.application(applicationId),
-      });
-      await queryClient.invalidateQueries({
-        queryKey: onboardingQueryKeys.overview(),
-      });
+    onSuccess: async (_task, { applicationId, taskId }) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: onboardingQueryKeys.application(applicationId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: onboardingQueryKeys.taskActivity(taskId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: onboardingQueryKeys.overview(),
+        }),
+      ]);
     },
   });
 }
@@ -168,13 +188,18 @@ export function useUpdateOnboardingTaskStatus() {
       idempotencyKey: string;
       applicationId: string;
     }) => updateOnboardingTaskStatus(taskId, request, idempotencyKey),
-    onSuccess: async (_task, { applicationId }) => {
-      await queryClient.invalidateQueries({
-        queryKey: onboardingQueryKeys.application(applicationId),
-      });
-      await queryClient.invalidateQueries({
-        queryKey: onboardingQueryKeys.overview(),
-      });
+    onSuccess: async (_task, { applicationId, taskId }) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: onboardingQueryKeys.application(applicationId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: onboardingQueryKeys.taskActivity(taskId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: onboardingQueryKeys.overview(),
+        }),
+      ]);
     },
   });
 }

@@ -7,6 +7,7 @@ import type {
   ExpectedInstanceVersionRequest,
   OnboardingInstanceResponse,
   OnboardingOverviewResponse,
+  OnboardingTaskActivityResponse,
   OnboardingTaskResponse,
   OnboardingTemplateListResponse,
   OnboardingTemplateResponse,
@@ -48,6 +49,16 @@ export function getApplicationOnboarding(
 ) {
   return get<ApplicationOnboardingResponse>(
     `/applications/${applicationId}/onboarding`,
+    options,
+  );
+}
+
+export function getOnboardingTaskActivity(
+  taskId: string,
+  options?: RequestOptions,
+) {
+  return get<OnboardingTaskActivityResponse>(
+    `/onboarding-tasks/${taskId}/activity`,
     options,
   );
 }
