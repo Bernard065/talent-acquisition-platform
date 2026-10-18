@@ -1,7 +1,7 @@
 """Tenant-scoped application follow-ups and interviewer tasks for dashboard alerts."""
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 from uuid import UUID
 
@@ -49,6 +49,7 @@ _FEEDBACK_APPLICATION_STATUSES = (
     ApplicationStatus.INTERVIEW,
     ApplicationStatus.OFFER,
 )
+_ONBOARDING_TASK_DUE_SOON_WINDOW = timedelta(days=7)
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +59,7 @@ class NotificationActionItemRecord:
         "overdue_follow_up",
         "pending_interview_feedback",
         "overdue_onboarding_task",
+        "due_soon_onboarding_task",
     ]
     title: str
     candidate_name: str
@@ -259,7 +261,7 @@ async def list_notification_action_items(
         .where(
             OnboardingTask.tenant_id == context.tenant_id,
             OnboardingTask.assignee_user_id == user.id,
-            OnboardingTask.due_at <= now,
+            OnboardingTask.due_at <= now + _ONBOARDING_TASK_DUE_SOON_WINDOW,
             OnboardingTask.status.in_(
                 (
                     OnboardingTaskStatus.NOT_STARTED,
@@ -279,7 +281,11 @@ async def list_notification_action_items(
         items.append(
             NotificationActionItemRecord(
                 id=f"onboarding-task:{task.id}",
-                kind="overdue_onboarding_task",
+                kind=(
+                    "overdue_onboarding_task"
+                    if task.due_at <= now
+                    else "due_soon_onboarding_task"
+                ),
                 title=task.title,
                 candidate_name=candidate_name,
                 requisition_title=requisition_title,
