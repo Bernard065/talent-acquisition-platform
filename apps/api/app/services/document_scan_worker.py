@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.authorization import Role, TenantContext
 from app.db.models.outbox import OutboxEvent
 from app.domains.documents.enums import CandidateDocumentStatus
+from app.domains.onboarding.enums import OnboardingTaskDocumentStatus
 from app.services.candidate_document_errors import CandidateDocumentNotFoundError
 from app.services.candidate_documents import get_candidate_document
 from app.services.document_scan_errors import CandidateDocumentNotScannableError
@@ -16,6 +17,15 @@ from app.services.document_scanning import (
     complete_candidate_document_scan,
 )
 from app.services.malware_scanner import MalwareScanner, MalwareScannerError
+from app.services.onboarding_documents import (
+    begin_onboarding_task_document_scan,
+    complete_onboarding_task_document_scan,
+    get_onboarding_task_document_for_worker,
+)
+from app.services.onboarding_errors import (
+    OnboardingTaskNotFoundError,
+    OnboardingValidationError,
+)
 from app.services.outbox_worker import (
     DEFAULT_OUTBOX_WORKER_POLICY,
     OutboxWorkerPolicy,
@@ -26,6 +36,7 @@ from app.services.outbox_worker import (
 )
 
 _SCAN_REQUESTED_EVENT = "candidate_document.scan_requested"
+_ONBOARDING_SCAN_REQUESTED_EVENT = "onboarding_task_document.scan_requested"
 _TERMINAL_DOCUMENT_STATUSES = frozenset(
     {
         CandidateDocumentStatus.AVAILABLE,
@@ -76,7 +87,9 @@ async def process_candidate_document_scan_events(
         session,
         worker_id=worker_id,
         policy=policy,
-        event_types=frozenset({_SCAN_REQUESTED_EVENT}),
+        event_types=frozenset(
+            {_SCAN_REQUESTED_EVENT, _ONBOARDING_SCAN_REQUESTED_EVENT}
+        ),
     )
 
     processed = 0
@@ -84,13 +97,22 @@ async def process_candidate_document_scan_events(
     dead_lettered = 0
 
     for event in events:
-        outcome = await _process_scan_event(
-            session,
-            event=event,
-            worker_id=worker_id,
-            scanner=scanner,
-            policy=policy,
-        )
+        if event.event_type == _ONBOARDING_SCAN_REQUESTED_EVENT:
+            outcome = await _process_onboarding_scan_event(
+                session,
+                event=event,
+                worker_id=worker_id,
+                scanner=scanner,
+                policy=policy,
+            )
+        else:
+            outcome = await _process_scan_event(
+                session,
+                event=event,
+                worker_id=worker_id,
+                scanner=scanner,
+                policy=policy,
+            )
 
         if outcome == "processed":
             processed += 1
@@ -200,4 +222,98 @@ async def _process_scan_event(
         worker_id=worker_id,
     )
 
+    return "processed"
+
+
+async def _process_onboarding_scan_event(
+    session: AsyncSession,
+    *,
+    event: OutboxEvent,
+    worker_id: str,
+    scanner: MalwareScanner,
+    policy: OutboxWorkerPolicy,
+) -> str:
+    """Scan an onboarding attachment and expose it only when it is clean."""
+    event_id = event.id
+    context = _worker_context(event, worker_id)
+    try:
+        document_id = _document_id_from_event(event)
+    except (TypeError, ValueError):
+        await dead_letter_outbox_event(
+            session,
+            event_id=event_id,
+            worker_id=worker_id,
+            failure_code="invalid_onboarding_scan_event_payload",
+        )
+        return "dead_lettered"
+
+    try:
+        document = await get_onboarding_task_document_for_worker(
+            session,
+            tenant_id=context.tenant_id,
+            document_id=document_id,
+        )
+    except OnboardingTaskNotFoundError:
+        await dead_letter_outbox_event(
+            session,
+            event_id=event_id,
+            worker_id=worker_id,
+            failure_code="onboarding_document_not_found",
+        )
+        return "dead_lettered"
+
+    if document.status in {
+        OnboardingTaskDocumentStatus.AVAILABLE,
+        OnboardingTaskDocumentStatus.QUARANTINED,
+        OnboardingTaskDocumentStatus.REJECTED,
+    }:
+        await mark_outbox_event_processed(
+            session,
+            event_id=event_id,
+            worker_id=worker_id,
+        )
+        return "processed"
+
+    try:
+        document = await begin_onboarding_task_document_scan(
+            session,
+            context=context,
+            document_id=document_id,
+        )
+    except (OnboardingTaskNotFoundError, OnboardingValidationError):
+        await dead_letter_outbox_event(
+            session,
+            event_id=event_id,
+            worker_id=worker_id,
+            failure_code="onboarding_document_not_scannable",
+        )
+        return "dead_lettered"
+
+    try:
+        result = await scanner.scan(
+            document_id=document.id,
+            object_key=document.storage_key,
+            content_type=document.declared_content_type,
+        )
+    except MalwareScannerError:
+        await schedule_outbox_event_retry(
+            session,
+            event_id=event_id,
+            worker_id=worker_id,
+            failure_code="malware_scanner_unavailable",
+            policy=policy,
+        )
+        return "retried"
+
+    await complete_onboarding_task_document_scan(
+        session,
+        context=context,
+        document_id=document.id,
+        result=result,
+    )
+    await mark_outbox_event_processed(
+        session,
+        event_id=event_id,
+        worker_id=worker_id,
+    )
     return "processed"
