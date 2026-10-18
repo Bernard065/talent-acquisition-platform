@@ -223,6 +223,12 @@ async def get_employee_portal_onboarding_endpoint(
                 due_at=task.due_at,
                 responsible_party=task.responsible_party,
                 status=task.status,
+                blocked_reason=(
+                    task.blocked_reason
+                    if task.responsible_party
+                    is OnboardingTaskResponsibility.EMPLOYEE
+                    else None
+                ),
                 completed_at=task.completed_at,
                 version=task.version,
                 can_update=(
@@ -257,7 +263,7 @@ async def update_employee_portal_task_status_endpoint(
     session: DatabaseSession,
     idempotency_key: IdempotencyKey,
 ) -> JSONResponse:
-    """Let an employee start or complete only a task they own."""
+    """Let an employee progress or request help for a task they own."""
 
     async def operation() -> tuple[int, dict[str, Any]]:
         task = await update_employee_portal_task_status(
@@ -267,6 +273,7 @@ async def update_employee_portal_task_status_endpoint(
             command=UpdateOnboardingTaskStatusCommand(
                 expected_version=payload.expected_version,
                 target_status=OnboardingTaskStatus(payload.target_status),
+                blocked_reason=payload.blocked_reason,
             ),
         )
         return (
@@ -278,6 +285,7 @@ async def update_employee_portal_task_status_endpoint(
                 due_at=task.due_at,
                 responsible_party=task.responsible_party,
                 status=task.status,
+                blocked_reason=task.blocked_reason,
                 completed_at=task.completed_at,
                 version=task.version,
                 can_update=False,

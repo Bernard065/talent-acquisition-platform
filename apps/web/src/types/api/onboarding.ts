@@ -52,8 +52,8 @@ export interface OnboardingTaskResponse {
   assignee_user_id: string | null;
   responsible_party: OnboardingTaskResponsibility;
   status: OnboardingTaskStatus;
-  completed_at: string | null;
   blocked_reason: string | null;
+  completed_at: string | null;
   version: number;
 }
 
@@ -98,6 +98,7 @@ export interface EmployeePortalTaskResponse {
   due_at: string | null;
   responsible_party: OnboardingTaskResponsibility;
   status: OnboardingTaskStatus;
+  blocked_reason: string | null;
   completed_at: string | null;
   version: number;
   can_update: boolean;
@@ -136,7 +137,8 @@ export interface UpdateOnboardingTaskStatusRequest {
 
 export interface UpdateEmployeePortalTaskStatusRequest {
   expected_version: number;
-  target_status: "in_progress" | "completed";
+  target_status: "in_progress" | "completed" | "blocked";
+  blocked_reason?: string | null;
 }
 
 export interface ExpectedInstanceVersionRequest {

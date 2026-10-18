@@ -1142,13 +1142,14 @@ async def update_employee_portal_task_status(
     onboarding_task_id: UUID,
     command: UpdateOnboardingTaskStatusCommand,
 ) -> OnboardingTask:
-    """Allow the authenticated employee to progress their own employee task."""
+    """Allow an employee to progress or request help for their own task."""
     if command.target_status not in {
         OnboardingTaskStatus.IN_PROGRESS,
         OnboardingTaskStatus.COMPLETED,
+        OnboardingTaskStatus.BLOCKED,
     }:
         raise OnboardingValidationError(
-            "Employees can only start or complete their own onboarding tasks."
+            "Employees can only start, complete, or request help on their own tasks."
         )
 
     async with transactional(session):
