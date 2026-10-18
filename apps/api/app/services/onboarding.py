@@ -72,6 +72,19 @@ _MAX_DESCRIPTION_LENGTH = 5_000
 _MAX_BLOCK_REASON_LENGTH = 2_000
 
 
+@dataclass(frozen=True, slots=True)
+class OnboardingTaskActivityItem:
+    """Privacy-safe task activity for workspace staff or its employee owner."""
+
+    id: UUID
+    event_type: OnboardingTaskEventType
+    from_status: OnboardingTaskStatus | None
+    to_status: OnboardingTaskStatus
+    note: str | None
+    actor_display_name: str
+    occurred_at: datetime
+
+
 async def list_onboarding_overview(
     session: AsyncSession,
     *,
@@ -313,6 +326,82 @@ async def get_application_onboarding(
         )
     )
     return instance, tasks
+
+
+async def list_onboarding_task_activity(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    onboarding_task_id: UUID,
+) -> tuple[OnboardingTaskActivityItem, ...]:
+    """Return task history to workspace staff or the employee who owns it."""
+    task = await session.scalar(
+        select(OnboardingTask).where(
+            OnboardingTask.id == onboarding_task_id,
+            OnboardingTask.tenant_id == context.tenant_id,
+        )
+    )
+    if task is None:
+        raise OnboardingTaskNotFoundError("Onboarding task was not found.")
+
+    if context.roles.isdisjoint(_ONBOARDING_WRITE_ROLES):
+        if task.responsible_party is not OnboardingTaskResponsibility.EMPLOYEE:
+            raise OnboardingTaskNotFoundError("Onboarding task was not found.")
+
+        employee, _ = await _get_employee_for_subject(
+            session,
+            context=context,
+        )
+        application_id = await session.scalar(
+            select(OnboardingInstance.application_id).where(
+                OnboardingInstance.id == task.onboarding_instance_id,
+                OnboardingInstance.tenant_id == context.tenant_id,
+            )
+        )
+        if application_id is None or employee.application_id != application_id:
+            raise OnboardingTaskNotFoundError("Onboarding task was not found.")
+
+    rows = (
+        await session.execute(
+            select(OnboardingTaskHistory, User.display_name)
+            .outerjoin(
+                User,
+                and_(
+                    User.tenant_id == OnboardingTaskHistory.tenant_id,
+                    User.external_subject
+                    == OnboardingTaskHistory.occurred_by_subject,
+                ),
+            )
+            .where(
+                OnboardingTaskHistory.tenant_id == context.tenant_id,
+                OnboardingTaskHistory.onboarding_task_id == onboarding_task_id,
+            )
+            .order_by(
+                OnboardingTaskHistory.occurred_at,
+                OnboardingTaskHistory.id,
+            )
+        )
+    ).all()
+
+    return tuple(
+        OnboardingTaskActivityItem(
+            id=history.id,
+            event_type=history.event_type,
+            from_status=history.from_status,
+            to_status=history.to_status,
+            note=history.note,
+            actor_display_name=(
+                display_name
+                or (
+                    "You"
+                    if history.occurred_by_subject == context.subject
+                    else "Former workspace member"
+                )
+            ),
+            occurred_at=history.occurred_at,
+        )
+        for history, display_name in rows
+    )
 
 
 async def _get_employee_for_subject(

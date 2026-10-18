@@ -9,6 +9,14 @@ export type OnboardingTaskStatus =
   | "blocked"
   | "cancelled";
 export type OnboardingTaskResponsibility = "workspace" | "employee";
+export type OnboardingTaskEventType =
+  | "created"
+  | "assigned"
+  | "due_date_changed"
+  | "status_changed"
+  | "completed"
+  | "blocked"
+  | "cancelled";
 
 export interface OnboardingTemplateTaskRequest {
   title: string;
@@ -56,6 +64,20 @@ export interface OnboardingTaskResponse {
   resolution_note: string | null;
   completed_at: string | null;
   version: number;
+}
+
+export interface OnboardingTaskActivityItem {
+  id: string;
+  event_type: OnboardingTaskEventType;
+  from_status: OnboardingTaskStatus | null;
+  to_status: OnboardingTaskStatus;
+  note: string | null;
+  actor_display_name: string;
+  occurred_at: string;
+}
+
+export interface OnboardingTaskActivityResponse {
+  items: OnboardingTaskActivityItem[];
 }
 
 export interface OnboardingInstanceResponse {

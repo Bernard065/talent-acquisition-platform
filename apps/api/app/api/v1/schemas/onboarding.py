@@ -10,6 +10,7 @@ from app.api.v1.schemas.employee_records import EmployeePortalProfileResponse
 from app.core.authorization import Role
 from app.domains.onboarding.enums import (
     OnboardingInstanceStatus,
+    OnboardingTaskEventType,
     OnboardingTaskResponsibility,
     OnboardingTaskStatus,
 )
@@ -199,6 +200,24 @@ class OnboardingTaskResponse(BaseModel):
     blocked_reason: str | None
     resolution_note: str | None
     version: int
+
+
+class OnboardingTaskActivityItemResponse(BaseModel):
+    """One safe event in a task's onboarding timeline."""
+
+    id: UUID
+    event_type: OnboardingTaskEventType
+    from_status: OnboardingTaskStatus | None
+    to_status: OnboardingTaskStatus
+    note: str | None
+    actor_display_name: str
+    occurred_at: datetime
+
+
+class OnboardingTaskActivityResponse(BaseModel):
+    """Chronological activity for one onboarding task."""
+
+    items: list[OnboardingTaskActivityItemResponse]
 
 
 class ApplicationOnboardingResponse(BaseModel):

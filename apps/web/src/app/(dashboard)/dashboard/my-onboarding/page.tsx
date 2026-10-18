@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ApiError } from "@/lib/api";
+import { OnboardingTaskActivity } from "@/components/onboarding/onboarding-task-activity";
 import {
   useEmployeePortalOnboarding,
   useUpdateEmployeePortalTaskStatus,
@@ -119,6 +120,12 @@ function TaskItem({
               </p>
             )}
           </div>
+        )}
+        {task.responsible_party === "employee" && (
+          <OnboardingTaskActivity
+            taskId={task.id}
+            viewer="employee"
+          />
         )}
         {task.responsible_party === "employee" && task.status !== "completed" && task.status !== "cancelled" && task.status !== "blocked" && (
           task.can_update ? (

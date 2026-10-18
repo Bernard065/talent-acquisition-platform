@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useSession } from "next-auth/react";
+import { OnboardingTaskActivity } from "@/components/onboarding/onboarding-task-activity";
 import { ApiError } from "@/lib/api";
 import {
   useApplicationOnboarding,
@@ -165,6 +166,10 @@ function TaskRow({
         </div>
       )}
       {task.blocked_reason && <p className="mt-3 rounded-md bg-amber-50 p-3 text-sm text-amber-900">Blocked: {task.blocked_reason}</p>}
+      <OnboardingTaskActivity
+        taskId={task.id}
+        viewer="workspace"
+      />
       {error && <p role="alert" className="mt-3 text-sm text-red-800">{error}</p>}
     </li>
   );
