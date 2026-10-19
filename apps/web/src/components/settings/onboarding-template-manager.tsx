@@ -15,6 +15,7 @@ type TemplateTaskDraft = {
   assigneeRole: Role | "";
   responsibleParty: OnboardingTaskResponsibility;
   requiresDocumentUpload: boolean;
+  requiresDocumentReview: boolean;
 };
 const blankTask = (): TemplateTaskDraft => ({
   title: "",
@@ -23,6 +24,7 @@ const blankTask = (): TemplateTaskDraft => ({
   assigneeRole: "",
   responsibleParty: "workspace",
   requiresDocumentUpload: false,
+  requiresDocumentReview: false,
 });
 
 export function OnboardingTemplateManager() {
@@ -48,6 +50,7 @@ export function OnboardingTemplateManager() {
           task.responsibleParty === "workspace" ? task.assigneeRole || null : null,
         responsible_party: task.responsibleParty,
         requires_document_upload: task.requiresDocumentUpload,
+        requires_document_review: task.requiresDocumentReview,
       })),
     };
     createTemplate.mutate({ request, idempotencyKey: crypto.randomUUID() }, {
@@ -80,7 +83,7 @@ export function OnboardingTemplateManager() {
               <p className="font-medium text-gray-900">{template.name}</p>
               <p className="mt-1 text-sm text-gray-600">Version {template.version} · {template.tasks.length} tasks</p>
               <ol className="mt-3 space-y-1 text-sm text-gray-700">
-                {template.tasks.map((task, index) => <li key={task.id}>{index + 1}. {task.title} · {task.responsible_party === "employee" ? "Employee" : "Workspace team"}{task.requires_document_upload ? " · File upload required" : ""}</li>)}
+                {template.tasks.map((task, index) => <li key={task.id}>{index + 1}. {task.title} · {task.responsible_party === "employee" ? "Employee" : "Workspace team"}{task.requires_document_upload ? " · File upload required" : ""}{task.requires_document_review ? " · People Ops review required" : ""}</li>)}
               </ol>
             </li>
           ))}
@@ -116,7 +119,7 @@ export function OnboardingTemplateManager() {
               </label>
               <label>
                 <span className="mb-1 block text-sm text-gray-700">Who is responsible?</span>
-                <select value={task.responsibleParty} onChange={(event) => setTasks((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, responsibleParty: event.target.value as OnboardingTaskResponsibility, assigneeRole: "", requiresDocumentUpload: event.target.value === "employee" ? item.requiresDocumentUpload : false } : item))} className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm">
+                <select value={task.responsibleParty} onChange={(event) => setTasks((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, responsibleParty: event.target.value as OnboardingTaskResponsibility, assigneeRole: "", requiresDocumentUpload: event.target.value === "employee" ? item.requiresDocumentUpload : false, requiresDocumentReview: event.target.value === "employee" ? item.requiresDocumentReview : false } : item))} className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm">
                   <option value="workspace">Workspace team</option>
                   <option value="employee">Employee</option>
                 </select>
@@ -126,11 +129,24 @@ export function OnboardingTemplateManager() {
                   <input
                     type="checkbox"
                     checked={task.requiresDocumentUpload}
-                    onChange={(event) => setTasks((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, requiresDocumentUpload: event.target.checked } : item))}
+                    onChange={(event) => setTasks((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, requiresDocumentUpload: event.target.checked, requiresDocumentReview: event.target.checked ? item.requiresDocumentReview : false } : item))}
                     className="mt-0.5 h-4 w-4 cursor-pointer rounded border-gray-300 text-sr-green focus:ring-sr-green"
                   />
                   <span className="text-sm text-gray-700">
                     Require the employee to upload a file before completing this task
+                  </span>
+                </label>
+              )}
+              {task.responsibleParty === "employee" && task.requiresDocumentUpload && (
+                <label className="flex items-start gap-2 sm:col-span-2">
+                  <input
+                    type="checkbox"
+                    checked={task.requiresDocumentReview}
+                    onChange={(event) => setTasks((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, requiresDocumentReview: event.target.checked } : item))}
+                    className="mt-0.5 h-4 w-4 cursor-pointer rounded border-gray-300 text-sr-green focus:ring-sr-green"
+                  />
+                  <span className="text-sm text-gray-700">
+                    Require People Operations to accept the document before the employee can complete this task
                   </span>
                 </label>
               )}

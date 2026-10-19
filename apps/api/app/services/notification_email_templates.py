@@ -121,6 +121,26 @@ _TEMPLATES: dict[tuple[NotificationEventType, str], NotificationEmailTemplate] =
         ),
     ),
     (
+        NotificationEventType.ONBOARDING_DOCUMENT_ACCEPTED,
+        "onboarding_document_accepted",
+    ): NotificationEmailTemplate(
+        subject="Onboarding document accepted",
+        text_body=(
+            "People Operations accepted your onboarding document.\n\n"
+            "Sign in to MindHire to complete this step and continue your onboarding checklist."
+        ),
+    ),
+    (
+        NotificationEventType.ONBOARDING_DOCUMENT_CHANGES_REQUESTED,
+        "onboarding_document_changes_requested",
+    ): NotificationEmailTemplate(
+        subject="An onboarding document needs an update",
+        text_body=(
+            "People Operations requested a replacement for an onboarding document.\n\n"
+            "Sign in to MindHire to read the feedback and upload a replacement."
+        ),
+    ),
+    (
         NotificationEventType.INTERVIEW_SCHEDULED,
         "interview_scheduled",
     ): NotificationEmailTemplate(

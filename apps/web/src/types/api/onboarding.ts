@@ -26,6 +26,7 @@ export interface OnboardingTemplateTaskRequest {
   default_assignee_role: Role | null;
   responsible_party: OnboardingTaskResponsibility;
   requires_document_upload: boolean;
+  requires_document_review: boolean;
 }
 
 export interface CreateOnboardingTemplateRequest {
@@ -62,6 +63,7 @@ export interface OnboardingTaskResponse {
   assignee_user_id: string | null;
   responsible_party: OnboardingTaskResponsibility;
   requires_document_upload: boolean;
+  requires_document_review: boolean;
   status: OnboardingTaskStatus;
   blocked_reason: string | null;
   resolution_note: string | null;
@@ -150,6 +152,7 @@ export interface EmployeePortalTaskResponse {
   due_at: string | null;
   responsible_party: OnboardingTaskResponsibility;
   requires_document_upload: boolean;
+  requires_document_review: boolean;
   status: OnboardingTaskStatus;
   blocked_reason: string | null;
   resolution_note: string | null;
@@ -167,6 +170,12 @@ export type OnboardingTaskDocumentStatus =
   | "quarantined"
   | "rejected";
 
+export type OnboardingTaskDocumentReviewStatus =
+  | "not_required"
+  | "pending_review"
+  | "accepted"
+  | "changes_requested";
+
 export interface OnboardingTaskDocumentResponse {
   id: string;
   onboarding_task_id: string;
@@ -174,10 +183,20 @@ export interface OnboardingTaskDocumentResponse {
   declared_content_type: string;
   expected_byte_size: number;
   status: OnboardingTaskDocumentStatus;
+  review_status: OnboardingTaskDocumentReviewStatus;
+  review_comment: string | null;
+  reviewed_at: string | null;
   uploaded_at: string | null;
   scan_started_at: string | null;
   scan_completed_at: string | null;
   created_at: string;
+  version: number;
+}
+
+export interface ReviewOnboardingTaskDocumentRequest {
+  expected_document_version: number;
+  decision: "accepted" | "changes_requested";
+  comment: string | null;
 }
 
 export interface CreateOnboardingTaskDocumentRequest {

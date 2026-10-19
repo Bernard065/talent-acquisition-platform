@@ -63,6 +63,12 @@ function TaskRow({
   const hasAvailableDocument = task.documents.some(
     (document) => document.status === "available",
   );
+  const hasAcceptedDocument = task.documents.some(
+    (document) => document.status === "available" && document.review_status === "accepted",
+  );
+  const canCompleteDocumentRequirement = task.requires_document_review
+    ? hasAcceptedDocument
+    : hasAvailableDocument;
   const currentDueDate = task.due_at?.slice(0, 10) ?? "";
   const selectedDueDate = dueDateDraft ?? currentDueDate;
 
@@ -86,9 +92,11 @@ function TaskRow({
     if (
       target === "completed" &&
       task.requires_document_upload &&
-      !hasAvailableDocument
+      !canCompleteDocumentRequirement
     ) {
-      setError("The employee’s file must pass its security scan before this task can be completed.");
+      setError(task.requires_document_review
+        ? "People Operations must accept a clean document before this task can be completed."
+        : "The employee’s file must pass its security scan before this task can be completed.");
       return;
     }
     if (target === "blocked" && !blockedReason.trim()) {
@@ -156,7 +164,7 @@ function TaskRow({
             <select value={task.status} disabled={updateStatus.isPending} onChange={(event) => changeStatus(event.target.value as OnboardingTaskStatus)} className="h-10 w-full cursor-pointer rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto">
               <option value={task.status}>{taskLabels[task.status]}</option>
               {task.status === "not_started" && <><option value="in_progress">In progress</option><option value="blocked">Blocked</option></>}
-              {task.status === "in_progress" && <><option value="completed" disabled={task.requires_document_upload && !hasAvailableDocument}>Completed</option><option value="blocked">Blocked</option></>}
+              {task.status === "in_progress" && <><option value="completed" disabled={task.requires_document_upload && !canCompleteDocumentRequirement}>Completed</option><option value="blocked">Blocked</option></>}
               {task.status === "blocked" && <option value="in_progress" disabled={task.responsible_party === "employee" && !resolutionNote.trim()}>{task.responsible_party === "employee" ? "Reopen after response" : "In progress"}</option>}
             </select>
           </label>
@@ -166,9 +174,11 @@ function TaskRow({
         <div className="mt-3">
           <p className="text-xs font-medium text-gray-600">Employee must upload a file for this step.</p>
           <OnboardingTaskDocumentList documents={task.documents} />
-          {task.status === "in_progress" && !hasAvailableDocument && (
+          {task.status === "in_progress" && task.requires_document_upload && !canCompleteDocumentRequirement && (
             <p className="mt-2 text-xs text-gray-600">
-              Completion is available after the employee’s file passes its security scan.
+              {task.requires_document_review
+                ? "Completion is available after People Operations accepts a clean file."
+                : "Completion is available after the employee’s file passes its security scan."}
             </p>
           )}
         </div>

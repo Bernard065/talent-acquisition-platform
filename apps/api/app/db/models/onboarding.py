@@ -28,6 +28,7 @@ from app.db.base import Base
 from app.domains.onboarding.enums import (
     OnboardingInstanceEventType,
     OnboardingInstanceStatus,
+    OnboardingTaskDocumentReviewStatus,
     OnboardingTaskDocumentStatus,
     OnboardingTaskEventType,
     OnboardingTaskResponsibility,
@@ -107,6 +108,10 @@ class OnboardingTemplateTask(Base):
             "responsible_party = 'employee' OR requires_document_upload = false",
             name="ck_onboarding_template_tasks_uploads_employee_only",
         ),
+        CheckConstraint(
+            "requires_document_review = false OR requires_document_upload = true",
+            name="ck_onboarding_template_tasks_review_requires_upload",
+        ),
         UniqueConstraint(
             "onboarding_template_id",
             "position",
@@ -151,6 +156,12 @@ class OnboardingTemplateTask(Base):
         server_default=OnboardingTaskResponsibility.WORKSPACE.value,
     )
     requires_document_upload: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
+    requires_document_review: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
         default=False,
@@ -267,6 +278,10 @@ class OnboardingTask(Base):
             "responsible_party = 'employee' OR requires_document_upload = false",
             name="ck_onboarding_tasks_uploads_employee_only",
         ),
+        CheckConstraint(
+            "requires_document_review = false OR requires_document_upload = true",
+            name="ck_onboarding_tasks_review_requires_upload",
+        ),
         Index(
             "ix_onboarding_tasks_tenant_status_due_at",
             "tenant_id",
@@ -327,6 +342,12 @@ class OnboardingTask(Base):
         default=False,
         server_default=text("false"),
     )
+    requires_document_review: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
     status: Mapped[OnboardingTaskStatus] = mapped_column(
         Enum(
             OnboardingTaskStatus,
@@ -378,6 +399,18 @@ class OnboardingTaskDocument(Base):
             "expected_byte_size > 0",
             name="ck_onboarding_task_documents_size_positive",
         ),
+        CheckConstraint(
+            "(review_status IN ('not_required', 'pending_review') "
+            "AND reviewed_at IS NULL AND reviewed_by_subject IS NULL) OR "
+            "(review_status IN ('accepted', 'changes_requested') "
+            "AND reviewed_at IS NOT NULL AND reviewed_by_subject IS NOT NULL)",
+            name="ck_onboarding_task_documents_review_metadata_consistent",
+        ),
+        CheckConstraint(
+            "review_status NOT IN ('pending_review', 'accepted', 'changes_requested') "
+            "OR status = 'available'",
+            name="ck_onboarding_task_documents_review_requires_clean_file",
+        ),
         Index(
             "ix_onboarding_task_documents_tenant_task_created_at",
             "tenant_id",
@@ -423,6 +456,19 @@ class OnboardingTaskDocument(Base):
         default=OnboardingTaskDocumentStatus.PENDING_UPLOAD,
         server_default=OnboardingTaskDocumentStatus.PENDING_UPLOAD.value,
     )
+    review_status: Mapped[OnboardingTaskDocumentReviewStatus] = mapped_column(
+        Enum(
+            OnboardingTaskDocumentReviewStatus,
+            name="onboarding_task_document_review_status",
+            values_callable=lambda statuses: [status.value for status in statuses],
+        ),
+        nullable=False,
+        default=OnboardingTaskDocumentReviewStatus.NOT_REQUIRED,
+        server_default=OnboardingTaskDocumentReviewStatus.NOT_REQUIRED.value,
+    )
+    reviewed_by_subject: Mapped[str | None] = mapped_column(String(255))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    review_comment: Mapped[str | None] = mapped_column(Text)
     uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     scan_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     scan_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -38,6 +38,8 @@ class NotificationEventType(StrEnum):
     ONBOARDING_TASK_BLOCKED = "onboarding.task_blocked"
     ONBOARDING_TASK_COMPLETED = "onboarding.task_completed"
     ONBOARDING_TASK_UNBLOCKED = "onboarding.task_unblocked"
+    ONBOARDING_DOCUMENT_ACCEPTED = "onboarding.document_accepted"
+    ONBOARDING_DOCUMENT_CHANGES_REQUESTED = "onboarding.document_changes_requested"
     INTERVIEW_SCHEDULED = "interview.scheduled"
     INTERVIEW_RESCHEDULED = "interview.rescheduled"
     INTERVIEW_CANCELLED = "interview.cancelled"

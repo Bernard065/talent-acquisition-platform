@@ -12,6 +12,7 @@ import type {
   OnboardingTaskDocumentDownloadAuthorizationResponse,
   OnboardingTaskDocumentResponse,
   OnboardingTaskDocumentUploadAuthorizationResponse,
+  ReviewOnboardingTaskDocumentRequest,
   OnboardingTaskResponse,
   OnboardingTaskWorklistResponse,
   OnboardingTaskWorklistView,
@@ -171,6 +172,19 @@ export function getOnboardingTaskDocumentPreviewAuthorization(
   return get<OnboardingTaskDocumentDownloadAuthorizationResponse>(
     `/onboarding-task-documents/${documentId}/preview-authorizations`,
     { signal },
+  );
+}
+
+export function reviewOnboardingTaskDocument(
+  documentId: string,
+  request: ReviewOnboardingTaskDocumentRequest,
+  idempotencyKey: string,
+  options?: RequestOptions,
+) {
+  return post<OnboardingTaskDocumentResponse>(
+    `/onboarding-task-documents/${documentId}/reviews`,
+    request,
+    { ...options, idempotencyKey },
   );
 }
 
