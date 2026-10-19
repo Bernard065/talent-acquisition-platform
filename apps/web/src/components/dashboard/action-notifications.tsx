@@ -46,7 +46,8 @@ export function ActionNotifications() {
             Needs your attention
           </h2>
           <p className="mt-1 text-sm text-gray-600">
-            Upcoming onboarding deadlines, overdue follow-ups, and interview feedback assigned to you.
+            Upcoming onboarding deadlines, documents awaiting review, overdue
+            follow-ups, and interview feedback assigned to you.
           </p>
         </div>
         <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-amber-900 ring-1 ring-amber-200">
@@ -62,14 +63,25 @@ export function ActionNotifications() {
             item.kind === "due_soon_onboarding_task";
           const isDueSoon = item.kind === "due_soon_onboarding_task";
           const isInterviewFeedback = item.kind === "pending_interview_feedback";
-          const Icon = isInterviewFeedback ? ClipboardCheck : Clock3;
+          const isDocumentReview =
+            item.kind === "pending_onboarding_document_review";
+          const Icon =
+            isInterviewFeedback || isDocumentReview ? ClipboardCheck : Clock3;
           const isUrgent = isFollowUp || item.kind === "overdue_onboarding_task";
-          const titlePrefix = isDueSoon ? "Due soon: " : isUrgent ? "Overdue: " : "";
-          const datePrefix = isInterviewFeedback
-            ? "Interview ended"
-            : isOnboardingTask
-              ? "Task due"
-              : "Due";
+          const titlePrefix = isDocumentReview
+            ? "Review document: "
+            : isDueSoon
+              ? "Due soon: "
+              : isUrgent
+                ? "Overdue: "
+                : "";
+          const datePrefix = isDocumentReview
+            ? "Uploaded"
+            : isInterviewFeedback
+              ? "Interview ended"
+              : isOnboardingTask
+                ? "Task due"
+                : "Due";
           return (
             <li key={item.id}>
               <Link
@@ -84,6 +96,7 @@ export function ActionNotifications() {
                     {titlePrefix}{item.title}
                   </span>
                   <span className="mt-1 block truncate text-sm text-gray-600">
+                    {isDocumentReview ? "Employee: " : ""}
                     {item.candidate_name} · {item.requisition_title}
                   </span>
                   <span className="mt-1 block text-xs text-gray-500">
@@ -91,7 +104,11 @@ export function ActionNotifications() {
                   </span>
                 </span>
                 <span className="shrink-0 text-sm font-semibold text-sr-green">
-                  {isInterviewFeedback ? "Open interview" : "Open application"} →
+                  {isDocumentReview
+                    ? "Open review inbox"
+                    : isInterviewFeedback
+                      ? "Open interview"
+                      : "Open application"} →
                 </span>
               </Link>
             </li>
