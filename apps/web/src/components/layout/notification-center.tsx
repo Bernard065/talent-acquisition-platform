@@ -44,6 +44,15 @@ function safeNotificationHref(href: string): string {
 }
 
 function getPresentation(kind: NotificationActionItemKind) {
+  if (kind === "pending_onboarding_document_review") {
+    return {
+      Icon: ClipboardCheck,
+      iconClassName: "bg-blue-100 text-blue-800",
+      titlePrefix: "Review document: ",
+      datePrefix: "Uploaded",
+    };
+  }
+
   if (kind === "due_soon_onboarding_task") {
     return {
       Icon: Clock3,
@@ -84,6 +93,7 @@ function NotificationRow({
 }) {
   const { Icon, iconClassName, titlePrefix, datePrefix } = getPresentation(item.kind);
   const dueAt = localTimeReady ? formatDueAt(item.due_at) : null;
+  const isDocumentReview = item.kind === "pending_onboarding_document_review";
 
   return (
     <li>
@@ -100,6 +110,7 @@ function NotificationRow({
             {titlePrefix}{item.title}
           </span>
           <span className="mt-0.5 block wrap-break-word text-xs text-gray-700">
+            {isDocumentReview ? "Employee: " : ""}
             {item.candidate_name} · {item.requisition_title}
           </span>
           {dueAt && (
@@ -202,7 +213,10 @@ export function NotificationCenter() {
                 <span className="text-xs text-gray-600">{attentionLabel}</span>
               )}
             </div>
-            <p className="mt-1 text-xs text-gray-600">Upcoming onboarding deadlines, overdue follow-ups, and feedback still to submit.</p>
+            <p className="mt-1 text-xs text-gray-600">
+              Upcoming onboarding deadlines, documents awaiting review, overdue follow-ups,
+              and feedback still to submit.
+            </p>
           </header>
 
           {query.isLoading && !query.data ? (
