@@ -8,13 +8,18 @@ from uuid import UUID
 from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.authorization import TenantContext
+from app.core.authorization import Role, TenantContext
 from app.db.models.application import Application
 from app.db.models.candidate import Candidate
 from app.db.models.identity import User, UserRoleAssignment
 from app.db.models.interview import InterviewParticipant, InterviewSession
 from app.db.models.job_posting import JobPosting
 from app.db.models.notification import Notification, NotificationPreference
+from app.db.models.onboarding import (
+    OnboardingInstance,
+    OnboardingTask,
+    OnboardingTaskDocument,
+)
 from app.db.models.requisition import Requisition
 from app.db.transactions import transactional
 from app.domains.candidates.enums import CandidatePrivacyStatus
@@ -32,6 +37,12 @@ from app.domains.notifications.enums import (
     NotificationEventType,
     NotificationStatus,
 )
+from app.domains.onboarding.enums import (
+    OnboardingInstanceStatus,
+    OnboardingTaskDocumentReviewStatus,
+    OnboardingTaskDocumentStatus,
+    OnboardingTaskStatus,
+)
 from app.services.email_sender import EmailDeliveryError, EmailMessage, EmailSender
 from app.services.notification_action_items import (
     NotificationActionItemRecord,
@@ -44,6 +55,7 @@ from app.services.notification_email_templates import (
     render_calendar_sync_failure_email,
     render_interview_notification_email,
     render_notification_email,
+    render_onboarding_document_review_email,
 )
 
 
@@ -69,10 +81,19 @@ class StaleActionItemDigestError(Exception):
     """A daily digest no longer contains any enabled action items."""
 
 
+class StaleOnboardingDocumentReviewNotificationError(Exception):
+    """The document or reviewer eligibility changed before email delivery."""
+
+
 _ACTION_ITEM_DIGEST_FREQUENCIES = {
     "action_item.daily_digest": NotificationDigestFrequency.DAILY,
     "action_item.weekly_digest": NotificationDigestFrequency.WEEKLY,
 }
+_ONBOARDING_DOCUMENT_REVIEW_ROLES = frozenset(
+    {Role.TENANT_ADMIN, Role.PEOPLE_OPERATIONS}
+)
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
 
@@ -458,6 +479,72 @@ async def _render_delivery_message(
     except ValueError:
         return _render_message(notification, recipient_email)
 
+    if event_type is NotificationEventType.ONBOARDING_DOCUMENT_REVIEW_REQUESTED:
+        recipient_user_id = notification.recipient_user_id
+        if (
+            notification.entity_type != "onboarding_task_document"
+            or recipient_user_id is None
+        ):
+            raise UnsupportedNotificationTemplateError(
+                "Onboarding document review recipient or document reference is invalid."
+            )
+
+        document_id = await session.scalar(
+            select(OnboardingTaskDocument.id)
+            .join(
+                OnboardingTask,
+                and_(
+                    OnboardingTask.id == OnboardingTaskDocument.onboarding_task_id,
+                    OnboardingTask.tenant_id == OnboardingTaskDocument.tenant_id,
+                ),
+            )
+            .join(
+                OnboardingInstance,
+                and_(
+                    OnboardingInstance.id == OnboardingTask.onboarding_instance_id,
+                    OnboardingInstance.tenant_id == OnboardingTask.tenant_id,
+                ),
+            )
+            .where(
+                OnboardingTaskDocument.id == notification.entity_id,
+                OnboardingTaskDocument.tenant_id == notification.tenant_id,
+                OnboardingTaskDocument.status
+                == OnboardingTaskDocumentStatus.AVAILABLE,
+                OnboardingTaskDocument.review_status
+                == OnboardingTaskDocumentReviewStatus.PENDING_REVIEW,
+                OnboardingTask.requires_document_review.is_(True),
+                OnboardingTask.status.not_in(
+                    {OnboardingTaskStatus.COMPLETED, OnboardingTaskStatus.CANCELLED}
+                ),
+                OnboardingInstance.status == OnboardingInstanceStatus.ACTIVE,
+            )
+        )
+        reviewer_role = await session.scalar(
+            select(UserRoleAssignment.role)
+            .join(
+                User,
+                and_(
+                    User.id == UserRoleAssignment.user_id,
+                    User.tenant_id == notification.tenant_id,
+                ),
+            )
+            .where(
+                UserRoleAssignment.user_id == recipient_user_id,
+                UserRoleAssignment.role.in_(_ONBOARDING_DOCUMENT_REVIEW_ROLES),
+            )
+        )
+        if document_id is None or reviewer_role is None:
+            raise StaleOnboardingDocumentReviewNotificationError
+
+        return render_onboarding_document_review_email(
+            notification_id=notification.id,
+            idempotency_key=notification.deduplication_key,
+            recipient_email=recipient_email,
+            review_queue_url=(
+                f"{web_app_base_url.rstrip('/')}/dashboard/onboarding/document-reviews"
+            ),
+        )
+
     if event_type is NotificationEventType.INTERVIEW_CALENDAR_SYNC_FAILED:
         user_id = notification.recipient_user_id
         if notification.entity_type != "interview_session" or user_id is None:
@@ -718,6 +805,16 @@ async def process_pending_notifications(
                 notification_id=notification.id,
                 worker_id=worker_id,
                 failure_code="action_item_digest_no_longer_needed",
+            )
+            continue
+        except StaleOnboardingDocumentReviewNotificationError:
+            if session.in_transaction():
+                await session.commit()
+            await cancel_stale_notification(
+                session,
+                notification_id=notification.id,
+                worker_id=worker_id,
+                failure_code="onboarding_document_review_no_longer_needed",
             )
             continue
 
