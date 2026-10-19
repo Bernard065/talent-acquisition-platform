@@ -22,6 +22,7 @@ import {
   updateEmployeePortalTaskStatus,
   updateOnboardingTaskStatus,
   uploadEmployeeOnboardingTaskDocument,
+  reviewOnboardingTaskDocument,
 } from "../services/onboarding";
 import type {
   AssignOnboardingTaskRequest,
@@ -31,6 +32,7 @@ import type {
   UpdateOnboardingTaskDueDateRequest,
   UpdateEmployeePortalTaskStatusRequest,
   UpdateOnboardingTaskStatusRequest,
+  ReviewOnboardingTaskDocumentRequest,
 } from "@/types/api/onboarding";
 import type {
   OnboardingOverviewParams,
@@ -175,6 +177,22 @@ export function useOnboardingTaskDocumentPreview() {
   return useMutation({
     mutationFn: (documentId: string) =>
       getOnboardingTaskDocumentPreviewAuthorization(documentId),
+  });
+}
+
+export function useReviewOnboardingTaskDocument() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ documentId, request, idempotencyKey }: {
+      documentId: string;
+      request: ReviewOnboardingTaskDocumentRequest;
+      idempotencyKey: string;
+    }) => reviewOnboardingTaskDocument(documentId, request, idempotencyKey),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: onboardingQueryKeys.all,
+      });
+    },
   });
 }
 

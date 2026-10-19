@@ -83,6 +83,12 @@ function TaskWorklistRow({
   const hasAvailableDocument = task.documents.some(
     (document) => document.status === "available",
   );
+  const hasAcceptedDocument = task.documents.some(
+    (document) => document.status === "available" && document.review_status === "accepted",
+  );
+  const canCompleteDocumentRequirement = task.requires_document_review
+    ? hasAcceptedDocument
+    : hasAvailableDocument;
   const currentDueDate = task.due_at?.slice(0, 10) ?? "";
   const isPending = assignTask.isPending || updateStatus.isPending || updateDueDate.isPending;
   const memberOptions = task.assignee_user_id && item.assignee_display_name &&
@@ -93,7 +99,7 @@ function TaskWorklistRow({
   const statusAction = task.status === "not_started"
     ? { target: "in_progress" as const, label: "Start task" }
     : task.status === "in_progress"
-      ? task.requires_document_upload && !hasAvailableDocument
+      ? task.requires_document_upload && !canCompleteDocumentRequirement
         ? null
         : { target: "completed" as const, label: "Mark complete" }
       : task.status === "blocked" && task.responsible_party === "workspace"
@@ -229,9 +235,11 @@ function TaskWorklistRow({
       {task.requires_document_upload && (
         <div className="md:col-span-full">
           <OnboardingTaskDocumentList documents={task.documents} />
-          {!hasAvailableDocument && task.status === "in_progress" && (
+          {task.requires_document_upload && !canCompleteDocumentRequirement && task.status === "in_progress" && (
             <p className="mt-2 text-xs text-gray-600">
-              The task can be completed after the employee’s file passes its security scan.
+              {task.requires_document_review
+                ? "The task can be completed after People Operations accepts a clean file."
+                : "The task can be completed after the employee’s file passes its security scan."}
             </p>
           )}
         </div>
