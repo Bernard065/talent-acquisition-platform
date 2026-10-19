@@ -31,7 +31,7 @@ function reviewStatusLabel(status: OnboardingTaskDocumentResponse["review_status
   return "Review not required";
 }
 
-function DocumentReviewControls({
+export function DocumentReviewControls({
   document,
   canReview,
 }: {
@@ -139,7 +139,7 @@ function DocumentReviewControls({
   );
 }
 
-function DocumentAccessButton({
+export function DocumentAccessButton({
   document,
   mode,
 }: {
