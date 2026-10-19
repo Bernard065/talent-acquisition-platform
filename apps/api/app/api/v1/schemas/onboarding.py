@@ -356,6 +356,27 @@ class OnboardingTaskWorklistResponse(BaseModel):
     view: OnboardingTaskWorklistView
 
 
+class OnboardingDocumentReviewQueueItemResponse(BaseModel):
+    """A document awaiting review with safe employee and task context."""
+
+    document: OnboardingTaskDocumentResponse
+    onboarding_task_id: UUID
+    onboarding_instance_id: UUID
+    application_id: UUID
+    task_title: str
+    employee_name: str
+    job_title: str
+
+
+class OnboardingDocumentReviewQueueResponse(BaseModel):
+    """Paginated, tenant-scoped queue of documents ready for human review."""
+
+    items: list[OnboardingDocumentReviewQueueItemResponse]
+    total: int
+    page: int
+    limit: int
+
+
 class OnboardingTaskActivityItemResponse(BaseModel):
     """One safe event in a task's onboarding timeline."""
 

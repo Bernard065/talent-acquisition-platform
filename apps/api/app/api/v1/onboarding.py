@@ -22,6 +22,8 @@ from app.api.v1.schemas.onboarding import (
     EmployeePortalOnboardingResponse,
     EmployeePortalTaskResponse,
     ExpectedInstanceVersionRequest,
+    OnboardingDocumentReviewQueueItemResponse,
+    OnboardingDocumentReviewQueueResponse,
     OnboardingInstanceResponse,
     OnboardingOverviewItemResponse,
     OnboardingOverviewResponse,
@@ -84,6 +86,7 @@ from app.services.onboarding_documents import (
     create_employee_task_document_upload_intent,
     create_onboarding_task_document_access_authorization,
     list_documents_for_authorized_tasks,
+    list_onboarding_document_review_queue,
     list_onboarding_task_documents,
     review_onboarding_task_document,
 )
@@ -170,6 +173,47 @@ async def list_onboarding_task_worklist_endpoint(
         page=page,
         limit=limit,
         view=view,
+    )
+
+
+@router.get(
+    "/onboarding-document-review-queue",
+    response_model=OnboardingDocumentReviewQueueResponse,
+    summary="List onboarding documents awaiting review",
+)
+async def list_onboarding_document_review_queue_endpoint(
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+    page: Annotated[int, Query(ge=1)] = 1,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    query: Annotated[str | None, Query(max_length=200)] = None,
+) -> OnboardingDocumentReviewQueueResponse:
+    """Return clean, pending documents for People Operations reviewers."""
+    items, total = await list_onboarding_document_review_queue(
+        session,
+        context=context,
+        page=page,
+        limit=limit,
+        query=query,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return OnboardingDocumentReviewQueueResponse(
+        items=[
+            OnboardingDocumentReviewQueueItemResponse(
+                document=OnboardingTaskDocumentResponse.model_validate(item.document),
+                onboarding_task_id=item.onboarding_task_id,
+                onboarding_instance_id=item.onboarding_instance_id,
+                application_id=item.application_id,
+                task_title=item.task_title,
+                employee_name=item.employee_name,
+                job_title=item.job_title,
+            )
+            for item in items
+        ],
+        total=total,
+        page=page,
+        limit=limit,
     )
 
 
