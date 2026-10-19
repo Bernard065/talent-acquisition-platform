@@ -690,7 +690,8 @@ async def _render_action_item_digest(
         item
         for item in items
         if (
-            enabled_preferences.get(
+            item.kind in ACTION_ITEM_DIGEST_PREFERENCE_BY_KIND
+            and enabled_preferences.get(
                 ACTION_ITEM_DIGEST_PREFERENCE_BY_KIND[item.kind].value,
                 (True, NotificationDigestFrequency.DAILY),
             )[0]

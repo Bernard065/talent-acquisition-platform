@@ -66,7 +66,9 @@ def _enabled_action_items(
     """Keep items enabled for this recipient and this digest cadence."""
     enabled_items: list[NotificationActionItemRecord] = []
     for item in items:
-        event_type = ACTION_ITEM_DIGEST_PREFERENCE_BY_KIND[item.kind]
+        event_type = ACTION_ITEM_DIGEST_PREFERENCE_BY_KIND.get(item.kind)
+        if event_type is None:
+            continue
         enabled, item_frequency = _preference(preferences, event_type)
         if enabled and item_frequency is frequency:
             enabled_items.append(item)

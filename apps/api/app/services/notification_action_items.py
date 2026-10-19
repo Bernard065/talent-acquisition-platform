@@ -1,4 +1,4 @@
-"""Tenant-scoped application follow-ups and interviewer tasks for dashboard alerts."""
+"""Tenant-scoped follow-ups, onboarding, and interviewer dashboard alerts."""
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -33,10 +33,12 @@ from app.domains.onboarding.enums import (
 from app.services.application_follow_up_errors import (
     ApplicationFollowUpAccessDeniedError,
 )
+from app.services.onboarding_documents import list_onboarding_document_review_queue
 
 _FOLLOW_UP_READ_ROLES = frozenset(
     {Role.TENANT_ADMIN, Role.RECRUITER, Role.PEOPLE_OPERATIONS}
 )
+_DOCUMENT_REVIEW_ROLES = frozenset({Role.TENANT_ADMIN, Role.PEOPLE_OPERATIONS})
 _OPEN_APPLICATION_STATUSES = (
     ApplicationStatus.APPLIED,
     ApplicationStatus.SCREENING,
@@ -54,12 +56,15 @@ _ONBOARDING_TASK_DUE_SOON_WINDOW = timedelta(days=7)
 
 @dataclass(frozen=True, slots=True)
 class NotificationActionItemRecord:
+    """One unresolved follow-up, review, deadline, or feedback action."""
+
     id: str
     kind: Literal[
         "overdue_follow_up",
         "pending_interview_feedback",
         "overdue_onboarding_task",
         "due_soon_onboarding_task",
+        "pending_onboarding_document_review",
     ]
     title: str
     candidate_name: str
@@ -293,6 +298,30 @@ async def list_notification_action_items(
                 href=f"/dashboard/applications/{application_id}",
                 application_id=application_id,
             )
+        )
+
+    if not context.roles.isdisjoint(_DOCUMENT_REVIEW_ROLES):
+        review_items, _ = await list_onboarding_document_review_queue(
+            session,
+            context=context,
+            page=1,
+            limit=50,
+        )
+        items.extend(
+            NotificationActionItemRecord(
+                id=f"onboarding-document-review:{review_item.document.id}",
+                kind="pending_onboarding_document_review",
+                title=review_item.task_title,
+                candidate_name=review_item.employee_name,
+                requisition_title=review_item.job_title,
+                due_at=(
+                    review_item.document.uploaded_at
+                    or review_item.document.created_at
+                ),
+                href="/dashboard/onboarding/document-reviews",
+                application_id=review_item.application_id,
+            )
+            for review_item in review_items
         )
 
     return sorted(items, key=lambda item: item.due_at)[:100]
