@@ -42,6 +42,12 @@ const notificationPreferences: Array<{
     description: "Email me when People Operations responds to a blocked onboarding task.",
     frequencyControl: false,
   },
+  {
+    eventType: "onboarding.document_review_requested",
+    title: "Onboarding documents awaiting review",
+    description: "Email me when a clean employee document is waiting for review.",
+    frequencyControl: false,
+  },
 ];
 
 export function NotificationsTab() {
@@ -53,7 +59,9 @@ export function NotificationsTab() {
       <header className="border-b border-gray-100 p-6">
         <h2 className="text-lg font-bold text-sr-text-blue">Email notification preferences</h2>
         <p className="mt-1 text-sm text-gray-600">
-          Choose which recruiting notifications you receive. Action-item digests can be sent daily or weekly; a terminal calendar-sync failure is emailed as soon as it occurs.
+          Choose which recruiting notifications you receive. Action-item digests can be sent
+          daily or weekly. Onboarding document reviews and terminal calendar-sync failures
+          are emailed as soon as they occur.
         </p>
       </header>
 

@@ -33,7 +33,10 @@ from app.domains.onboarding.enums import (
 )
 from app.services.audit import record_audit_event
 from app.services.malware_scanner import MalwareScanResult
-from app.services.notification_publishing import enqueue_notification_request
+from app.services.notification_publishing import (
+    enqueue_notification_request,
+    enqueue_notifications_for_roles,
+)
 from app.services.object_storage import (
     ObjectStorage,
     ObjectStorageError,
@@ -618,6 +621,18 @@ async def complete_onboarding_task_document_scan(
                 if requires_review
                 else OnboardingTaskDocumentReviewStatus.NOT_REQUIRED
             )
+            if requires_review:
+                await enqueue_notifications_for_roles(
+                    session,
+                    context=context,
+                    roles=_DOCUMENT_REVIEW_ROLES,
+                    notification_event_type=(
+                        NotificationEventType.ONBOARDING_DOCUMENT_REVIEW_REQUESTED
+                    ),
+                    entity_type="onboarding_task_document",
+                    entity_id=document.id,
+                    template_key="onboarding_document_review_requested",
+                )
             audit_action = "onboarding_task_document.scan_clean"
         else:
             document.status = OnboardingTaskDocumentStatus.QUARANTINED

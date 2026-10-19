@@ -141,6 +141,16 @@ _TEMPLATES: dict[tuple[NotificationEventType, str], NotificationEmailTemplate] =
         ),
     ),
     (
+        NotificationEventType.ONBOARDING_DOCUMENT_REVIEW_REQUESTED,
+        "onboarding_document_review_requested",
+    ): NotificationEmailTemplate(
+        subject="Onboarding document ready for review",
+        text_body=(
+            "An employee onboarding document passed its security scan and is "
+            "waiting for review. Sign in to MindHire to review the document."
+        ),
+    ),
+    (
         NotificationEventType.INTERVIEW_SCHEDULED,
         "interview_scheduled",
     ): NotificationEmailTemplate(
@@ -243,6 +253,30 @@ def render_calendar_sync_failure_email(
         recipient_email=recipient_email,
         subject=template.subject,
         text_body=f"{template.text_body}\n\nReview interview: {interview_url}",
+    )
+
+
+def render_onboarding_document_review_email(
+    *,
+    notification_id: UUID,
+    idempotency_key: str,
+    recipient_email: str,
+    review_queue_url: str,
+) -> EmailMessage:
+    """Render an actionable review notice without exposing employee details."""
+    template = resolve_notification_email_template(
+        event_type=NotificationEventType.ONBOARDING_DOCUMENT_REVIEW_REQUESTED,
+        template_key="onboarding_document_review_requested",
+    )
+    return EmailMessage(
+        notification_id=notification_id,
+        idempotency_key=idempotency_key,
+        recipient_email=recipient_email,
+        subject=template.subject,
+        text_body=(
+            f"{template.text_body}\n\n"
+            f"Review pending documents: {review_queue_url}"
+        ),
     )
 
 
