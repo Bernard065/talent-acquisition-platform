@@ -31,6 +31,7 @@ from app.api.v1.schemas.onboarding import (
     OnboardingTaskDocumentCreateRequest,
     OnboardingTaskDocumentDownloadAuthorizationResponse,
     OnboardingTaskDocumentResponse,
+    OnboardingTaskDocumentReviewRequest,
     OnboardingTaskDocumentUploadAuthorizationRequest,
     OnboardingTaskDocumentUploadAuthorizationResponse,
     OnboardingTaskResponse,
@@ -77,12 +78,14 @@ from app.services.onboarding import (
 )
 from app.services.onboarding_documents import (
     CreateOnboardingTaskDocumentCommand,
+    ReviewOnboardingTaskDocumentCommand,
     confirm_employee_task_document_upload,
     create_employee_task_document_upload_authorization,
     create_employee_task_document_upload_intent,
     create_onboarding_task_document_access_authorization,
     list_documents_for_authorized_tasks,
     list_onboarding_task_documents,
+    review_onboarding_task_document,
 )
 
 router = APIRouter(tags=["Onboarding"])
@@ -540,6 +543,52 @@ async def create_onboarding_document_preview_authorization_endpoint(
     )
 
 
+@router.post(
+    "/onboarding-task-documents/{document_id}/reviews",
+    response_model=OnboardingTaskDocumentResponse,
+    summary="Accept an onboarding document or request a replacement",
+)
+async def review_onboarding_task_document_endpoint(
+    document_id: UUID,
+    payload: OnboardingTaskDocumentReviewRequest,
+    context: CallerContext,
+    session: DatabaseSession,
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Record an authorized reviewer decision idempotently."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        document = await review_onboarding_task_document(
+            session,
+            context=context,
+            document_id=document_id,
+            command=ReviewOnboardingTaskDocumentCommand(
+                expected_document_version=payload.expected_document_version,
+                decision=payload.decision,
+                comment=payload.comment,
+            ),
+        )
+        return (
+            status.HTTP_200_OK,
+            OnboardingTaskDocumentResponse.model_validate(document).model_dump(
+                mode="json"
+            ),
+        )
+
+    result = await execute_idempotently(
+        session,
+        context=context,
+        key=idempotency_key,
+        operation_name=f"onboarding_task_document.review:{document_id}",
+        payload={
+            "document_id": str(document_id),
+            **payload.model_dump(mode="json"),
+        },
+        operation=operation,
+    )
+    return _private_response(result)
+
+
 @router.get(
     "/employee-portal/me/onboarding",
     response_model=EmployeePortalOnboardingResponse,
@@ -582,6 +631,7 @@ async def get_employee_portal_onboarding_endpoint(
                 due_at=task.due_at,
                 responsible_party=task.responsible_party,
                 requires_document_upload=task.requires_document_upload,
+                requires_document_review=task.requires_document_review,
                 status=task.status,
                 blocked_reason=(
                     task.blocked_reason
@@ -655,6 +705,7 @@ async def update_employee_portal_task_status_endpoint(
                 due_at=task.due_at,
                 responsible_party=task.responsible_party,
                 requires_document_upload=task.requires_document_upload,
+                requires_document_review=task.requires_document_review,
                 status=task.status,
                 blocked_reason=task.blocked_reason,
                 resolution_note=task.resolution_note,
@@ -708,6 +759,7 @@ async def create_onboarding_template_endpoint(
                         default_assignee_role=task.default_assignee_role,
                         responsible_party=task.responsible_party,
                         requires_document_upload=task.requires_document_upload,
+                        requires_document_review=task.requires_document_review,
                     )
                     for task in payload.tasks
                 ),

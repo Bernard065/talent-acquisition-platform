@@ -20,14 +20,18 @@ from app.db.models.onboarding import (
 from app.db.transactions import transactional
 from app.domains.documents.enums import MalwareScanVerdict
 from app.domains.employees.enums import EmployeeStatus
+from app.domains.notifications.enums import NotificationEventType
 from app.domains.onboarding.enums import (
     OnboardingInstanceStatus,
+    OnboardingTaskDocumentReviewDecision,
+    OnboardingTaskDocumentReviewStatus,
     OnboardingTaskDocumentStatus,
     OnboardingTaskResponsibility,
     OnboardingTaskStatus,
 )
 from app.services.audit import record_audit_event
 from app.services.malware_scanner import MalwareScanResult
+from app.services.notification_publishing import enqueue_notification_request
 from app.services.object_storage import (
     ObjectStorage,
     ObjectStorageError,
@@ -38,8 +42,10 @@ from app.services.object_storage import (
 )
 from app.services.onboarding_errors import (
     EmployeePortalRecordNotFoundError,
+    OnboardingAccessDeniedError,
     OnboardingTaskNotFoundError,
     OnboardingValidationError,
+    OnboardingVersionConflictError,
 )
 from app.services.outbox import enqueue_outbox_event
 
@@ -47,6 +53,12 @@ _DOCUMENT_ACCESS_ROLES = frozenset(
     {
         Role.TENANT_ADMIN,
         Role.RECRUITER,
+        Role.PEOPLE_OPERATIONS,
+    }
+)
+_DOCUMENT_REVIEW_ROLES = frozenset(
+    {
+        Role.TENANT_ADMIN,
         Role.PEOPLE_OPERATIONS,
     }
 )
@@ -95,6 +107,34 @@ class CreateOnboardingTaskDocumentCommand:
             raise OnboardingValidationError("Document checksum is invalid.")
         object.__setattr__(self, "original_filename", filename)
         object.__setattr__(self, "checksum_sha256", checksum)
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewOnboardingTaskDocumentCommand:
+    """Validated reviewer decision for one clean document awaiting review."""
+
+    expected_document_version: int
+    decision: OnboardingTaskDocumentReviewDecision
+    comment: str | None = None
+
+    def __post_init__(self) -> None:
+        normalized_comment = self.comment.strip() if self.comment is not None else None
+        if self.expected_document_version < 1:
+            raise OnboardingValidationError(
+                "Document version must be a positive integer."
+            )
+        if (
+            self.decision is OnboardingTaskDocumentReviewDecision.CHANGES_REQUESTED
+            and not normalized_comment
+        ):
+            raise OnboardingValidationError(
+                "Add a reason so the employee knows what to change."
+            )
+        if normalized_comment is not None and len(normalized_comment) > 2000:
+            raise OnboardingValidationError(
+                "Review comments cannot exceed 2000 characters."
+            )
+        object.__setattr__(self, "comment", normalized_comment or None)
 
 
 async def create_employee_task_document_upload_intent(
@@ -423,6 +463,17 @@ async def complete_onboarding_task_document_scan(
         document.scan_completed_at = now
         if result.verdict is MalwareScanVerdict.CLEAN:
             document.status = OnboardingTaskDocumentStatus.AVAILABLE
+            requires_review = await session.scalar(
+                select(OnboardingTask.requires_document_review).where(
+                    OnboardingTask.id == document.onboarding_task_id,
+                    OnboardingTask.tenant_id == context.tenant_id,
+                )
+            )
+            document.review_status = (
+                OnboardingTaskDocumentReviewStatus.PENDING_REVIEW
+                if requires_review
+                else OnboardingTaskDocumentReviewStatus.NOT_REQUIRED
+            )
             audit_action = "onboarding_task_document.scan_clean"
         else:
             document.status = OnboardingTaskDocumentStatus.QUARANTINED
@@ -439,6 +490,126 @@ async def complete_onboarding_task_document_scan(
             },
         )
         await session.flush()
+    return document
+
+
+async def review_onboarding_task_document(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    document_id: UUID,
+    command: ReviewOnboardingTaskDocumentCommand,
+) -> OnboardingTaskDocument:
+    """Accept a clean document or request a replacement from the employee."""
+    if context.roles.isdisjoint(_DOCUMENT_REVIEW_ROLES):
+        raise OnboardingAccessDeniedError(
+            "Only People Operations and workspace admins can review onboarding documents."
+        )
+
+    async with transactional(session):
+        document = await session.scalar(
+            select(OnboardingTaskDocument)
+            .where(
+                OnboardingTaskDocument.id == document_id,
+                OnboardingTaskDocument.tenant_id == context.tenant_id,
+            )
+            .with_for_update()
+        )
+        if document is None:
+            raise OnboardingTaskNotFoundError(
+                "Onboarding task document was not found."
+            )
+
+        task = await session.scalar(
+            select(OnboardingTask)
+            .where(
+                OnboardingTask.id == document.onboarding_task_id,
+                OnboardingTask.tenant_id == context.tenant_id,
+            )
+            .with_for_update()
+        )
+        if task is None:
+            raise OnboardingTaskNotFoundError(
+                "Onboarding task document was not found."
+            )
+        if (
+            task.status
+            in {OnboardingTaskStatus.COMPLETED, OnboardingTaskStatus.CANCELLED}
+            or document.status is not OnboardingTaskDocumentStatus.AVAILABLE
+            or document.review_status
+            is not OnboardingTaskDocumentReviewStatus.PENDING_REVIEW
+        ):
+            raise OnboardingValidationError(
+                "Only clean documents awaiting review on an open task can be reviewed."
+            )
+        if not task.requires_document_review:
+            raise OnboardingValidationError(
+                "This onboarding task does not require document review."
+            )
+        if document.version != command.expected_document_version:
+            raise OnboardingVersionConflictError(
+                "This document changed after it was loaded. Refresh before reviewing it."
+            )
+
+        now = datetime.now(UTC)
+        document.review_status = (
+            OnboardingTaskDocumentReviewStatus.ACCEPTED
+            if command.decision is OnboardingTaskDocumentReviewDecision.ACCEPTED
+            else OnboardingTaskDocumentReviewStatus.CHANGES_REQUESTED
+        )
+        document.reviewed_by_subject = context.subject
+        document.reviewed_at = now
+        document.review_comment = command.comment
+        audit_action = (
+            "onboarding_task_document.accepted"
+            if command.decision is OnboardingTaskDocumentReviewDecision.ACCEPTED
+            else "onboarding_task_document.changes_requested"
+        )
+        record_audit_event(
+            session,
+            context=context,
+            action=audit_action,
+            entity_type="onboarding_task_document",
+            entity_id=str(document.id),
+            details={
+                "onboarding_task_id": str(task.id),
+            },
+        )
+        employee_user_id = await session.scalar(
+            select(Employee.user_id)
+            .join(
+                OnboardingInstance,
+                OnboardingInstance.application_id == Employee.application_id,
+            )
+            .where(
+                Employee.tenant_id == context.tenant_id,
+                OnboardingInstance.id == task.onboarding_instance_id,
+                OnboardingInstance.tenant_id == context.tenant_id,
+            )
+        )
+        if employee_user_id is not None:
+            accepted = (
+                command.decision is OnboardingTaskDocumentReviewDecision.ACCEPTED
+            )
+            enqueue_notification_request(
+                session,
+                context=context,
+                recipient_user_id=employee_user_id,
+                notification_event_type=(
+                    NotificationEventType.ONBOARDING_DOCUMENT_ACCEPTED
+                    if accepted
+                    else NotificationEventType.ONBOARDING_DOCUMENT_CHANGES_REQUESTED
+                ),
+                entity_type="onboarding_task_document",
+                entity_id=document.id,
+                template_key=(
+                    "onboarding_document_accepted"
+                    if accepted
+                    else "onboarding_document_changes_requested"
+                ),
+            )
+        await session.flush()
+        await session.refresh(document)
     return document
 
 

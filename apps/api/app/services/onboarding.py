@@ -30,6 +30,7 @@ from app.domains.notifications.enums import NotificationEventType
 from app.domains.onboarding.enums import (
     OnboardingInstanceEventType,
     OnboardingInstanceStatus,
+    OnboardingTaskDocumentReviewStatus,
     OnboardingTaskDocumentStatus,
     OnboardingTaskEventType,
     OnboardingTaskResponsibility,
@@ -770,6 +771,7 @@ class OnboardingTemplateTaskDefinition:
         OnboardingTaskResponsibility.WORKSPACE
     )
     requires_document_upload: bool = False
+    requires_document_review: bool = False
 
     def __post_init__(self) -> None:
         normalized_title = self.title.strip()
@@ -815,6 +817,10 @@ class OnboardingTemplateTaskDefinition:
         ):
             raise OnboardingValidationError(
                 "Only employee-owned tasks can request a file upload."
+            )
+        if self.requires_document_review and not self.requires_document_upload:
+            raise OnboardingValidationError(
+                "Document review requires an employee file upload."
             )
 
         object.__setattr__(self, "title", normalized_title)
@@ -1023,6 +1029,7 @@ async def create_onboarding_template(
                     default_assignee_role=task.default_assignee_role,
                     responsible_party=task.responsible_party,
                     requires_document_upload=task.requires_document_upload,
+                    requires_document_review=task.requires_document_review,
                 )
                 for position, task in enumerate(command.tasks, start=1)
             ]
@@ -1150,6 +1157,7 @@ async def start_onboarding(
                     ),
                     "responsible_party": task.responsible_party.value,
                     "requires_document_upload": task.requires_document_upload,
+                    "requires_document_review": task.requires_document_review,
                 }
                 for task in template_tasks
             ],
@@ -1181,6 +1189,7 @@ async def start_onboarding(
                 ),
                 responsible_party=template_task.responsible_party,
                 requires_document_upload=template_task.requires_document_upload,
+                requires_document_review=template_task.requires_document_review,
                 status=OnboardingTaskStatus.NOT_STARTED,
                 assignee_user_id=(
                     users_by_role[template_task.default_assignee_role][0]
@@ -1767,14 +1776,22 @@ async def _require_required_onboarding_document(
     ):
         return
 
-    available_document_id = await session.scalar(
-        select(OnboardingTaskDocument.id).where(
+    document_statement = select(OnboardingTaskDocument.id).where(
             OnboardingTaskDocument.tenant_id == context.tenant_id,
             OnboardingTaskDocument.onboarding_task_id == task.id,
             OnboardingTaskDocument.status
             == OnboardingTaskDocumentStatus.AVAILABLE,
-        ).limit(1)
-    )
+        )
+    if task.requires_document_review:
+        document_statement = document_statement.where(
+            OnboardingTaskDocument.review_status
+            == OnboardingTaskDocumentReviewStatus.ACCEPTED,
+        )
+    available_document_id = await session.scalar(document_statement.limit(1))
+    if available_document_id is None and task.requires_document_review:
+        raise OnboardingValidationError(
+            "People Operations must accept a clean document before this task can be completed."
+        )
     if available_document_id is None:
         raise OnboardingValidationError(
             "Upload a document and wait for its security scan before completing this task."
