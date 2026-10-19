@@ -5,10 +5,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authorization import Role, TenantContext
+from app.db.models.application import Application
+from app.db.models.candidate import Candidate
 from app.db.models.employee import Employee
 from app.db.models.identity import User
 from app.db.models.onboarding import (
@@ -135,6 +137,148 @@ class ReviewOnboardingTaskDocumentCommand:
                 "Review comments cannot exceed 2000 characters."
             )
         object.__setattr__(self, "comment", normalized_comment or None)
+
+
+@dataclass(frozen=True, slots=True)
+class OnboardingDocumentReviewQueueItem:
+    """A pending document with minimal employee and task context for reviewers."""
+
+    document: OnboardingTaskDocument
+    onboarding_task_id: UUID
+    onboarding_instance_id: UUID
+    application_id: UUID
+    task_title: str
+    employee_name: str
+    job_title: str
+
+
+async def list_onboarding_document_review_queue(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    page: int,
+    limit: int,
+    query: str | None = None,
+) -> tuple[list[OnboardingDocumentReviewQueueItem], int]:
+    """List clean employee documents awaiting review in this tenant."""
+    if context.roles.isdisjoint(_DOCUMENT_REVIEW_ROLES):
+        raise OnboardingAccessDeniedError(
+            "Only People Operations and workspace admins can review onboarding documents."
+        )
+
+    filters = [
+        OnboardingTaskDocument.tenant_id == context.tenant_id,
+        OnboardingTaskDocument.status == OnboardingTaskDocumentStatus.AVAILABLE,
+        OnboardingTaskDocument.review_status
+        == OnboardingTaskDocumentReviewStatus.PENDING_REVIEW,
+        OnboardingTask.requires_document_review.is_(True),
+        OnboardingTask.status.not_in(
+            {OnboardingTaskStatus.COMPLETED, OnboardingTaskStatus.CANCELLED}
+        ),
+        OnboardingInstance.tenant_id == context.tenant_id,
+        OnboardingInstance.status == OnboardingInstanceStatus.ACTIVE,
+        Application.tenant_id == context.tenant_id,
+        Candidate.tenant_id == context.tenant_id,
+        Employee.tenant_id == context.tenant_id,
+    ]
+    if query and query.strip():
+        search_term = f"%{query.strip()}%"
+        filters.append(
+            or_(
+                Candidate.full_name.ilike(search_term),
+                Employee.job_title.ilike(search_term),
+                OnboardingTask.title.ilike(search_term),
+                OnboardingTaskDocument.original_filename.ilike(search_term),
+            )
+        )
+
+    statement = (
+        select(
+            OnboardingTaskDocument,
+            OnboardingTask.id,
+            OnboardingInstance.id,
+            Application.id,
+            OnboardingTask.title,
+            Candidate.full_name,
+            Employee.job_title,
+        )
+        .select_from(OnboardingTaskDocument)
+        .join(
+            OnboardingTask,
+            and_(
+                OnboardingTask.id == OnboardingTaskDocument.onboarding_task_id,
+                OnboardingTask.tenant_id == OnboardingTaskDocument.tenant_id,
+            ),
+        )
+        .join(
+            OnboardingInstance,
+            and_(
+                OnboardingInstance.id == OnboardingTask.onboarding_instance_id,
+                OnboardingInstance.tenant_id == OnboardingTask.tenant_id,
+            ),
+        )
+        .join(
+            Application,
+            and_(
+                Application.id == OnboardingInstance.application_id,
+                Application.tenant_id == OnboardingInstance.tenant_id,
+            ),
+        )
+        .join(
+            Candidate,
+            and_(
+                Candidate.id == Application.candidate_id,
+                Candidate.tenant_id == Application.tenant_id,
+            ),
+        )
+        .join(
+            Employee,
+            and_(
+                Employee.application_id == Application.id,
+                Employee.tenant_id == Application.tenant_id,
+            ),
+        )
+        .where(*filters)
+    )
+    total = await session.scalar(
+        select(func.count()).select_from(
+            statement.with_only_columns(
+                OnboardingTaskDocument.id,
+                maintain_column_froms=True,
+            ).subquery()
+        )
+    )
+    result = await session.execute(
+        statement
+        .order_by(
+            OnboardingTaskDocument.uploaded_at.asc().nullslast(),
+            OnboardingTaskDocument.created_at,
+            OnboardingTaskDocument.id,
+        )
+        .offset((page - 1) * limit)
+        .limit(limit)
+    )
+    items = [
+        OnboardingDocumentReviewQueueItem(
+            document=document,
+            onboarding_task_id=task_id,
+            onboarding_instance_id=instance_id,
+            application_id=application_id,
+            task_title=task_title,
+            employee_name=employee_name,
+            job_title=job_title,
+        )
+        for (
+            document,
+            task_id,
+            instance_id,
+            application_id,
+            task_title,
+            employee_name,
+            job_title,
+        ) in result.all()
+    ]
+    return items, total or 0
 
 
 async def create_employee_task_document_upload_intent(

@@ -145,6 +145,23 @@ export interface OnboardingTaskWorklistResponse {
   view: OnboardingTaskWorklistView;
 }
 
+export interface OnboardingDocumentReviewQueueItemResponse {
+  document: OnboardingTaskDocumentResponse;
+  onboarding_task_id: string;
+  onboarding_instance_id: string;
+  application_id: string;
+  task_title: string;
+  employee_name: string;
+  job_title: string;
+}
+
+export interface OnboardingDocumentReviewQueueResponse {
+  items: OnboardingDocumentReviewQueueItemResponse[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 export interface EmployeePortalTaskResponse {
   id: string;
   title: string;

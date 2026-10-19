@@ -11,6 +11,7 @@ export const dashboardRolePolicies = {
   ],
   recruiting: ["tenant_admin", "recruiter", "people_operations"],
   employeeManagement: ["tenant_admin", "recruiter", "people_operations"],
+  onboardingDocumentReview: ["tenant_admin", "people_operations"],
   jobAndRequisitionRead: [
     "tenant_admin",
     "recruiter",
@@ -40,6 +41,7 @@ const dashboardRouteRules: readonly DashboardRouteRule[] = [
   { path: "/dashboard/candidates", match: "detail", roles: dashboardRolePolicies.recruiting },
   { path: "/dashboard/employees", match: "exact", roles: dashboardRolePolicies.employeeManagement },
   { path: "/dashboard/onboarding", match: "exact", roles: dashboardRolePolicies.employeeManagement },
+  { path: "/dashboard/onboarding/document-reviews", match: "exact", roles: dashboardRolePolicies.onboardingDocumentReview },
   { path: "/dashboard/my-onboarding", match: "exact", roles: dashboardRolePolicies.allWorkspaceMembers },
   { path: "/dashboard/applications", match: "exact", roles: dashboardRolePolicies.recruiting },
   { path: "/dashboard/applications", match: "detail", roles: dashboardRolePolicies.recruiting },
