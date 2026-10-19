@@ -10,6 +10,8 @@ from app.api.v1.schemas.employee_records import EmployeePortalProfileResponse
 from app.core.authorization import Role
 from app.domains.onboarding.enums import (
     OnboardingInstanceStatus,
+    OnboardingTaskDocumentReviewDecision,
+    OnboardingTaskDocumentReviewStatus,
     OnboardingTaskDocumentStatus,
     OnboardingTaskEventType,
     OnboardingTaskResponsibility,
@@ -31,6 +33,7 @@ class OnboardingTemplateTaskRequest(BaseModel):
         OnboardingTaskResponsibility.WORKSPACE
     )
     requires_document_upload: bool = False
+    requires_document_review: bool = False
 
     @model_validator(mode="after")
     def validate_responsible_party(self) -> "OnboardingTemplateTaskRequest":
@@ -47,6 +50,8 @@ class OnboardingTemplateTaskRequest(BaseModel):
             and self.responsible_party is not OnboardingTaskResponsibility.EMPLOYEE
         ):
             raise ValueError("Only employee-owned tasks can request file uploads.")
+        if self.requires_document_review and not self.requires_document_upload:
+            raise ValueError("Document review requires an employee file upload.")
         return self
 
 
@@ -171,6 +176,7 @@ class OnboardingTemplateTaskResponse(BaseModel):
     default_assignee_role: Role | None
     responsible_party: OnboardingTaskResponsibility
     requires_document_upload: bool
+    requires_document_review: bool
 
 
 class OnboardingTemplateListItemResponse(OnboardingTemplateResponse):
@@ -211,10 +217,14 @@ class OnboardingTaskDocumentResponse(BaseModel):
     declared_content_type: str
     expected_byte_size: int
     status: OnboardingTaskDocumentStatus
+    review_status: OnboardingTaskDocumentReviewStatus
+    review_comment: str | None
+    reviewed_at: datetime | None
     uploaded_at: datetime | None
     scan_started_at: datetime | None
     scan_completed_at: datetime | None
     created_at: datetime
+    version: int
 
 
 class OnboardingTaskResponse(BaseModel):
@@ -231,6 +241,7 @@ class OnboardingTaskResponse(BaseModel):
     assignee_user_id: UUID | None
     responsible_party: OnboardingTaskResponsibility
     requires_document_upload: bool
+    requires_document_review: bool
     status: OnboardingTaskStatus
     completed_at: datetime | None
     blocked_reason: str | None
@@ -277,6 +288,26 @@ class OnboardingTaskDocumentConfirmUploadRequest(BaseModel):
     """Empty body; object storage verifies uploaded metadata server-side."""
 
     model_config = ConfigDict(extra="forbid")
+
+
+class OnboardingTaskDocumentReviewRequest(BaseModel):
+    """Input for a human onboarding-document review decision."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    expected_document_version: int = Field(ge=1)
+    decision: OnboardingTaskDocumentReviewDecision
+    comment: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def validate_review_comment(self) -> "OnboardingTaskDocumentReviewRequest":
+        """Require an actionable reason when asking for a replacement."""
+        if self.decision is OnboardingTaskDocumentReviewDecision.CHANGES_REQUESTED:
+            if not self.comment:
+                raise ValueError(
+                    "A comment is required when requesting document changes."
+                )
+        return self
 
 
 class OnboardingTaskDocumentUploadAuthorizationResponse(BaseModel):
@@ -359,6 +390,7 @@ class EmployeePortalTaskResponse(BaseModel):
     due_at: datetime | None
     responsible_party: OnboardingTaskResponsibility
     requires_document_upload: bool
+    requires_document_review: bool
     status: OnboardingTaskStatus
     blocked_reason: str | None
     resolution_note: str | None

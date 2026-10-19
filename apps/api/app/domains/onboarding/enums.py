@@ -41,6 +41,22 @@ class OnboardingTaskDocumentStatus(StrEnum):
     REJECTED = "rejected"
 
 
+class OnboardingTaskDocumentReviewStatus(StrEnum):
+    """Human review state after a document passes its security scan."""
+
+    NOT_REQUIRED = "not_required"
+    PENDING_REVIEW = "pending_review"
+    ACCEPTED = "accepted"
+    CHANGES_REQUESTED = "changes_requested"
+
+
+class OnboardingTaskDocumentReviewDecision(StrEnum):
+    """Allowed decisions a reviewer can make for a clean document."""
+
+    ACCEPTED = "accepted"
+    CHANGES_REQUESTED = "changes_requested"
+
+
 class OnboardingTaskResponsibility(StrEnum):
     """Identify whether the employee or workspace team owns a task."""
 
