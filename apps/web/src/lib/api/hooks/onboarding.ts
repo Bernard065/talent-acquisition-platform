@@ -15,6 +15,7 @@ import {
   getOnboardingTaskDocumentDownloadAuthorization,
   getOnboardingTaskDocumentPreviewAuthorization,
   listOnboardingOverview,
+  listOnboardingDocumentReviewQueue,
   listOnboardingTaskWorklist,
   listOnboardingTemplates,
   startApplicationOnboarding,
@@ -37,6 +38,7 @@ import type {
 import type {
   OnboardingOverviewParams,
   OnboardingTaskWorklistParams,
+  OnboardingDocumentReviewQueueParams,
 } from "../services/onboarding";
 
 export const onboardingQueryKeys = {
@@ -48,12 +50,29 @@ export const onboardingQueryKeys = {
   taskWorklist: () => [...onboardingQueryKeys.all, "task-worklist"] as const,
   taskWorklistList: (params: OnboardingTaskWorklistParams) =>
     [...onboardingQueryKeys.taskWorklist(), params] as const,
+  documentReviewQueue: () =>
+    [...onboardingQueryKeys.all, "document-review-queue"] as const,
+  documentReviewQueueList: (params: OnboardingDocumentReviewQueueParams) =>
+    [...onboardingQueryKeys.documentReviewQueue(), params] as const,
   application: (applicationId: string) =>
     [...onboardingQueryKeys.all, "application", applicationId] as const,
   taskActivity: (taskId: string) =>
     [...onboardingQueryKeys.all, "task-activity", taskId] as const,
   employeePortal: () => [...onboardingQueryKeys.all, "employee-portal"] as const,
 };
+
+export function useOnboardingDocumentReviewQueue(
+  params: OnboardingDocumentReviewQueueParams,
+  enabled = true,
+) {
+  const { status } = useSession();
+  return useQuery({
+    queryKey: onboardingQueryKeys.documentReviewQueueList(params),
+    queryFn: ({ signal }) => listOnboardingDocumentReviewQueue(params, { signal }),
+    enabled: status === "authenticated" && enabled,
+    refetchInterval: 30_000,
+  });
+}
 
 export function useOnboardingOverview(
   params: OnboardingOverviewParams,

@@ -8,6 +8,7 @@ import type {
   ExpectedInstanceVersionRequest,
   OnboardingInstanceResponse,
   OnboardingOverviewResponse,
+  OnboardingDocumentReviewQueueResponse,
   OnboardingTaskActivityResponse,
   OnboardingTaskDocumentDownloadAuthorizationResponse,
   OnboardingTaskDocumentResponse,
@@ -46,6 +47,12 @@ export interface OnboardingTaskWorklistParams {
   unassigned_only?: boolean;
 }
 
+export interface OnboardingDocumentReviewQueueParams {
+  page?: number;
+  limit?: number;
+  query?: string;
+}
+
 export function listOnboardingTemplates(options?: RequestOptions) {
   return get<OnboardingTemplateListResponse>("/onboarding-templates", options);
 }
@@ -68,6 +75,19 @@ export function listOnboardingTaskWorklist(
     ...options,
     params: { ...options?.params, ...params },
   });
+}
+
+export function listOnboardingDocumentReviewQueue(
+  params: OnboardingDocumentReviewQueueParams = {},
+  options?: RequestOptions,
+) {
+  return get<OnboardingDocumentReviewQueueResponse>(
+    "/onboarding-document-review-queue",
+    {
+      ...options,
+      params: { ...options?.params, ...params },
+    },
+  );
 }
 
 export function getApplicationOnboarding(
