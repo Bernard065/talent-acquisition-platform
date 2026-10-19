@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { OnboardingTaskActivity } from "@/components/onboarding/onboarding-task-activity";
 import {
@@ -72,7 +72,29 @@ function TaskItem({
   const hasAvailableDocument = task.documents.some(
     (document) => document.status === "available",
   );
-  const canComplete = !task.requires_document_upload || hasAvailableDocument;
+  const hasAcceptedDocument = task.documents.some(
+    (document) => document.status === "available" && document.review_status === "accepted",
+  );
+  const hasPendingReview = task.documents.some(
+    (document) => document.status === "available" && document.review_status === "pending_review",
+  );
+  const hasReplacementRequest = task.documents.some(
+    (document) => document.review_status === "changes_requested",
+  );
+  const documentScanInProgress = task.documents.some((document) =>
+    document.status === "uploaded" || document.status === "scanning",
+  );
+  const canComplete = !task.requires_document_upload || (
+    task.requires_document_review ? hasAcceptedDocument : hasAvailableDocument
+  );
+  const canUploadDocument = task.can_update && !hasAcceptedDocument && (
+    !hasAvailableDocument || (
+      task.requires_document_review &&
+      !hasPendingReview &&
+      hasReplacementRequest &&
+      !documentScanInProgress
+    )
+  );
 
   function requestHelp() {
     const reason = helpReason.trim();
@@ -144,16 +166,23 @@ function TaskItem({
           <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50 p-4">
             <p className="text-sm font-semibold text-blue-950">Document required for this step</p>
             <p className="mt-1 text-sm text-blue-900">
-              Upload a PDF or DOCX file up to 10 MB. MindHire scans it automatically before you can complete this step.
+              Upload a PDF or DOCX file up to 10 MB. MindHire scans it automatically{task.requires_document_review ? " and People Operations reviews it before you can complete this step." : " before you can complete this step."}
             </p>
             {task.documents.length > 0 && (
               <ul className="mt-3 space-y-2" aria-label="Uploaded task documents">
                 {task.documents.map((document) => (
-                  <li key={document.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-white px-3 py-2 text-sm">
+                  <Fragment key={document.id}>
+                  <li className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-white px-3 py-2 text-sm">
                     <span className="min-w-0 truncate font-medium text-gray-800">{document.original_filename}</span>
-                    <span className={`shrink-0 text-xs font-medium ${document.status === "available" ? "text-emerald-800" : document.status === "quarantined" || document.status === "rejected" ? "text-red-800" : "text-blue-800"}`}>
+                    <span className={`shrink-0 text-xs font-medium ${document.status === "available" && (!task.requires_document_review || document.review_status === "accepted") ? "text-emerald-800" : document.status === "quarantined" || document.status === "rejected" || document.review_status === "changes_requested" ? "text-amber-800" : "text-blue-800"}`}>
                       {document.status === "available"
-                        ? "Scan complete"
+                        ? !task.requires_document_review
+                          ? "Security scan complete"
+                          : document.review_status === "accepted"
+                            ? "Accepted by People Operations"
+                            : document.review_status === "changes_requested"
+                              ? "Replacement requested"
+                              : "Security scan complete · Awaiting review"
                         : document.status === "quarantined"
                           ? "Blocked by security scan"
                           : document.status === "rejected"
@@ -165,10 +194,17 @@ function TaskItem({
                                 : "Scanning…"}
                     </span>
                   </li>
+                  {document.review_comment && (
+                    <li className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                      <span className="font-semibold">People Operations feedback: </span>
+                      {document.review_comment}
+                    </li>
+                  )}
+                  </Fragment>
                 ))}
               </ul>
             )}
-            {task.can_update && !hasAvailableDocument && (
+            {canUploadDocument && (
               <label className="mt-3 inline-flex min-h-10 cursor-pointer items-center justify-center rounded-lg bg-sr-text-blue px-4 py-2 text-sm font-semibold text-white hover:opacity-90 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60">
                 <span>{uploadDocument.isPending ? "Uploading and scanning…" : task.documents.some((document) => document.status === "pending_upload") ? "Retry upload" : task.documents.length > 0 ? "Upload another file" : "Choose file to upload"}</span>
                 <input
@@ -182,6 +218,15 @@ function TaskItem({
                   className="sr-only"
                 />
               </label>
+            )}
+            {task.requires_document_review && task.status === "in_progress" && !canComplete && (
+              <p className="mt-2 text-xs text-gray-700">
+                {hasPendingReview
+                  ? "Your document passed the security scan and is waiting for People Operations review."
+                  : hasReplacementRequest
+                    ? "Upload a replacement using the feedback above."
+                    : "A clean document must be accepted by People Operations before you can complete this step."}
+              </p>
             )}
             {uploadError && <p className="mt-2 text-sm text-red-800" role="alert">{uploadError}</p>}
           </div>
