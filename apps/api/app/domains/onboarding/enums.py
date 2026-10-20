@@ -11,6 +11,13 @@ class OnboardingInstanceStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class OnboardingTemplatePublicationStatus(StrEnum):
+    """Publication lifecycle for an onboarding template version."""
+
+    DRAFT = "draft"
+    PUBLISHED = "published"
+
+
 class OnboardingTaskStatus(StrEnum):
     """Controlled lifecycle states for one onboarding task."""
 

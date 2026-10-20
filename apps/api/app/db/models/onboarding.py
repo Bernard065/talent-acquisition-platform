@@ -34,6 +34,7 @@ from app.domains.onboarding.enums import (
     OnboardingTaskEventType,
     OnboardingTaskResponsibility,
     OnboardingTaskStatus,
+    OnboardingTemplatePublicationStatus,
 )
 
 
@@ -60,6 +61,25 @@ class OnboardingTemplate(Base):
             "tenant_id",
             "is_active",
         ),
+        Index(
+            "uq_onboarding_templates_tenant_name_draft",
+            "tenant_id",
+            "name",
+            unique=True,
+            postgresql_where=text("publication_status = 'draft'"),
+        ),
+        CheckConstraint(
+            "draft_revision >= 1",
+            name="ck_onboarding_templates_draft_revision_positive",
+        ),
+        CheckConstraint(
+            "publication_status IN ('draft', 'published')",
+            name="ck_onboarding_templates_publication_status",
+        ),
+        CheckConstraint(
+            "is_active IS FALSE OR publication_status = 'published'",
+            name="ck_onboarding_templates_active_must_be_published",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -83,6 +103,25 @@ class OnboardingTemplate(Base):
         nullable=False,
         default=True,
         server_default=text("true"),
+    )
+    publication_status: Mapped[OnboardingTemplatePublicationStatus] = mapped_column(
+        Enum(
+            OnboardingTemplatePublicationStatus,
+            name="onboarding_template_publication_status",
+            native_enum=False,
+            create_constraint=False,
+            length=20,
+            values_callable=lambda values: [value.value for value in values],
+        ),
+        nullable=False,
+        default=OnboardingTemplatePublicationStatus.PUBLISHED,
+        server_default=OnboardingTemplatePublicationStatus.PUBLISHED.value,
+    )
+    draft_revision: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default=text("1"),
     )
     created_by_subject: Mapped[str] = mapped_column(
         String(255),
