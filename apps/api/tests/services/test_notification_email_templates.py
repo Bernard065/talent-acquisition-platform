@@ -149,8 +149,8 @@ def test_template_does_not_expose_workflow_identifiers_or_candidate_data() -> No
 @pytest.mark.parametrize(
     ("frequency", "subject"),
     [
-        (NotificationDigestFrequency.DAILY, "Your daily recruiting action items"),
-        (NotificationDigestFrequency.WEEKLY, "Your weekly recruiting action items"),
+        (NotificationDigestFrequency.DAILY, "Your daily workspace action items"),
+        (NotificationDigestFrequency.WEEKLY, "Your weekly workspace action items"),
     ],
 )
 def test_renders_action_item_digest_with_counts_and_workspace_links(
@@ -171,7 +171,7 @@ def test_renders_action_item_digest_with_counts_and_workspace_links(
 
     assert message.subject == subject
     assert message.text_body == (
-        f"Hello,\n\nHere is your {frequency.value} recruiting action summary:\n\n"
+        f"Hello,\n\nHere is your {frequency.value} workspace action summary:\n\n"
         "- 2 overdue follow-ups: https://workspace.example.test/dashboard/applications\n"
         "- 3 overdue onboarding tasks: https://workspace.example.test/dashboard/onboarding\n"
         "- Feedback is pending for 1 interview: "

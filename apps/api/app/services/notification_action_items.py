@@ -12,6 +12,7 @@ from app.core.authorization import Role, TenantContext
 from app.db.models.application import Application
 from app.db.models.application_follow_up import ApplicationFollowUp
 from app.db.models.candidate import Candidate
+from app.db.models.employee import Employee
 from app.db.models.identity import User
 from app.db.models.interview import InterviewParticipant, InterviewSession
 from app.db.models.interview_feedback import InterviewFeedback
@@ -28,6 +29,7 @@ from app.domains.interviews.enums import (
 )
 from app.domains.onboarding.enums import (
     OnboardingInstanceStatus,
+    OnboardingTaskResponsibility,
     OnboardingTaskStatus,
 )
 from app.services.application_follow_up_errors import (
@@ -234,6 +236,7 @@ async def list_notification_action_items(
             Application.id,
             Candidate.full_name,
             Requisition.title,
+            Employee.user_id,
         )
         .join(
             OnboardingInstance,
@@ -263,9 +266,23 @@ async def list_notification_action_items(
                 Requisition.tenant_id == Application.tenant_id,
             ),
         )
+        .outerjoin(
+            Employee,
+            and_(
+                Employee.application_id == Application.id,
+                Employee.tenant_id == Application.tenant_id,
+            ),
+        )
         .where(
             OnboardingTask.tenant_id == context.tenant_id,
-            OnboardingTask.assignee_user_id == user.id,
+            or_(
+                OnboardingTask.assignee_user_id == user.id,
+                and_(
+                    OnboardingTask.responsible_party
+                    == OnboardingTaskResponsibility.EMPLOYEE,
+                    Employee.user_id == user.id,
+                ),
+            ),
             OnboardingTask.due_at <= now + _ONBOARDING_TASK_DUE_SOON_WINDOW,
             OnboardingTask.status.in_(
                 (
@@ -280,9 +297,19 @@ async def list_notification_action_items(
         .order_by(OnboardingTask.due_at, OnboardingTask.id)
         .limit(50)
     )
-    for task, application_id, candidate_name, requisition_title in onboarding_rows.all():
+    for (
+        task,
+        application_id,
+        candidate_name,
+        requisition_title,
+        employee_user_id,
+    ) in onboarding_rows.all():
         if task.due_at is None:
             continue
+        employee_owns_task = (
+            task.responsible_party is OnboardingTaskResponsibility.EMPLOYEE
+            and employee_user_id == user.id
+        )
         items.append(
             NotificationActionItemRecord(
                 id=f"onboarding-task:{task.id}",
@@ -295,7 +322,11 @@ async def list_notification_action_items(
                 candidate_name=candidate_name,
                 requisition_title=requisition_title,
                 due_at=task.due_at,
-                href=f"/dashboard/applications/{application_id}",
+                href=(
+                    "/dashboard/my-onboarding"
+                    if employee_owns_task
+                    else f"/dashboard/applications/{application_id}"
+                ),
                 application_id=application_id,
             )
         )

@@ -21,7 +21,7 @@ const notificationPreferences: Array<{
   {
     eventType: "action_item.overdue_onboarding_task_digest",
     title: "Onboarding task deadlines",
-    description: "Include tasks assigned to you that are due within 7 days or past due.",
+    description: "Include workspace tasks assigned to you and your own onboarding tasks due within 7 days or past due.",
     frequencyControl: true,
   },
   {
