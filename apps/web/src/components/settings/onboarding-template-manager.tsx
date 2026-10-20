@@ -4,13 +4,18 @@ import { useState, type FormEvent } from "react";
 import {
   useCreateOnboardingTemplate,
   useCreateOnboardingTemplateVersion,
+  useDiscardOnboardingTemplateDraft,
   useOnboardingTemplateVersions,
+  usePublishOnboardingTemplateDraft,
+  useUpdateOnboardingTemplateDraft,
 } from "@/lib/api/hooks/onboarding";
 import type {
   CreateOnboardingTemplateRequest,
+  OnboardingTemplateDraftActionRequest,
   OnboardingTemplateResponse,
   OnboardingTemplateTaskRequest,
   OnboardingTaskResponsibility,
+  UpdateOnboardingTemplateDraftRequest,
 } from "@/types/api/onboarding";
 import type { Role } from "@/types/api/auth";
 
@@ -39,7 +44,15 @@ export function OnboardingTemplateManager() {
   const templateVersions = useOnboardingTemplateVersions();
   const createTemplate = useCreateOnboardingTemplate();
   const createVersion = useCreateOnboardingTemplateVersion();
+  const updateDraft = useUpdateOnboardingTemplateDraft();
+  const publishDraft = usePublishOnboardingTemplateDraft();
+  const discardDraft = useDiscardOnboardingTemplateDraft();
   const [editingTemplate, setEditingTemplate] = useState<OnboardingTemplateResponse | null>(null);
+  const [showEditorPreview, setShowEditorPreview] = useState(false);
+  const [pendingDraftAction, setPendingDraftAction] = useState<{
+    template: OnboardingTemplateResponse;
+    action: "publish" | "discard";
+  } | null>(null);
   const [name, setName] = useState("");
   const [tasks, setTasks] = useState<TemplateTaskDraft[]>([blankTask()]);
   const [message, setMessage] = useState<string | null>(null);
@@ -56,9 +69,10 @@ export function OnboardingTemplateManager() {
     setEditingTemplate(null);
     setName("");
     setTasks([blankTask()]);
+    setShowEditorPreview(false);
   }
 
-  function editAsNewVersion(template: OnboardingTemplateResponse) {
+  function editTemplate(template: OnboardingTemplateResponse) {
     setEditingTemplate(template);
     setName(template.name);
     setTasks(template.tasks.map((task) => ({
@@ -73,6 +87,7 @@ export function OnboardingTemplateManager() {
     })));
     setError(null);
     setMessage(null);
+    setShowEditorPreview(false);
   }
 
   function taskRequests(): OnboardingTemplateTaskRequest[] {
@@ -94,6 +109,26 @@ export function OnboardingTemplateManager() {
     setError(null);
     setMessage(null);
     const serializedTasks = taskRequests();
+    if (editingTemplate?.publication_status === "draft") {
+      const request: UpdateOnboardingTemplateDraftRequest = {
+        expected_revision: editingTemplate.draft_revision,
+        tasks: serializedTasks,
+      };
+      updateDraft.mutate({
+        templateId: editingTemplate.id,
+        request,
+        idempotencyKey: crypto.randomUUID(),
+      }, {
+        onSuccess: () => {
+          const draftVersion = editingTemplate.version;
+          resetEditor();
+          setMessage(`Draft version ${draftVersion} saved. Review it, then publish when ready.`);
+        },
+        onError: () => setError("We couldn’t save this draft. It may have changed; refresh and try again."),
+      });
+      return;
+    }
+
     if (editingTemplate) {
       createVersion.mutate({
         templateId: editingTemplate.id,
@@ -103,12 +138,11 @@ export function OnboardingTemplateManager() {
         },
         idempotencyKey: crypto.randomUUID(),
       }, {
-        onSuccess: () => {
-          const nextVersion = editingTemplate.version + 1;
+        onSuccess: (draft) => {
           resetEditor();
-          setMessage(`Version ${nextVersion} published. Existing onboarding plans are unchanged.`);
+          setMessage(`Draft version ${draft.version} saved. It will not be used for new hires until published.`);
         },
-        onError: () => setError("We couldn’t publish this version. The template may have changed; refresh and try again."),
+        onError: () => setError("We couldn’t save this draft. The template may have changed; refresh and try again."),
       });
       return;
     }
@@ -119,13 +153,58 @@ export function OnboardingTemplateManager() {
       tasks: serializedTasks,
     };
     createTemplate.mutate({ request, idempotencyKey: crypto.randomUUID() }, {
-      onSuccess: () => {
+      onSuccess: (draft) => {
         resetEditor();
-        setMessage("Onboarding template created.");
+        setMessage(`Draft version ${draft.version} saved. Preview and publish it before starting onboarding.`);
       },
-      onError: () => setError("We couldn’t create the template. Check that its name is unique and try again."),
+      onError: () => setError("We couldn’t save the template draft. Check that its name is unique and try again."),
     });
   }
+
+  function confirmDraftAction() {
+    if (!pendingDraftAction) return;
+    const { template, action } = pendingDraftAction;
+    const request: OnboardingTemplateDraftActionRequest = {
+      expected_revision: template.draft_revision,
+    };
+    setError(null);
+    if (action === "publish") {
+      publishDraft.mutate({
+        templateId: template.id,
+        request,
+        idempotencyKey: crypto.randomUUID(),
+      }, {
+        onSuccess: (published) => {
+          setPendingDraftAction(null);
+          setMessage(`Version ${published.version} is published and will be used for new hires. Existing plans are unchanged.`);
+        },
+        onError: () => {
+          setPendingDraftAction(null);
+          setError("We couldn’t publish this draft. Refresh the template list and try again.");
+        },
+      });
+      return;
+    }
+
+    discardDraft.mutate({
+      templateId: template.id,
+      request,
+      idempotencyKey: crypto.randomUUID(),
+    }, {
+      onSuccess: () => {
+        setPendingDraftAction(null);
+        setMessage(`Draft version ${template.version} was discarded.`);
+      },
+      onError: () => {
+        setPendingDraftAction(null);
+        setError("We couldn’t discard this draft. Refresh the template list and try again.");
+      },
+    });
+  }
+
+  const templateMutationPending =
+    createTemplate.isPending || createVersion.isPending || updateDraft.isPending ||
+    publishDraft.isPending || discardDraft.isPending;
 
   function removeTask(indexToRemove: number) {
     const removedPosition = indexToRemove + 1;
@@ -146,7 +225,7 @@ export function OnboardingTemplateManager() {
       <div>
         <h2 className="text-lg font-semibold text-sr-text-blue">Onboarding templates</h2>
         <p className="mt-1 text-sm leading-relaxed text-gray-600">
-          Define reusable tasks for new hires. Add prerequisites only when one task must wait for another; tasks without prerequisites can be done in parallel. A template is snapshotted when onboarding starts, so later changes won’t alter active plans.
+          Save changes as a draft, preview the employee checklist, then publish when it is ready. Drafts are not used for new hires. Existing onboarding plans keep their original template version.
         </p>
       </div>
 
@@ -157,33 +236,47 @@ export function OnboardingTemplateManager() {
       ) : templateGroups.size ? (
         <ul className="mt-5 grid gap-3 sm:grid-cols-2">
           {Array.from(templateGroups.entries()).map(([templateName, versions]) => {
-            const current = versions.find((template) => template.is_active) ?? versions[0];
-            if (!current) return null;
-            const previous = versions.filter((template) => template.id !== current.id);
+            const publishedVersions = versions.filter(
+              (template) => template.publication_status === "published",
+            );
+            const current = publishedVersions.find((template) => template.is_active)
+              ?? publishedVersions[0]
+              ?? null;
+            const draft = versions.find(
+              (template) => template.publication_status === "draft",
+            ) ?? null;
+            const previous = publishedVersions.filter(
+              (template) => template.id !== current?.id,
+            );
+            const displayedTemplate = current ?? draft;
+            if (!displayedTemplate) return null;
             return (
               <li key={templateName} className="rounded-lg border border-gray-200 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="font-medium text-gray-900">{templateName}</p>
                     <p className="mt-1 text-sm text-gray-600">
-                      Current version {current.version} · {current.tasks.length} tasks
+                      {current
+                        ? `Published version ${current.version} · ${current.tasks.length} tasks`
+                        : `Draft version ${displayedTemplate.version} · ${displayedTemplate.tasks.length} tasks`}
                     </p>
-                    <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${current.is_active ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>
-                      {current.is_active ? "Used for new hires" : "No active version"}
+                    <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${current ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>
+                      {current ? "Published · Used for new hires" : "Draft · Not used for new hires"}
                     </span>
                   </div>
-                  {current.is_active && (
+                  {current && !draft && (
                     <button
                       type="button"
-                      onClick={() => editAsNewVersion(current)}
+                      onClick={() => editTemplate(current)}
                       className="min-h-10 cursor-pointer rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
                     >
-                      Create new version
+                      Create draft version
                     </button>
                   )}
                 </div>
-                <ol className="mt-4 space-y-1 text-sm text-gray-700">
-                  {current.tasks.map((task, index) => {
+                {current && (
+                  <ol className="mt-4 space-y-1 text-sm text-gray-700">
+                    {current.tasks.map((task, index) => {
                     const prerequisiteTitles = task.prerequisite_task_positions
                       .map((position) => current.tasks[position - 1]?.title)
                       .filter((title): title is string => Boolean(title));
@@ -199,8 +292,103 @@ export function OnboardingTemplateManager() {
                         )}
                       </li>
                     );
-                  })}
-                </ol>
+                    })}
+                  </ol>
+                )}
+                {draft && (
+                  <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-semibold text-amber-950">
+                          Draft version {draft.version}
+                        </p>
+                        <p className="mt-1 text-xs text-amber-900">
+                          Employee checklist preview. Publishing makes this version available for future hires.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => editTemplate(draft)}
+                        className="min-h-9 cursor-pointer rounded-md border border-amber-300 bg-white px-3 py-1.5 text-sm font-medium text-amber-950 hover:bg-amber-100"
+                      >
+                        Edit draft
+                      </button>
+                    </div>
+                    <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-amber-950">
+                      {draft.tasks.map((task) => {
+                        const prerequisiteTitles = task.prerequisite_task_positions
+                          .map((position) => draft.tasks[position - 1]?.title)
+                          .filter((title): title is string => Boolean(title));
+                        return (
+                          <li key={task.id}>
+                            <span className="font-medium">{task.title}</span>
+                            {task.description && <p className="text-xs text-amber-900">{task.description}</p>}
+                            <p className="text-xs text-amber-900">
+                              {task.responsible_party === "employee" ? "Employee task" : "Workspace team task"}
+                              {task.due_offset_days !== null ? ` · Due ${task.due_offset_days} days after onboarding starts` : ""}
+                              {task.requires_document_upload ? " · File upload required" : ""}
+                              {task.requires_document_review ? " · Review required" : ""}
+                            </p>
+                            {prerequisiteTitles.length > 0 && (
+                              <p className="text-xs text-amber-900">
+                                Available after: {prerequisiteTitles.join(", ")}
+                              </p>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ol>
+                    {pendingDraftAction?.template.id === draft.id ? (
+                      <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-amber-200 pt-3" role="group" aria-label="Confirm draft action">
+                        <p className="mr-2 text-sm text-amber-950">
+                          {pendingDraftAction.action === "publish"
+                            ? `Publish version ${draft.version} for future hires?`
+                            : `Discard draft version ${draft.version}? This cannot be undone.`}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={confirmDraftAction}
+                          disabled={templateMutationPending}
+                          className="min-h-9 cursor-pointer rounded-md bg-sr-text-blue px-3 py-1.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {templateMutationPending ? "Working…" : pendingDraftAction.action === "publish" ? "Confirm publish" : "Confirm discard"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPendingDraftAction(null)}
+                          disabled={templateMutationPending}
+                          className="min-h-9 cursor-pointer rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="mt-4 flex flex-wrap gap-2 border-t border-amber-200 pt-3">
+                        {editingTemplate?.id === draft.id && (
+                          <p className="w-full text-xs text-amber-900">
+                            Save or cancel your draft edits before publishing or discarding this version.
+                          </p>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setPendingDraftAction({ template: draft, action: "publish" })}
+                          disabled={templateMutationPending || editingTemplate?.id === draft.id}
+                          className="min-h-9 cursor-pointer rounded-md bg-sr-text-blue px-3 py-1.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Publish draft
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPendingDraftAction({ template: draft, action: "discard" })}
+                          disabled={templateMutationPending || editingTemplate?.id === draft.id}
+                          className="min-h-9 cursor-pointer rounded-md border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-800 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Discard draft
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
                 {previous.length > 0 && (
                   <details className="mt-4 border-t border-gray-100 pt-3">
                     <summary className="cursor-pointer text-sm font-medium text-gray-700">
@@ -228,19 +416,27 @@ export function OnboardingTemplateManager() {
         </ul>
       ) : (
         <p className="mt-5 rounded-lg bg-amber-50 p-4 text-sm text-amber-900">
-          No onboarding templates yet. Create one below before starting onboarding for a hired candidate.
+          No onboarding templates yet. Save a template draft, review its employee checklist, and publish it before starting onboarding.
         </p>
       )}
 
       <form className="mt-7 space-y-5 border-t border-gray-100 pt-6" onSubmit={submit}>
         <h3 className="font-semibold text-gray-900">
-          {editingTemplate ? `Create version ${editingTemplate.version + 1}` : "Create a template"}
+          {editingTemplate?.publication_status === "draft"
+            ? `Edit draft version ${editingTemplate.version}`
+            : editingTemplate
+              ? `Prepare draft version ${editingTemplate.version + 1}`
+              : "Create a template draft"}
         </h3>
         {editingTemplate ? (
           <div className="rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm text-blue-950">
-            <p className="font-medium">{editingTemplate.name} · Current version {editingTemplate.version}</p>
+            <p className="font-medium">
+              {editingTemplate.name} · {editingTemplate.publication_status === "draft" ? `Draft version ${editingTemplate.version}` : `Published version ${editingTemplate.version}`}
+            </p>
             <p className="mt-1">
-              Publishing creates version {editingTemplate.version + 1} for future hires. Existing onboarding plans keep version {editingTemplate.version}.
+              {editingTemplate.publication_status === "draft"
+                ? "Saving updates this draft only. Preview it and publish when it is ready."
+                : `Saving creates draft version ${editingTemplate.version + 1}. The current published version stays in use until you publish the draft.`}
             </p>
           </div>
         ) : (
@@ -350,25 +546,66 @@ export function OnboardingTemplateManager() {
           ))}
           <button type="button" disabled={tasks.length >= 100} onClick={() => setTasks((current) => [...current, blankTask()])} className="text-sm font-medium text-sr-text-blue underline disabled:opacity-50">Add task</button>
         </div>
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowEditorPreview((visible) => !visible)}
+            className="min-h-10 cursor-pointer rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            {showEditorPreview ? "Hide employee checklist preview" : "Preview employee checklist"}
+          </button>
+          {showEditorPreview && (
+            <section className="mt-3 rounded-lg border border-blue-100 bg-blue-50 p-4" aria-label="Employee checklist preview">
+              <h4 className="font-semibold text-blue-950">Employee checklist preview</h4>
+              <p className="mt-1 text-sm text-blue-900">
+                {name.trim() || editingTemplate?.name || "New onboarding template"} · {editingTemplate?.publication_status === "draft" ? `Draft version ${editingTemplate.version}` : `Version ${(editingTemplate?.version ?? 0) + 1}`}
+              </p>
+              <ol className="mt-3 list-decimal space-y-3 pl-5 text-sm text-blue-950">
+                {tasks.map((task, index) => {
+                  const prerequisiteTitles = task.prerequisitePositions
+                    .map((position) => tasks[position - 1]?.title.trim())
+                    .filter((title): title is string => Boolean(title));
+                  return (
+                    <li key={`preview-${index}`}>
+                      <span className="font-medium">{task.title.trim() || `Task ${index + 1}`}</span>
+                      {task.description.trim() && <p className="text-blue-900">{task.description.trim()}</p>}
+                      <p className="text-xs text-blue-900">
+                        {task.responsibleParty === "employee" ? "Employee task" : "Workspace team task"}
+                        {task.dueDays !== "" ? ` · Due ${task.dueDays} days after onboarding starts` : ""}
+                        {task.requiresDocumentUpload ? " · File upload required" : ""}
+                        {task.requiresDocumentReview ? " · Review required" : ""}
+                      </p>
+                      {prerequisiteTitles.length > 0 && (
+                        <p className="text-xs text-blue-900">Available after: {prerequisiteTitles.join(", ")}</p>
+                      )}
+                    </li>
+                  );
+                })}
+              </ol>
+            </section>
+          )}
+        </div>
         {error && <p role="alert" className="text-sm text-red-800">{error}</p>}
         {message && <p role="status" className="text-sm text-emerald-800">{message}</p>}
         <div className="flex flex-wrap gap-3">
           <button
             type="submit"
-            disabled={createTemplate.isPending || createVersion.isPending}
+            disabled={templateMutationPending}
             className="min-h-10 cursor-pointer rounded-lg bg-sr-text-blue px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {createTemplate.isPending || createVersion.isPending
+            {templateMutationPending
               ? "Saving…"
-              : editingTemplate
-                ? `Publish version ${editingTemplate.version + 1}`
-                : "Create template"}
+              : editingTemplate?.publication_status === "draft"
+                ? "Save draft changes"
+                : editingTemplate
+                  ? `Save draft version ${editingTemplate.version + 1}`
+                  : "Save as draft"}
           </button>
           {editingTemplate && (
             <button
               type="button"
               onClick={resetEditor}
-              disabled={createVersion.isPending}
+              disabled={templateMutationPending}
               className="min-h-10 cursor-pointer rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
               Cancel
