@@ -318,7 +318,10 @@ async def list_notification_action_items(
                     review_item.document.uploaded_at
                     or review_item.document.created_at
                 ),
-                href="/dashboard/onboarding/document-reviews",
+                href=(
+                    "/dashboard/onboarding/document-reviews?documentId="
+                    f"{review_item.document.id}"
+                ),
                 application_id=review_item.application_id,
             )
             for review_item in review_items

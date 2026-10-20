@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { useSession } from "next-auth/react";
 import {
@@ -11,6 +12,8 @@ import {
 import { useOnboardingDocumentReviewQueue } from "@/lib/api/hooks/onboarding";
 
 const PAGE_SIZE = 20;
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function fileSizeLabel(bytes: number): string {
   return bytes < 1024 * 1024
@@ -27,19 +30,67 @@ function dateLabel(value: string | null): string {
 }
 
 export default function OnboardingDocumentReviewsPage() {
+  return (
+    <Suspense
+      fallback={
+        <p
+          className="mx-auto max-w-5xl py-12 text-center text-sm text-gray-600"
+          role="status"
+        >
+          Loading document review queue…
+        </p>
+      }
+    >
+      <OnboardingDocumentReviewsContent />
+    </Suspense>
+  );
+}
+
+function OnboardingDocumentReviewsContent() {
   const { status: sessionStatus } = useSession();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedDocumentId = searchParams.get("documentId");
+  const documentId =
+    requestedDocumentId && UUID_PATTERN.test(requestedDocumentId)
+      ? requestedDocumentId
+      : undefined;
   const [searchInput, setSearchInput] = useState("");
   const [query, setQuery] = useState("");
-  const [page, setPage] = useState(1);
+  const [pageState, setPageState] = useState({
+    documentId: null as string | null,
+    page: 1,
+  });
+  const targetDocumentId = documentId ?? null;
+  const page = pageState.documentId === targetDocumentId ? pageState.page : 1;
+
+  function setPage(nextPage: number | ((currentPage: number) => number)) {
+    setPageState((current) => {
+      const currentPage = current.documentId === targetDocumentId ? current.page : 1;
+      return {
+        documentId: targetDocumentId,
+        page: typeof nextPage === "function" ? nextPage(currentPage) : nextPage,
+      };
+    });
+  }
+
   const params = useMemo(
-    () => ({ page, limit: PAGE_SIZE, query: query || undefined }),
-    [page, query],
+    () => ({
+      page,
+      limit: PAGE_SIZE,
+      query: documentId ? undefined : query || undefined,
+      document_id: documentId,
+    }),
+    [documentId, page, query],
   );
   const queue = useOnboardingDocumentReviewQueue(params);
   const items = queue.data?.items ?? [];
   const total = queue.data?.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const isLoading = sessionStatus === "loading" || queue.isLoading;
+  const returnToQueue = documentId
+    ? () => router.replace("/dashboard/onboarding/document-reviews")
+    : undefined;
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -66,46 +117,65 @@ export default function OnboardingDocumentReviewsPage() {
         </p>
       </header>
 
-      <section className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5" aria-label="Search document reviews">
-        <form onSubmit={submitSearch} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-xs font-medium text-gray-600">
-            Search by employee, job, task, or filename
-            <input
-              type="search"
-              value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="For example, ID document or Benard"
-              className="h-10 rounded-lg border border-gray-200 px-3 text-sm font-normal text-gray-900 outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
-            />
-          </label>
-          <div className="flex gap-2">
-            <button
-              type="submit"
-              className="h-10 cursor-pointer rounded-lg bg-sr-green px-4 text-sm font-semibold text-white hover:brightness-95"
-            >
-              Search
-            </button>
-            {query && (
+      {documentId ? (
+        <section className="flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+          <p className="text-sm text-blue-950">
+            This link is focused on one document. Return to the full queue to review other
+            submissions.
+          </p>
+          <Link
+            href="/dashboard/onboarding/document-reviews"
+            className="shrink-0 text-sm font-semibold text-sr-text-blue underline"
+          >
+            View all reviews
+          </Link>
+        </section>
+      ) : (
+        <section className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5" aria-label="Search document reviews">
+          <form onSubmit={submitSearch} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-xs font-medium text-gray-600">
+              Search by employee, job, task, or filename
+              <input
+                type="search"
+                value={searchInput}
+                onChange={(event) => setSearchInput(event.target.value)}
+                placeholder="For example, ID document or Benard"
+                className="h-10 rounded-lg border border-gray-200 px-3 text-sm font-normal text-gray-900 outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
+              />
+            </label>
+            <div className="flex gap-2">
               <button
-                type="button"
-                onClick={clearSearch}
-                className="h-10 cursor-pointer rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                type="submit"
+                className="h-10 cursor-pointer rounded-lg bg-sr-green px-4 text-sm font-semibold text-white hover:brightness-95"
               >
-                Clear
+                Search
               </button>
-            )}
-          </div>
-        </form>
-      </section>
+              {query && (
+                <button
+                  type="button"
+                  onClick={clearSearch}
+                  className="h-10 cursor-pointer rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </form>
+        </section>
+      )}
 
       <section aria-labelledby="review-queue-heading" className="overflow-hidden rounded-xl border border-gray-200 bg-white">
         <div className="flex flex-col gap-1 border-b border-gray-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
           <div>
             <h2 id="review-queue-heading" className="font-semibold text-sr-text-blue">
-              Waiting for review
+              {documentId ? "Requested document" : "Waiting for review"}
             </h2>
             <p className="mt-1 text-sm text-gray-600">
-              {isLoading ? "Loading review queue…" : `${total} ${total === 1 ? "document" : "documents"} pending`}
+              {isLoading
+                ? "Loading review queue…"
+                : documentId
+                  ? `${total} ${total === 1 ? "document" : "documents"} pending for this link`
+                  : `${total} ${total === 1 ? "document" : "documents"} pending`}
             </p>
           </div>
           <p className="text-xs text-gray-500">The queue refreshes automatically.</p>
@@ -133,18 +203,29 @@ export default function OnboardingDocumentReviewsPage() {
             <h3 className="font-semibold text-sr-text-blue">
               {total > 0
                 ? "This page no longer has pending documents"
-                : query
-                  ? "No documents match this search"
-                  : "You’re all caught up"}
+                : documentId
+                  ? "This document no longer needs review"
+                  : query
+                    ? "No documents match this search"
+                    : "You’re all caught up"}
             </h3>
             <p className="mx-auto mt-2 max-w-lg text-sm text-gray-600">
               {total > 0
                 ? "The queue changed while you were reviewing. Go to the last available page to continue."
-                : query
-                ? "Try another employee name, job title, task, or filename."
-                : "Documents appear here after employees upload them and their security scans pass."}
+                : documentId
+                    ? "It may have already been reviewed or moved out of active onboarding. You can return to the full queue to continue reviewing."
+                    : query
+                      ? "Try another employee name, job title, task, or filename."
+                      : "Documents appear here after employees upload them and their security scans pass."}
             </p>
-            {total > 0 ? (
+            {documentId ? (
+              <Link
+                href="/dashboard/onboarding/document-reviews"
+                className="mt-4 inline-flex cursor-pointer text-sm font-medium text-sr-text-blue underline"
+              >
+                View all pending documents
+              </Link>
+            ) : total > 0 ? (
               <button
                 type="button"
                 onClick={() => setPage(pageCount)}
@@ -205,7 +286,11 @@ export default function OnboardingDocumentReviewsPage() {
                           </div>
                         </div>
 
-                        <DocumentReviewControls document={document} canReview />
+                        <DocumentReviewControls
+                          document={document}
+                          canReview
+                          onReviewed={returnToQueue}
+                        />
                       </div>
                       <Link
                         href={`/dashboard/applications/${item.application_id}`}
@@ -219,30 +304,41 @@ export default function OnboardingDocumentReviewsPage() {
               })}
             </ul>
 
-            <footer className="flex flex-col gap-3 border-t border-gray-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-              <p aria-live="polite" className="text-sm text-gray-600">
-                Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total} documents
-              </p>
-              <div className="flex items-center gap-2 self-end sm:self-auto">
-                <button
-                  type="button"
-                  disabled={page <= 1 || queue.isFetching}
-                  onClick={() => setPage((current) => current - 1)}
-                  className="h-9 cursor-pointer rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+            {documentId ? (
+              <footer className="border-t border-gray-200 px-4 py-3 sm:px-5">
+                <Link
+                  href="/dashboard/onboarding/document-reviews"
+                  className="text-sm font-medium text-sr-text-blue underline"
                 >
-                  Previous
-                </button>
-                <span className="px-1 text-sm text-gray-600">Page {page} of {pageCount}</span>
-                <button
-                  type="button"
-                  disabled={page >= pageCount || queue.isFetching}
-                  onClick={() => setPage((current) => current + 1)}
-                  className="h-9 cursor-pointer rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Next
-                </button>
-              </div>
-            </footer>
+                  Back to all reviews
+                </Link>
+              </footer>
+            ) : (
+              <footer className="flex flex-col gap-3 border-t border-gray-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                <p aria-live="polite" className="text-sm text-gray-600">
+                  Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total} documents
+                </p>
+                <div className="flex items-center gap-2 self-end sm:self-auto">
+                  <button
+                    type="button"
+                    disabled={page <= 1 || queue.isFetching}
+                    onClick={() => setPage((current) => current - 1)}
+                    className="h-9 cursor-pointer rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Previous
+                  </button>
+                  <span className="px-1 text-sm text-gray-600">Page {page} of {pageCount}</span>
+                  <button
+                    type="button"
+                    disabled={page >= pageCount || queue.isFetching}
+                    onClick={() => setPage((current) => current + 1)}
+                    className="h-9 cursor-pointer rounded-lg border border-gray-300 px-3 text-sm font-medium text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Next
+                  </button>
+                </div>
+              </footer>
+            )}
           </>
         )}
       </section>

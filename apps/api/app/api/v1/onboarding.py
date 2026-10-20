@@ -188,14 +188,16 @@ async def list_onboarding_document_review_queue_endpoint(
     page: Annotated[int, Query(ge=1)] = 1,
     limit: Annotated[int, Query(ge=1, le=100)] = 25,
     query: Annotated[str | None, Query(max_length=200)] = None,
+    document_id: Annotated[UUID | None, Query()] = None,
 ) -> OnboardingDocumentReviewQueueResponse:
-    """Return clean, pending documents for People Operations reviewers."""
+    """Return clean, pending documents for authorized workspace reviewers."""
     items, total = await list_onboarding_document_review_queue(
         session,
         context=context,
         page=page,
         limit=limit,
         query=query,
+        document_id=document_id,
     )
     response.headers["Cache-Control"] = "private, no-store"
     return OnboardingDocumentReviewQueueResponse(
