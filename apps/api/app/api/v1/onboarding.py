@@ -208,6 +208,10 @@ async def list_onboarding_document_review_queue_endpoint(
                 task_title=item.task_title,
                 employee_name=item.employee_name,
                 job_title=item.job_title,
+                previous_versions=[
+                    OnboardingTaskDocumentResponse.model_validate(document)
+                    for document in item.previous_versions
+                ],
             )
             for item in items
         ],
@@ -432,6 +436,7 @@ async def create_employee_onboarding_task_document_endpoint(
                 declared_content_type=payload.declared_content_type,
                 expected_byte_size=payload.expected_byte_size,
                 checksum_sha256=payload.checksum_sha256,
+                replaces_document_id=payload.replaces_document_id,
             ),
         )
         return (
