@@ -8,6 +8,7 @@ import { useSession } from "next-auth/react";
 import {
   DocumentAccessButton,
   DocumentReviewControls,
+  OnboardingDocumentPreviousVersions,
 } from "@/components/onboarding/onboarding-task-document-list";
 import { useOnboardingDocumentReviewQueue } from "@/lib/api/hooks/onboarding";
 
@@ -290,6 +291,9 @@ function OnboardingDocumentReviewsContent() {
                           document={document}
                           canReview
                           onReviewed={returnToQueue}
+                        />
+                        <OnboardingDocumentPreviousVersions
+                          documents={item.previous_versions}
                         />
                       </div>
                       <Link

@@ -11,6 +11,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -411,6 +412,39 @@ class OnboardingTaskDocument(Base):
             "OR status = 'available'",
             name="ck_onboarding_task_documents_review_requires_clean_file",
         ),
+        CheckConstraint(
+            "revision_number > 0",
+            name="ck_onboarding_task_documents_revision_positive",
+        ),
+        CheckConstraint(
+            "(replaces_document_id IS NULL AND revision_number = 1) OR "
+            "(replaces_document_id IS NOT NULL AND revision_number > 1)",
+            name="ck_onboarding_task_documents_revision_replacement_consistent",
+        ),
+        CheckConstraint(
+            "replaces_document_id IS NULL OR replaces_document_id <> id",
+            name="ck_onboarding_task_documents_cannot_replace_self",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "onboarding_task_id",
+            "id",
+            name="uq_onboarding_task_documents_tenant_task_id_id",
+        ),
+        UniqueConstraint(
+            "replaces_document_id",
+            name="uq_onboarding_task_documents_replaces_document_id",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "onboarding_task_id", "replaces_document_id"],
+            [
+                "onboarding_task_documents.tenant_id",
+                "onboarding_task_documents.onboarding_task_id",
+                "onboarding_task_documents.id",
+            ],
+            name="fk_onboarding_task_documents_replacement_parent",
+            ondelete="CASCADE",
+        ),
         Index(
             "ix_onboarding_task_documents_tenant_task_created_at",
             "tenant_id",
@@ -422,6 +456,12 @@ class OnboardingTaskDocument(Base):
             "tenant_id",
             "status",
             "updated_at",
+        ),
+        Index(
+            "ix_onboarding_task_documents_tenant_task_revision",
+            "tenant_id",
+            "onboarding_task_id",
+            "revision_number",
         ),
     )
 
@@ -439,6 +479,16 @@ class OnboardingTaskDocument(Base):
         ForeignKey("onboarding_tasks.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
+    )
+    replaces_document_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        nullable=True,
+    )
+    revision_number: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default=text("1"),
     )
     # Server-generated; never accepted from or returned to the browser.
     storage_key: Mapped[str] = mapped_column(String(512), nullable=False, unique=True)
@@ -467,6 +517,7 @@ class OnboardingTaskDocument(Base):
         server_default=OnboardingTaskDocumentReviewStatus.NOT_REQUIRED.value,
     )
     reviewed_by_subject: Mapped[str | None] = mapped_column(String(255))
+    reviewed_by_name: Mapped[str | None] = mapped_column(String(200))
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     review_comment: Mapped[str | None] = mapped_column(Text)
     uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

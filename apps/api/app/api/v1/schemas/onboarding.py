@@ -213,12 +213,15 @@ class OnboardingTaskDocumentResponse(BaseModel):
 
     id: UUID
     onboarding_task_id: UUID
+    replaces_document_id: UUID | None = None
+    revision_number: int = 1
     original_filename: str
     declared_content_type: str
     expected_byte_size: int
     status: OnboardingTaskDocumentStatus
     review_status: OnboardingTaskDocumentReviewStatus
     review_comment: str | None
+    reviewed_by_name: str | None = None
     reviewed_at: datetime | None
     uploaded_at: datetime | None
     scan_started_at: datetime | None
@@ -266,6 +269,7 @@ class OnboardingTaskDocumentCreateRequest(BaseModel):
         max_length=64,
         pattern=r"^[a-fA-F0-9]{64}$",
     )
+    replaces_document_id: UUID | None = None
 
     @model_validator(mode="after")
     def validate_upload_metadata(self) -> "OnboardingTaskDocumentCreateRequest":
@@ -366,6 +370,9 @@ class OnboardingDocumentReviewQueueItemResponse(BaseModel):
     task_title: str
     employee_name: str
     job_title: str
+    previous_versions: list[OnboardingTaskDocumentResponse] = Field(
+        default_factory=list
+    )
 
 
 class OnboardingDocumentReviewQueueResponse(BaseModel):

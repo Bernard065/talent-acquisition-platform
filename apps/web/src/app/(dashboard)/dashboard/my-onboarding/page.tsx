@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { useState } from "react";
 import { ApiError } from "@/lib/api";
 import { OnboardingTaskActivity } from "@/components/onboarding/onboarding-task-activity";
 import {
@@ -11,8 +11,10 @@ import {
 import type {
   EmployeePortalTaskResponse,
   OnboardingInstanceStatus,
+  OnboardingTaskDocumentResponse,
   OnboardingTaskStatus,
 } from "@/types/api/onboarding";
+import { groupOnboardingDocumentVersions } from "@/lib/onboarding/document-versions";
 
 const planStatusLabels: Record<OnboardingInstanceStatus, string> = {
   active: "In progress",
@@ -45,6 +47,72 @@ function taskStatusStyle(status: OnboardingTaskStatus): string {
   return "bg-amber-50 text-amber-900";
 }
 
+function employeeDocumentStatusLabel(
+  document: OnboardingTaskDocumentResponse,
+  requiresReview: boolean,
+): string {
+  if (document.status === "available") {
+    if (!requiresReview) return "Security scan complete";
+    if (document.review_status === "accepted") return "Accepted by People Operations";
+    if (document.review_status === "changes_requested") return "Replacement requested";
+    return "Security scan complete · Awaiting review";
+  }
+  if (document.status === "quarantined") return "Blocked by security scan";
+  if (document.status === "rejected") return "Upload could not be verified";
+  if (document.status === "pending_upload") return "Upload not finished";
+  if (document.status === "uploaded") return "Waiting for security scan";
+  return "Scanning…";
+}
+
+function EmployeeDocumentVersionEntry({
+  document,
+  requiresReview,
+  isCurrent = false,
+}: {
+  document: OnboardingTaskDocumentResponse;
+  requiresReview: boolean;
+  isCurrent?: boolean;
+}) {
+  const statusTone =
+    document.status === "available" &&
+    (!requiresReview || document.review_status === "accepted")
+      ? "text-emerald-800"
+      : document.status === "quarantined" ||
+          document.status === "rejected" ||
+          document.review_status === "changes_requested"
+        ? "text-amber-800"
+        : "text-blue-800";
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+            {isCurrent ? "Current version" : "Previous version"} · Version {document.revision_number}
+          </p>
+          <p className="mt-1 break-all text-sm font-medium text-gray-800">
+            {document.original_filename}
+          </p>
+        </div>
+        <span className={`shrink-0 text-xs font-medium ${statusTone}`}>
+          {employeeDocumentStatusLabel(document, requiresReview)}
+        </span>
+      </div>
+      {document.review_comment && (
+        <p className="mt-2 whitespace-pre-wrap rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+          <span className="font-semibold">People Operations feedback: </span>
+          {document.review_comment}
+        </p>
+      )}
+      {document.reviewed_at && (
+        <p className="mt-1 text-xs text-gray-500">
+          Reviewed by {document.reviewed_by_name || "a workspace reviewer"} · {formatDate(document.reviewed_at)}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function TaskItem({
   task,
   position,
@@ -69,6 +137,24 @@ function TaskItem({
   const [helpError, setHelpError] = useState<string | null>(null);
   const uploadDocument = useUploadEmployeeOnboardingTaskDocument();
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [selectedReplacementId, setSelectedReplacementId] = useState("");
+  const documentVersionGroups = groupOnboardingDocumentVersions(task.documents);
+  const replacementCandidates = task.documents.filter(
+    (document) =>
+      document.status === "available" &&
+      document.review_status === "changes_requested" &&
+      !task.documents.some(
+        (replacement) => replacement.replaces_document_id === document.id,
+      ),
+  );
+  const singleReplacementCandidate = replacementCandidates.length === 1
+    ? replacementCandidates[0]
+    : undefined;
+  const replacementDocumentId = replacementCandidates.some(
+    (document) => document.id === selectedReplacementId,
+  )
+    ? selectedReplacementId
+    : singleReplacementCandidate?.id ?? "";
   const hasAvailableDocument = task.documents.some(
     (document) => document.status === "available",
   );
@@ -111,8 +197,16 @@ function TaskItem({
 
   function uploadFile(file: File | undefined) {
     if (!file || !task.can_update) return;
+    if (replacementCandidates.length > 1 && !replacementDocumentId) {
+      setUploadError("Choose which requested document this file replaces.");
+      return;
+    }
     setUploadError(null);
-    uploadDocument.mutate({ taskId: task.id, file }, {
+    uploadDocument.mutate({
+      taskId: task.id,
+      file,
+      replacesDocumentId: replacementDocumentId || undefined,
+    }, {
       onError: (error) => setUploadError(
         error instanceof Error
           ? error.message
@@ -170,39 +264,57 @@ function TaskItem({
             </p>
             {task.documents.length > 0 && (
               <ul className="mt-3 space-y-2" aria-label="Uploaded task documents">
-                {task.documents.map((document) => (
-                  <Fragment key={document.id}>
-                  <li className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-white px-3 py-2 text-sm">
-                    <span className="min-w-0 truncate font-medium text-gray-800">{document.original_filename}</span>
-                    <span className={`shrink-0 text-xs font-medium ${document.status === "available" && (!task.requires_document_review || document.review_status === "accepted") ? "text-emerald-800" : document.status === "quarantined" || document.status === "rejected" || document.review_status === "changes_requested" ? "text-amber-800" : "text-blue-800"}`}>
-                      {document.status === "available"
-                        ? !task.requires_document_review
-                          ? "Security scan complete"
-                          : document.review_status === "accepted"
-                            ? "Accepted by People Operations"
-                            : document.review_status === "changes_requested"
-                              ? "Replacement requested"
-                              : "Security scan complete · Awaiting review"
-                        : document.status === "quarantined"
-                          ? "Blocked by security scan"
-                          : document.status === "rejected"
-                            ? "Upload could not be verified"
-                            : document.status === "pending_upload"
-                              ? "Upload not finished"
-                              : document.status === "uploaded"
-                                ? "Waiting for security scan"
-                                : "Scanning…"}
-                    </span>
+                {documentVersionGroups.map(({ current, previous }) => (
+                  <li key={current.id} className="rounded-md border border-gray-200 bg-white px-3 py-3">
+                    <EmployeeDocumentVersionEntry
+                      document={current}
+                      requiresReview={task.requires_document_review}
+                      isCurrent
+                    />
+                    {previous.length > 0 && (
+                      <details className="mt-3 border-t border-gray-100 pt-2">
+                        <summary className="cursor-pointer text-xs font-semibold text-gray-700">
+                          Previous versions ({previous.length})
+                        </summary>
+                        <ol className="mt-2 space-y-2">
+                          {previous.map((document) => (
+                            <li key={document.id} className="rounded-md bg-gray-50 px-3 py-2">
+                              <EmployeeDocumentVersionEntry
+                                document={document}
+                                requiresReview={task.requires_document_review}
+                              />
+                            </li>
+                          ))}
+                        </ol>
+                      </details>
+                    )}
                   </li>
-                  {document.review_comment && (
-                    <li className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
-                      <span className="font-semibold">People Operations feedback: </span>
-                      {document.review_comment}
-                    </li>
-                  )}
-                  </Fragment>
                 ))}
               </ul>
+            )}
+            {canUploadDocument && singleReplacementCandidate && (
+              <p className="mt-3 text-xs text-gray-700">
+                This upload will replace Version {singleReplacementCandidate.revision_number}: {singleReplacementCandidate.original_filename}
+              </p>
+            )}
+            {canUploadDocument && replacementCandidates.length > 1 && (
+              <label className="mt-3 block max-w-xl">
+                <span className="mb-1 block text-xs font-medium text-gray-700">
+                  Choose which requested document this upload replaces
+                </span>
+                <select
+                  value={replacementDocumentId}
+                  onChange={(event) => setSelectedReplacementId(event.target.value)}
+                  className="h-10 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20"
+                >
+                  <option value="">Select a document</option>
+                  {replacementCandidates.map((document) => (
+                    <option key={document.id} value={document.id}>
+                      Version {document.revision_number}: {document.original_filename}
+                    </option>
+                  ))}
+                </select>
+              </label>
             )}
             {canUploadDocument && (
               <label className="mt-3 inline-flex min-h-10 cursor-pointer items-center justify-center rounded-lg bg-sr-text-blue px-4 py-2 text-sm font-semibold text-white hover:opacity-90 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60">
@@ -210,7 +322,10 @@ function TaskItem({
                 <input
                   type="file"
                   accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                  disabled={uploadDocument.isPending}
+                  disabled={
+                    uploadDocument.isPending ||
+                    (replacementCandidates.length > 1 && !replacementDocumentId)
+                  }
                   onChange={(event) => {
                     uploadFile(event.currentTarget.files?.[0]);
                     event.currentTarget.value = "";

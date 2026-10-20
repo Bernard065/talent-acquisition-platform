@@ -1,7 +1,7 @@
 """Secure employee onboarding document upload and access services."""
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -90,6 +90,7 @@ class CreateOnboardingTaskDocumentCommand:
     declared_content_type: str
     expected_byte_size: int
     checksum_sha256: str
+    replaces_document_id: UUID | None = None
 
     def __post_init__(self) -> None:
         filename = self.original_filename.strip()
@@ -153,6 +154,7 @@ class OnboardingDocumentReviewQueueItem:
     task_title: str
     employee_name: str
     job_title: str
+    previous_versions: tuple[OnboardingTaskDocument, ...] = ()
 
 
 async def list_onboarding_document_review_queue(
@@ -284,6 +286,21 @@ async def list_onboarding_document_review_queue(
             job_title,
         ) in result.all()
     ]
+    documents_by_task = await list_documents_for_authorized_tasks(
+        session,
+        tenant_id=context.tenant_id,
+        task_ids=tuple(dict.fromkeys(item.onboarding_task_id for item in items)),
+    )
+    items = [
+        replace(
+            item,
+            previous_versions=_previous_document_versions(
+                item.document,
+                documents_by_task.get(item.onboarding_task_id, ()),
+            ),
+        )
+        for item in items
+    ]
     return items, total or 0
 
 
@@ -315,11 +332,50 @@ async def create_employee_task_document_upload_intent(
                 "This task has reached its document upload limit. Contact People Operations."
             )
 
+        replaces_document: OnboardingTaskDocument | None = None
+        revision_number = 1
+        if command.replaces_document_id is not None:
+            replaces_document = await session.scalar(
+                select(OnboardingTaskDocument)
+                .where(
+                    OnboardingTaskDocument.id == command.replaces_document_id,
+                    OnboardingTaskDocument.tenant_id == context.tenant_id,
+                    OnboardingTaskDocument.onboarding_task_id == task.id,
+                )
+                .with_for_update()
+            )
+            if replaces_document is None:
+                raise OnboardingTaskNotFoundError(
+                    "The onboarding document to replace was not found."
+                )
+            if (
+                replaces_document.status is not OnboardingTaskDocumentStatus.AVAILABLE
+                or replaces_document.review_status
+                is not OnboardingTaskDocumentReviewStatus.CHANGES_REQUESTED
+            ):
+                raise OnboardingValidationError(
+                    "Only a document with requested changes can be replaced."
+                )
+            replacement_exists = await session.scalar(
+                select(OnboardingTaskDocument.id).where(
+                    OnboardingTaskDocument.tenant_id == context.tenant_id,
+                    OnboardingTaskDocument.onboarding_task_id == task.id,
+                    OnboardingTaskDocument.replaces_document_id == replaces_document.id,
+                )
+            )
+            if replacement_exists is not None:
+                raise OnboardingValidationError(
+                    "A replacement upload has already been started for this document."
+                )
+            revision_number = replaces_document.revision_number + 1
+
         document_id = uuid4()
         document = OnboardingTaskDocument(
             id=document_id,
             tenant_id=context.tenant_id,
             onboarding_task_id=task.id,
+            replaces_document_id=(replaces_document.id if replaces_document is not None else None),
+            revision_number=revision_number,
             storage_key=onboarding_task_document_object_key(
                 tenant_id=context.tenant_id,
                 onboarding_task_id=task.id,
@@ -344,6 +400,10 @@ async def create_employee_task_document_upload_intent(
                 "onboarding_task_id": str(task.id),
                 "expected_byte_size": document.expected_byte_size,
                 "content_type": document.declared_content_type,
+                "replaces_document_id": (
+                    str(replaces_document.id) if replaces_document is not None else None
+                ),
+                "revision_number": document.revision_number,
             },
         )
     return document
@@ -669,15 +729,13 @@ async def review_onboarding_task_document(
         )
 
     async with transactional(session):
-        document = await session.scalar(
-            select(OnboardingTaskDocument)
-            .where(
+        document_task_id = await session.scalar(
+            select(OnboardingTaskDocument.onboarding_task_id).where(
                 OnboardingTaskDocument.id == document_id,
                 OnboardingTaskDocument.tenant_id == context.tenant_id,
             )
-            .with_for_update()
         )
-        if document is None:
+        if document_task_id is None:
             raise OnboardingTaskNotFoundError(
                 "Onboarding task document was not found."
             )
@@ -685,12 +743,26 @@ async def review_onboarding_task_document(
         task = await session.scalar(
             select(OnboardingTask)
             .where(
-                OnboardingTask.id == document.onboarding_task_id,
+                OnboardingTask.id == document_task_id,
                 OnboardingTask.tenant_id == context.tenant_id,
             )
             .with_for_update()
         )
         if task is None:
+            raise OnboardingTaskNotFoundError(
+                "Onboarding task document was not found."
+            )
+
+        document = await session.scalar(
+            select(OnboardingTaskDocument)
+            .where(
+                OnboardingTaskDocument.id == document_id,
+                OnboardingTaskDocument.tenant_id == context.tenant_id,
+                OnboardingTaskDocument.onboarding_task_id == task.id,
+            )
+            .with_for_update()
+        )
+        if document is None:
             raise OnboardingTaskNotFoundError(
                 "Onboarding task document was not found."
             )
@@ -720,6 +792,12 @@ async def review_onboarding_task_document(
             else OnboardingTaskDocumentReviewStatus.CHANGES_REQUESTED
         )
         document.reviewed_by_subject = context.subject
+        document.reviewed_by_name = await session.scalar(
+            select(User.display_name).where(
+                User.tenant_id == context.tenant_id,
+                User.external_subject == context.subject,
+            )
+        )
         document.reviewed_at = now
         document.review_comment = command.comment
         audit_action = (
@@ -993,6 +1071,25 @@ async def _list_task_documents(
             )
         )
     )
+
+
+def _previous_document_versions(
+    document: OnboardingTaskDocument,
+    task_documents: tuple[OnboardingTaskDocument, ...],
+) -> tuple[OnboardingTaskDocument, ...]:
+    """Return a document's ancestors, nearest replacement first."""
+    documents_by_id = {item.id: item for item in task_documents}
+    previous_versions: list[OnboardingTaskDocument] = []
+    visited = {document.id}
+    previous_id = document.replaces_document_id
+    while previous_id is not None:
+        previous = documents_by_id.get(previous_id)
+        if previous is None or previous.id in visited:
+            break
+        previous_versions.append(previous)
+        visited.add(previous.id)
+        previous_id = previous.replaces_document_id
+    return tuple(previous_versions)
 
 
 def _metadata_matches(

@@ -7,6 +7,7 @@ import {
   useOnboardingTaskDocumentPreview,
   useReviewOnboardingTaskDocument,
 } from "@/lib/api/hooks/onboarding";
+import { groupOnboardingDocumentVersions } from "@/lib/onboarding/document-versions";
 import type { OnboardingTaskDocumentResponse } from "@/types/api/onboarding";
 
 function fileSizeLabel(bytes: number): string {
@@ -198,45 +199,102 @@ export function OnboardingTaskDocumentList({
     role === "tenant_admin" || role === "people_operations",
   ) ?? false;
   if (documents.length === 0) return null;
+  const versions = groupOnboardingDocumentVersions(documents);
 
   return (
     <section className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3" aria-label="Documents submitted for this onboarding task">
       <h4 className="text-sm font-semibold text-gray-900">Employee-uploaded documents</h4>
       <ul className="mt-2 divide-y divide-gray-200">
-        {documents.map((document) => (
-          <li key={document.id} className="flex flex-col gap-2 py-3 first:pt-1 last:pb-1 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <p className="break-all text-sm font-medium text-gray-800">{document.original_filename}</p>
-              <p className={`mt-0.5 text-xs ${document.status === "available" ? "text-emerald-800" : document.status === "quarantined" || document.status === "rejected" ? "text-red-800" : "text-gray-600"}`}>
-                {documentStatusLabel(document.status)} · {fileSizeLabel(document.expected_byte_size)}
-              </p>
-              {document.status === "available" && document.review_status !== "not_required" && (
-                <p className="mt-1 text-xs font-medium text-blue-800">{reviewStatusLabel(document.review_status)}</p>
-              )}
-              {document.review_comment && (
-                <p className="mt-2 whitespace-pre-wrap rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-950">
-                  <span className="font-semibold">People Operations feedback: </span>
-                  {document.review_comment}
-                </p>
-              )}
-              {document.reviewed_at && (
-                <p className="mt-1 text-xs text-gray-500">
-                  Reviewed {new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(document.reviewed_at))}
-                </p>
-              )}
-            </div>
-            {document.status === "available" && (
-              <div className="flex shrink-0 gap-2">
-                {document.declared_content_type === "application/pdf" && (
-                  <DocumentAccessButton document={document} mode="preview" />
-                )}
-                <DocumentAccessButton document={document} mode="download" />
-              </div>
-            )}
-            <DocumentReviewControls document={document} canReview={canReview} />
+        {versions.map(({ current, previous }) => (
+          <li key={current.id} className="py-3 first:pt-1 last:pb-1">
+            <DocumentVersionEntry
+              document={current}
+              label={`Current version · Version ${current.revision_number}`}
+              canReview={canReview}
+            />
+            <OnboardingDocumentPreviousVersions documents={previous} />
           </li>
         ))}
       </ul>
     </section>
+  );
+}
+
+export function OnboardingDocumentPreviousVersions({
+  documents,
+}: {
+  documents: OnboardingTaskDocumentResponse[];
+}) {
+  if (documents.length === 0) return null;
+  return (
+    <details className="mt-3 rounded-md border border-gray-200 bg-white px-3">
+      <summary className="cursor-pointer py-2 text-xs font-semibold text-gray-700">
+        Previous versions ({documents.length})
+      </summary>
+      <ol className="divide-y divide-gray-100 border-t border-gray-100">
+        {documents.map((document) => (
+          <li key={document.id} className="py-3">
+            <DocumentVersionEntry
+              document={document}
+              label={`Previous version · Version ${document.revision_number}`}
+              canReview={false}
+            />
+          </li>
+        ))}
+      </ol>
+    </details>
+  );
+}
+
+function DocumentVersionEntry({
+  document,
+  label,
+  canReview,
+}: {
+  document: OnboardingTaskDocumentResponse;
+  label: string;
+  canReview: boolean;
+}) {
+  return (
+    <article className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+      <div className="min-w-0">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+          {label}
+        </p>
+        <p className="mt-1 break-all text-sm font-medium text-gray-800">
+          {document.original_filename}
+        </p>
+        <p className={`mt-0.5 text-xs ${document.status === "available" ? "text-emerald-800" : document.status === "quarantined" || document.status === "rejected" ? "text-red-800" : "text-gray-600"}`}>
+          {documentStatusLabel(document.status)} · {fileSizeLabel(document.expected_byte_size)}
+        </p>
+        {document.status === "available" && document.review_status !== "not_required" && (
+          <p className="mt-1 text-xs font-medium text-blue-800">
+            {reviewStatusLabel(document.review_status)}
+          </p>
+        )}
+        {document.review_comment && (
+          <p className="mt-2 whitespace-pre-wrap rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-950">
+            <span className="font-semibold">People Operations feedback: </span>
+            {document.review_comment}
+          </p>
+        )}
+        {document.reviewed_at && (
+          <p className="mt-1 text-xs text-gray-500">
+            Reviewed by {document.reviewed_by_name || "a workspace reviewer"} · {new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(document.reviewed_at))}
+          </p>
+        )}
+      </div>
+      <div className="flex shrink-0 flex-wrap gap-2">
+        {document.status === "available" && (
+          <>
+            {document.declared_content_type === "application/pdf" && (
+              <DocumentAccessButton document={document} mode="preview" />
+            )}
+            <DocumentAccessButton document={document} mode="download" />
+          </>
+        )}
+        <DocumentReviewControls document={document} canReview={canReview} />
+      </div>
+    </article>
   );
 }
