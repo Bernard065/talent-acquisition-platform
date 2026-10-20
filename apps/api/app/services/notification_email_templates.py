@@ -350,6 +350,8 @@ def render_action_item_digest_email(
     frequency: NotificationDigestFrequency,
     web_app_base_url: str,
     due_soon_onboarding_task_count: int = 0,
+    employee_overdue_onboarding_task_count: int = 0,
+    employee_due_soon_onboarding_task_count: int = 0,
 ) -> EmailMessage:
     """Render a privacy-minimal digest with authenticated workspace links."""
     if (
@@ -357,19 +359,21 @@ def render_action_item_digest_email(
         or overdue_onboarding_task_count < 0
         or pending_feedback_count < 0
         or due_soon_onboarding_task_count < 0
+        or employee_overdue_onboarding_task_count < 0
+        or employee_due_soon_onboarding_task_count < 0
     ):
         raise ValueError("Digest counts cannot be negative.")
 
     base_url = web_app_base_url.rstrip("/")
     subject = (
-        "Your weekly recruiting action items"
+        "Your weekly workspace action items"
         if frequency is NotificationDigestFrequency.WEEKLY
-        else "Your daily recruiting action items"
+        else "Your daily workspace action items"
     )
     lines = [
         "Hello,",
         "",
-        f"Here is your {frequency.value} recruiting action summary:",
+        f"Here is your {frequency.value} workspace action summary:",
         "",
     ]
     if overdue_follow_up_count:
@@ -384,11 +388,30 @@ def render_action_item_digest_email(
             f"- {overdue_onboarding_task_count} overdue onboarding {task_word}: "
             f"{base_url}/dashboard/onboarding"
         )
+    if employee_overdue_onboarding_task_count:
+        task_summary = (
+            "Your onboarding task is"
+            if employee_overdue_onboarding_task_count == 1
+            else f"{employee_overdue_onboarding_task_count} of your onboarding tasks are"
+        )
+        lines.append(
+            f"- {task_summary} overdue: {base_url}/dashboard/my-onboarding"
+        )
     if due_soon_onboarding_task_count:
         task_word = "task" if due_soon_onboarding_task_count == 1 else "tasks"
         lines.append(
             f"- {due_soon_onboarding_task_count} onboarding {task_word} due within 7 days: "
             f"{base_url}/dashboard/onboarding"
+        )
+    if employee_due_soon_onboarding_task_count:
+        task_summary = (
+            "Your onboarding task is"
+            if employee_due_soon_onboarding_task_count == 1
+            else f"{employee_due_soon_onboarding_task_count} of your onboarding tasks are"
+        )
+        lines.append(
+            f"- {task_summary} due within 7 days: "
+            f"{base_url}/dashboard/my-onboarding"
         )
     if pending_feedback_count:
         feedback_word = "interview" if pending_feedback_count == 1 else "interviews"

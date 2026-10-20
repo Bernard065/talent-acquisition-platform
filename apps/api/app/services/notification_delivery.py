@@ -708,16 +708,32 @@ async def _render_action_item_digest(
         item.kind == "pending_interview_feedback" for item in enabled_items
     )
     onboarding_task_count = sum(
-        item.kind == "overdue_onboarding_task" for item in enabled_items
+        item.kind == "overdue_onboarding_task"
+        and item.href != "/dashboard/my-onboarding"
+        for item in enabled_items
+    )
+    employee_overdue_onboarding_task_count = sum(
+        item.kind == "overdue_onboarding_task"
+        and item.href == "/dashboard/my-onboarding"
+        for item in enabled_items
     )
     due_soon_onboarding_task_count = sum(
-        item.kind == "due_soon_onboarding_task" for item in enabled_items
+        item.kind == "due_soon_onboarding_task"
+        and item.href != "/dashboard/my-onboarding"
+        for item in enabled_items
+    )
+    employee_due_soon_onboarding_task_count = sum(
+        item.kind == "due_soon_onboarding_task"
+        and item.href == "/dashboard/my-onboarding"
+        for item in enabled_items
     )
     if (
         overdue_count
         + feedback_count
         + onboarding_task_count
         + due_soon_onboarding_task_count
+        + employee_overdue_onboarding_task_count
+        + employee_due_soon_onboarding_task_count
         == 0
     ):
         raise StaleActionItemDigestError
@@ -730,6 +746,12 @@ async def _render_action_item_digest(
         pending_feedback_count=feedback_count,
         overdue_onboarding_task_count=onboarding_task_count,
         due_soon_onboarding_task_count=due_soon_onboarding_task_count,
+        employee_overdue_onboarding_task_count=(
+            employee_overdue_onboarding_task_count
+        ),
+        employee_due_soon_onboarding_task_count=(
+            employee_due_soon_onboarding_task_count
+        ),
         frequency=digest_frequency,
         web_app_base_url=web_app_base_url,
     )
