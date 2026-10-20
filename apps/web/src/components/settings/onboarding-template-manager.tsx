@@ -1,9 +1,15 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { useCreateOnboardingTemplate, useOnboardingTemplates } from "@/lib/api/hooks/onboarding";
+import {
+  useCreateOnboardingTemplate,
+  useCreateOnboardingTemplateVersion,
+  useOnboardingTemplateVersions,
+} from "@/lib/api/hooks/onboarding";
 import type {
   CreateOnboardingTemplateRequest,
+  OnboardingTemplateResponse,
+  OnboardingTemplateTaskRequest,
   OnboardingTaskResponsibility,
 } from "@/types/api/onboarding";
 import type { Role } from "@/types/api/auth";
@@ -30,36 +36,91 @@ const blankTask = (): TemplateTaskDraft => ({
 });
 
 export function OnboardingTemplateManager() {
-  const templates = useOnboardingTemplates();
+  const templateVersions = useOnboardingTemplateVersions();
   const createTemplate = useCreateOnboardingTemplate();
+  const createVersion = useCreateOnboardingTemplateVersion();
+  const [editingTemplate, setEditingTemplate] = useState<OnboardingTemplateResponse | null>(null);
   const [name, setName] = useState("");
   const [tasks, setTasks] = useState<TemplateTaskDraft[]>([blankTask()]);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const templateGroups = new Map<string, OnboardingTemplateResponse[]>();
+  for (const template of templateVersions.data?.items ?? []) {
+    const versions = templateGroups.get(template.name) ?? [];
+    versions.push(template);
+    templateGroups.set(template.name, versions);
+  }
+
+  function resetEditor() {
+    setEditingTemplate(null);
+    setName("");
+    setTasks([blankTask()]);
+  }
+
+  function editAsNewVersion(template: OnboardingTemplateResponse) {
+    setEditingTemplate(template);
+    setName(template.name);
+    setTasks(template.tasks.map((task) => ({
+      title: task.title,
+      description: task.description ?? "",
+      dueDays: task.due_offset_days?.toString() ?? "",
+      assigneeRole: task.default_assignee_role ?? "",
+      responsibleParty: task.responsible_party,
+      requiresDocumentUpload: task.requires_document_upload,
+      requiresDocumentReview: task.requires_document_review,
+      prerequisitePositions: [...task.prerequisite_task_positions],
+    })));
+    setError(null);
+    setMessage(null);
+  }
+
+  function taskRequests(): OnboardingTemplateTaskRequest[] {
+    return tasks.map((task) => ({
+      title: task.title.trim(),
+      description: task.description.trim() || null,
+      due_offset_days: task.dueDays === "" ? null : Number(task.dueDays),
+      default_assignee_role:
+        task.responsibleParty === "workspace" ? task.assigneeRole || null : null,
+      responsible_party: task.responsibleParty,
+      requires_document_upload: task.requiresDocumentUpload,
+      requires_document_review: task.requiresDocumentReview,
+      prerequisite_task_positions: task.prerequisitePositions,
+    }));
+  }
+
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setMessage(null);
+    const serializedTasks = taskRequests();
+    if (editingTemplate) {
+      createVersion.mutate({
+        templateId: editingTemplate.id,
+        request: {
+          expected_version: editingTemplate.version,
+          tasks: serializedTasks,
+        },
+        idempotencyKey: crypto.randomUUID(),
+      }, {
+        onSuccess: () => {
+          const nextVersion = editingTemplate.version + 1;
+          resetEditor();
+          setMessage(`Version ${nextVersion} published. Existing onboarding plans are unchanged.`);
+        },
+        onError: () => setError("We couldn’t publish this version. The template may have changed; refresh and try again."),
+      });
+      return;
+    }
+
     const request: CreateOnboardingTemplateRequest = {
       name: name.trim(),
       version: 1,
-      tasks: tasks.map((task) => ({
-        title: task.title.trim(),
-        description: task.description.trim() || null,
-        due_offset_days: task.dueDays === "" ? null : Number(task.dueDays),
-        default_assignee_role:
-          task.responsibleParty === "workspace" ? task.assigneeRole || null : null,
-        responsible_party: task.responsibleParty,
-        requires_document_upload: task.requiresDocumentUpload,
-        requires_document_review: task.requiresDocumentReview,
-        prerequisite_task_positions: task.prerequisitePositions,
-      })),
+      tasks: serializedTasks,
     };
     createTemplate.mutate({ request, idempotencyKey: crypto.randomUUID() }, {
       onSuccess: () => {
-        setName("");
-        setTasks([blankTask()]);
+        resetEditor();
         setMessage("Onboarding template created.");
       },
       onError: () => setError("We couldn’t create the template. Check that its name is unique and try again."),
@@ -89,50 +150,105 @@ export function OnboardingTemplateManager() {
         </p>
       </div>
 
-      {templates.isLoading ? (
+      {templateVersions.isLoading ? (
         <p className="mt-6 text-sm text-gray-600" role="status">Loading templates…</p>
-      ) : templates.isError ? (
-        <p className="mt-6 text-sm text-red-800" role="alert">We couldn’t load onboarding templates. Refresh and try again.</p>
-      ) : templates.data?.items.length ? (
+      ) : templateVersions.isError ? (
+        <p className="mt-6 text-sm text-red-800" role="alert">We couldn’t load onboarding template history. Refresh and try again.</p>
+      ) : templateGroups.size ? (
         <ul className="mt-5 grid gap-3 sm:grid-cols-2">
-          {templates.data.items.map((template) => (
-            <li key={template.id} className="rounded-lg border border-gray-200 p-4">
-              <p className="font-medium text-gray-900">{template.name}</p>
-              <p className="mt-1 text-sm text-gray-600">Version {template.version} · {template.tasks.length} tasks</p>
-              <ol className="mt-3 space-y-1 text-sm text-gray-700">
-                {template.tasks.map((task, index) => {
-                  const prerequisiteTitles = task.prerequisite_task_positions
-                    .map((position) => template.tasks[position - 1]?.title)
-                    .filter((title): title is string => Boolean(title));
-                  return (
-                    <li key={task.id}>
-                      {index + 1}. {task.title} · {task.responsible_party === "employee" ? "Employee" : "Workspace team"}
-                      {task.requires_document_upload ? " · File upload required" : ""}
-                      {task.requires_document_review ? " · People Ops review required" : ""}
-                      {prerequisiteTitles.length > 0 && (
-                        <span className="block pl-4 text-xs text-gray-500">
-                          After: {prerequisiteTitles.join(", ")}
-                        </span>
-                      )}
-                    </li>
-                  );
-                })}
-              </ol>
-            </li>
-          ))}
+          {Array.from(templateGroups.entries()).map(([templateName, versions]) => {
+            const current = versions.find((template) => template.is_active) ?? versions[0];
+            if (!current) return null;
+            const previous = versions.filter((template) => template.id !== current.id);
+            return (
+              <li key={templateName} className="rounded-lg border border-gray-200 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-gray-900">{templateName}</p>
+                    <p className="mt-1 text-sm text-gray-600">
+                      Current version {current.version} · {current.tasks.length} tasks
+                    </p>
+                    <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${current.is_active ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>
+                      {current.is_active ? "Used for new hires" : "No active version"}
+                    </span>
+                  </div>
+                  {current.is_active && (
+                    <button
+                      type="button"
+                      onClick={() => editAsNewVersion(current)}
+                      className="min-h-10 cursor-pointer rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    >
+                      Create new version
+                    </button>
+                  )}
+                </div>
+                <ol className="mt-4 space-y-1 text-sm text-gray-700">
+                  {current.tasks.map((task, index) => {
+                    const prerequisiteTitles = task.prerequisite_task_positions
+                      .map((position) => current.tasks[position - 1]?.title)
+                      .filter((title): title is string => Boolean(title));
+                    return (
+                      <li key={task.id}>
+                        {index + 1}. {task.title} · {task.responsible_party === "employee" ? "Employee" : "Workspace team"}
+                        {task.requires_document_upload ? " · File upload required" : ""}
+                        {task.requires_document_review ? " · People Ops review required" : ""}
+                        {prerequisiteTitles.length > 0 && (
+                          <span className="block pl-4 text-xs text-gray-500">
+                            After: {prerequisiteTitles.join(", ")}
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ol>
+                {previous.length > 0 && (
+                  <details className="mt-4 border-t border-gray-100 pt-3">
+                    <summary className="cursor-pointer text-sm font-medium text-gray-700">
+                      Previous versions ({previous.length})
+                    </summary>
+                    <ul className="mt-3 space-y-3">
+                      {previous.map((template) => (
+                        <li key={template.id} className="rounded-md bg-gray-50 p-3">
+                          <p className="text-sm font-medium text-gray-700">
+                            Version {template.version} · Previous version
+                          </p>
+                          <ol className="mt-2 space-y-1 text-xs text-gray-600">
+                            {template.tasks.map((task, index) => (
+                              <li key={task.id}>{index + 1}. {task.title}</li>
+                            ))}
+                          </ol>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </li>
+            );
+          })}
         </ul>
       ) : (
         <p className="mt-5 rounded-lg bg-amber-50 p-4 text-sm text-amber-900">
-          No active templates yet. Create one below before starting onboarding for a hired candidate.
+          No onboarding templates yet. Create one below before starting onboarding for a hired candidate.
         </p>
       )}
 
       <form className="mt-7 space-y-5 border-t border-gray-100 pt-6" onSubmit={submit}>
-        <h3 className="font-semibold text-gray-900">Create a template</h3>
-        <label className="block max-w-xl">
-          <span className="mb-1 block text-sm font-medium text-gray-700">Template name</span>
-          <input required maxLength={200} value={name} onChange={(event) => setName(event.target.value)} className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20" placeholder="New employee onboarding" />
-        </label>
+        <h3 className="font-semibold text-gray-900">
+          {editingTemplate ? `Create version ${editingTemplate.version + 1}` : "Create a template"}
+        </h3>
+        {editingTemplate ? (
+          <div className="rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm text-blue-950">
+            <p className="font-medium">{editingTemplate.name} · Current version {editingTemplate.version}</p>
+            <p className="mt-1">
+              Publishing creates version {editingTemplate.version + 1} for future hires. Existing onboarding plans keep version {editingTemplate.version}.
+            </p>
+          </div>
+        ) : (
+          <label className="block max-w-xl">
+            <span className="mb-1 block text-sm font-medium text-gray-700">Template name</span>
+            <input required maxLength={200} value={name} onChange={(event) => setName(event.target.value)} className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20" placeholder="New employee onboarding" />
+          </label>
+        )}
         <div className="space-y-3">
           <p className="text-sm text-gray-600">Add tasks in a clear display order, then select only the tasks that must be finished first. Leave prerequisites empty when a task can start at any time.</p>
           {tasks.map((task, index) => (
@@ -236,9 +352,29 @@ export function OnboardingTemplateManager() {
         </div>
         {error && <p role="alert" className="text-sm text-red-800">{error}</p>}
         {message && <p role="status" className="text-sm text-emerald-800">{message}</p>}
-        <button type="submit" disabled={createTemplate.isPending} className="h-10 rounded-lg bg-sr-text-blue px-4 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">
-          {createTemplate.isPending ? "Creating…" : "Create template"}
-        </button>
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="submit"
+            disabled={createTemplate.isPending || createVersion.isPending}
+            className="min-h-10 cursor-pointer rounded-lg bg-sr-text-blue px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {createTemplate.isPending || createVersion.isPending
+              ? "Saving…"
+              : editingTemplate
+                ? `Publish version ${editingTemplate.version + 1}`
+                : "Create template"}
+          </button>
+          {editingTemplate && (
+            <button
+              type="button"
+              onClick={resetEditor}
+              disabled={createVersion.isPending}
+              className="min-h-10 cursor-pointer rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
       </form>
     </section>
   );

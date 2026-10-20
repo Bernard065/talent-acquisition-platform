@@ -4,6 +4,7 @@ import type {
   AssignOnboardingTaskRequest,
   CreateOnboardingTaskDocumentRequest,
   CreateOnboardingTemplateRequest,
+  CreateOnboardingTemplateVersionRequest,
   EmployeePortalOnboardingResponse,
   ExpectedInstanceVersionRequest,
   OnboardingInstanceResponse,
@@ -56,6 +57,13 @@ export interface OnboardingDocumentReviewQueueParams {
 
 export function listOnboardingTemplates(options?: RequestOptions) {
   return get<OnboardingTemplateListResponse>("/onboarding-templates", options);
+}
+
+export function listOnboardingTemplateVersions(options?: RequestOptions) {
+  return get<OnboardingTemplateListResponse>(
+    "/onboarding-templates/versions",
+    options,
+  );
 }
 
 export function listOnboardingOverview(
@@ -222,6 +230,19 @@ export function createOnboardingTemplate(
     ...options,
     idempotencyKey,
   });
+}
+
+export function createOnboardingTemplateVersion(
+  templateId: string,
+  request: CreateOnboardingTemplateVersionRequest,
+  idempotencyKey: string,
+  options?: RequestOptions,
+) {
+  return post<OnboardingTemplateCreated>(
+    `/onboarding-templates/${templateId}/versions`,
+    request,
+    { ...options, idempotencyKey },
+  );
 }
 
 export function startApplicationOnboarding(

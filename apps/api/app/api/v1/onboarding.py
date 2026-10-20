@@ -19,6 +19,7 @@ from app.api.v1.schemas.onboarding import (
     ApplicationOnboardingResponse,
     AssignOnboardingTaskRequest,
     CreateOnboardingTemplateRequest,
+    CreateOnboardingTemplateVersionRequest,
     EmployeePortalOnboardingResponse,
     EmployeePortalTaskResponse,
     ExpectedInstanceVersionRequest,
@@ -62,12 +63,14 @@ from app.services.idempotency import IdempotencyResult, execute_idempotently
 from app.services.object_storage import ObjectStorage
 from app.services.onboarding import (
     CreateOnboardingTemplateCommand,
+    CreateOnboardingTemplateVersionCommand,
     OnboardingTemplateTaskDefinition,
     UpdateOnboardingTaskStatusCommand,
     assign_onboarding_task,
     cancel_onboarding,
     complete_onboarding,
     create_onboarding_template,
+    create_onboarding_template_version,
     get_application_onboarding,
     get_employee_portal_onboarding,
     list_active_onboarding_templates,
@@ -76,6 +79,7 @@ from app.services.onboarding import (
     list_onboarding_task_prerequisite_states,
     list_onboarding_task_worklist,
     list_onboarding_template_prerequisite_positions,
+    list_onboarding_template_versions,
     start_onboarding,
     update_employee_portal_task_status,
     update_onboarding_task_due_date,
@@ -305,6 +309,51 @@ async def list_onboarding_templates_endpoint(
 ) -> OnboardingTemplateListResponse:
     """List tenant templates recruiters can use for hired applications."""
     templates = await list_active_onboarding_templates(
+        session,
+        context=context,
+    )
+    template_task_ids = tuple(task.id for _, tasks in templates for task in tasks)
+    prerequisite_positions = await list_onboarding_template_prerequisite_positions(
+        session,
+        task_ids=template_task_ids,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return OnboardingTemplateListResponse(
+        items=[
+            OnboardingTemplateListItemResponse(
+                id=template.id,
+                name=template.name,
+                version=template.version,
+                is_active=template.is_active,
+                created_at=template.created_at,
+                tasks=[
+                    OnboardingTemplateTaskResponse.model_validate(task).model_copy(
+                        update={
+                            "prerequisite_task_positions": list(
+                                prerequisite_positions.get(task.id, ())
+                            )
+                        }
+                    )
+                    for task in tasks
+                ],
+            )
+            for template, tasks in templates
+        ]
+    )
+
+
+@router.get(
+    "/onboarding-templates/versions",
+    response_model=OnboardingTemplateListResponse,
+    summary="List onboarding template version history",
+)
+async def list_onboarding_template_versions_endpoint(
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+) -> OnboardingTemplateListResponse:
+    """List every version for workspace admins and People Operations."""
+    templates = await list_onboarding_template_versions(
         session,
         context=context,
     )
@@ -881,6 +930,66 @@ async def create_onboarding_template_endpoint(
         key=idempotency_key,
         operation_name="onboarding_template.create",
         payload=payload.model_dump(mode="json"),
+        operation=operation,
+    )
+    return _private_response(result)
+
+
+@router.post(
+    "/onboarding-templates/{template_id}/versions",
+    response_model=OnboardingTemplateResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new onboarding template version",
+)
+async def create_onboarding_template_version_endpoint(
+    template_id: UUID,
+    payload: CreateOnboardingTemplateVersionRequest,
+    context: CallerContext,
+    session: DatabaseSession,
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Create a new active version while retaining prior template snapshots."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        template = await create_onboarding_template_version(
+            session,
+            context=context,
+            template_id=template_id,
+            command=CreateOnboardingTemplateVersionCommand(
+                expected_version=payload.expected_version,
+                tasks=tuple(
+                    OnboardingTemplateTaskDefinition(
+                        title=task.title,
+                        description=task.description,
+                        due_offset_days=task.due_offset_days,
+                        default_assignee_role=task.default_assignee_role,
+                        responsible_party=task.responsible_party,
+                        requires_document_upload=task.requires_document_upload,
+                        requires_document_review=task.requires_document_review,
+                        prerequisite_task_positions=tuple(
+                            task.prerequisite_task_positions
+                        ),
+                    )
+                    for task in payload.tasks
+                ),
+            ),
+        )
+        return (
+            status.HTTP_201_CREATED,
+            OnboardingTemplateResponse.model_validate(template).model_dump(
+                mode="json"
+            ),
+        )
+
+    result = await execute_idempotently(
+        session,
+        context=context,
+        key=idempotency_key,
+        operation_name="onboarding_template.version.create",
+        payload={
+            "template_id": str(template_id),
+            **payload.model_dump(mode="json"),
+        },
         operation=operation,
     )
     return _private_response(result)

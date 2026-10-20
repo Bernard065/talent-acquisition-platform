@@ -9,6 +9,7 @@ import {
   cancelOnboarding,
   completeOnboarding,
   createOnboardingTemplate,
+  createOnboardingTemplateVersion,
   getApplicationOnboarding,
   getEmployeePortalOnboarding,
   getOnboardingTaskActivity,
@@ -18,6 +19,7 @@ import {
   listOnboardingDocumentReviewQueue,
   listOnboardingTaskWorklist,
   listOnboardingTemplates,
+  listOnboardingTemplateVersions,
   startApplicationOnboarding,
   updateOnboardingTaskDueDate,
   updateEmployeePortalTaskStatus,
@@ -28,6 +30,7 @@ import {
 import type {
   AssignOnboardingTaskRequest,
   CreateOnboardingTemplateRequest,
+  CreateOnboardingTemplateVersionRequest,
   ExpectedInstanceVersionRequest,
   StartOnboardingRequest,
   UpdateOnboardingTaskDueDateRequest,
@@ -44,6 +47,7 @@ import type {
 export const onboardingQueryKeys = {
   all: ["onboarding"] as const,
   templates: () => [...onboardingQueryKeys.all, "templates"] as const,
+  templateVersions: () => [...onboardingQueryKeys.templates(), "versions"] as const,
   overview: () => [...onboardingQueryKeys.all, "overview"] as const,
   overviewList: (params: OnboardingOverviewParams) =>
     [...onboardingQueryKeys.overview(), params] as const,
@@ -111,6 +115,15 @@ export function useOnboardingTemplates(enabled = true) {
   return useQuery({
     queryKey: onboardingQueryKeys.templates(),
     queryFn: ({ signal }) => listOnboardingTemplates({ signal }),
+    enabled: status === "authenticated" && enabled,
+  });
+}
+
+export function useOnboardingTemplateVersions(enabled = true) {
+  const { status } = useSession();
+  return useQuery({
+    queryKey: onboardingQueryKeys.templateVersions(),
+    queryFn: ({ signal }) => listOnboardingTemplateVersions({ signal }),
     enabled: status === "authenticated" && enabled,
   });
 }
@@ -261,7 +274,27 @@ export function useCreateOnboardingTemplate() {
       idempotencyKey: string;
     }) => createOnboardingTemplate(request, idempotencyKey),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: onboardingQueryKeys.templates() });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: onboardingQueryKeys.templates() }),
+        queryClient.invalidateQueries({ queryKey: onboardingQueryKeys.templateVersions() }),
+      ]);
+    },
+  });
+}
+
+export function useCreateOnboardingTemplateVersion() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ templateId, request, idempotencyKey }: {
+      templateId: string;
+      request: CreateOnboardingTemplateVersionRequest;
+      idempotencyKey: string;
+    }) => createOnboardingTemplateVersion(templateId, request, idempotencyKey),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: onboardingQueryKeys.templates() }),
+        queryClient.invalidateQueries({ queryKey: onboardingQueryKeys.templateVersions() }),
+      ]);
     },
   });
 }
