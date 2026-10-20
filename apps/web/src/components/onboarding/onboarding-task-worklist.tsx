@@ -253,15 +253,20 @@ function TaskWorklistRow({
         {statusAction && (
           <button
             type="button"
-            disabled={!item.can_update || isPending}
+            disabled={!item.can_progress || isPending}
             onClick={() => changeStatus(statusAction.target)}
             className="min-h-9 cursor-pointer rounded-lg bg-sr-text-blue px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {updateStatus.isPending ? "Saving…" : statusAction.label}
           </button>
         )}
-        {!item.can_update && isActive && isIncomplete && (
-          <span className="text-xs text-gray-500">Waiting for earlier step</span>
+        {!item.can_progress && isActive && isIncomplete && (
+          <span className="text-xs text-gray-500">
+            Waiting for: {task.prerequisites
+              .filter((prerequisite) => prerequisite.status !== "completed")
+              .map((prerequisite) => prerequisite.title)
+              .join(", ")}
+          </span>
         )}
         <Link
           href={`/dashboard/applications/${item.application_id}#application-onboarding-heading`}
