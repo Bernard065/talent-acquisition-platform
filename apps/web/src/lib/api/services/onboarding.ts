@@ -120,6 +120,7 @@ export function getEmployeePortalOnboarding(options?: RequestOptions) {
 export async function uploadEmployeeOnboardingTaskDocument(
   taskId: string,
   file: File,
+  replacesDocumentId?: string,
 ): Promise<OnboardingTaskDocumentResponse> {
   const extension = file.name.toLowerCase().split(".").at(-1);
   const extensionContentType = extension === "pdf"
@@ -150,6 +151,9 @@ export async function uploadEmployeeOnboardingTaskDocument(
     declared_content_type: contentType,
     expected_byte_size: file.size,
     checksum_sha256: checksumSha256,
+    ...(replacesDocumentId
+      ? { replaces_document_id: replacesDocumentId }
+      : {}),
   };
   const document = await post<OnboardingTaskDocumentResponse>(
     `/employee-portal/me/onboarding/tasks/${taskId}/documents`,

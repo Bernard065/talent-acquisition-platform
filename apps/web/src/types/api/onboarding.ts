@@ -147,6 +147,7 @@ export interface OnboardingTaskWorklistResponse {
 
 export interface OnboardingDocumentReviewQueueItemResponse {
   document: OnboardingTaskDocumentResponse;
+  previous_versions: OnboardingTaskDocumentResponse[];
   onboarding_task_id: string;
   onboarding_instance_id: string;
   application_id: string;
@@ -196,12 +197,15 @@ export type OnboardingTaskDocumentReviewStatus =
 export interface OnboardingTaskDocumentResponse {
   id: string;
   onboarding_task_id: string;
+  replaces_document_id: string | null;
+  revision_number: number;
   original_filename: string;
   declared_content_type: string;
   expected_byte_size: number;
   status: OnboardingTaskDocumentStatus;
   review_status: OnboardingTaskDocumentReviewStatus;
   review_comment: string | null;
+  reviewed_by_name: string | null;
   reviewed_at: string | null;
   uploaded_at: string | null;
   scan_started_at: string | null;
@@ -223,6 +227,7 @@ export interface CreateOnboardingTaskDocumentRequest {
     | "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   expected_byte_size: number;
   checksum_sha256: string;
+  replaces_document_id?: string;
 }
 
 export interface OnboardingTaskDocumentUploadAuthorizationResponse {

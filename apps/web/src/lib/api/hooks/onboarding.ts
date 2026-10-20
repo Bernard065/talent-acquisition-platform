@@ -162,8 +162,11 @@ export function useEmployeePortalOnboarding(enabled = true) {
 export function useUploadEmployeeOnboardingTaskDocument() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ taskId, file }: { taskId: string; file: File }) =>
-      uploadEmployeeOnboardingTaskDocument(taskId, file),
+    mutationFn: ({ taskId, file, replacesDocumentId }: {
+      taskId: string;
+      file: File;
+      replacesDocumentId?: string;
+    }) => uploadEmployeeOnboardingTaskDocument(taskId, file, replacesDocumentId),
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({
