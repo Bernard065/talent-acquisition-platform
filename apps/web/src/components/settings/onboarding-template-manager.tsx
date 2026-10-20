@@ -16,6 +16,7 @@ type TemplateTaskDraft = {
   responsibleParty: OnboardingTaskResponsibility;
   requiresDocumentUpload: boolean;
   requiresDocumentReview: boolean;
+  prerequisitePositions: number[];
 };
 const blankTask = (): TemplateTaskDraft => ({
   title: "",
@@ -25,6 +26,7 @@ const blankTask = (): TemplateTaskDraft => ({
   responsibleParty: "workspace",
   requiresDocumentUpload: false,
   requiresDocumentReview: false,
+  prerequisitePositions: [],
 });
 
 export function OnboardingTemplateManager() {
@@ -51,6 +53,7 @@ export function OnboardingTemplateManager() {
         responsible_party: task.responsibleParty,
         requires_document_upload: task.requiresDocumentUpload,
         requires_document_review: task.requiresDocumentReview,
+        prerequisite_task_positions: task.prerequisitePositions,
       })),
     };
     createTemplate.mutate({ request, idempotencyKey: crypto.randomUUID() }, {
@@ -63,12 +66,26 @@ export function OnboardingTemplateManager() {
     });
   }
 
+  function removeTask(indexToRemove: number) {
+    const removedPosition = indexToRemove + 1;
+    setTasks((current) =>
+      current
+        .filter((_, index) => index !== indexToRemove)
+        .map((task) => ({
+          ...task,
+          prerequisitePositions: task.prerequisitePositions
+            .filter((position) => position !== removedPosition)
+            .map((position) => position > removedPosition ? position - 1 : position),
+        })),
+    );
+  }
+
   return (
     <section className="max-w-4xl rounded-xl border border-gray-200 bg-white p-6 shadow-sm sm:p-8">
       <div>
         <h2 className="text-lg font-semibold text-sr-text-blue">Onboarding templates</h2>
         <p className="mt-1 text-sm leading-relaxed text-gray-600">
-          Define reusable tasks for new hires in the order they should be completed. A template is snapshotted when onboarding starts, so later changes won’t alter active plans.
+          Define reusable tasks for new hires. Add prerequisites only when one task must wait for another; tasks without prerequisites can be done in parallel. A template is snapshotted when onboarding starts, so later changes won’t alter active plans.
         </p>
       </div>
 
@@ -83,7 +100,23 @@ export function OnboardingTemplateManager() {
               <p className="font-medium text-gray-900">{template.name}</p>
               <p className="mt-1 text-sm text-gray-600">Version {template.version} · {template.tasks.length} tasks</p>
               <ol className="mt-3 space-y-1 text-sm text-gray-700">
-                {template.tasks.map((task, index) => <li key={task.id}>{index + 1}. {task.title} · {task.responsible_party === "employee" ? "Employee" : "Workspace team"}{task.requires_document_upload ? " · File upload required" : ""}{task.requires_document_review ? " · People Ops review required" : ""}</li>)}
+                {template.tasks.map((task, index) => {
+                  const prerequisiteTitles = task.prerequisite_task_positions
+                    .map((position) => template.tasks[position - 1]?.title)
+                    .filter((title): title is string => Boolean(title));
+                  return (
+                    <li key={task.id}>
+                      {index + 1}. {task.title} · {task.responsible_party === "employee" ? "Employee" : "Workspace team"}
+                      {task.requires_document_upload ? " · File upload required" : ""}
+                      {task.requires_document_review ? " · People Ops review required" : ""}
+                      {prerequisiteTitles.length > 0 && (
+                        <span className="block pl-4 text-xs text-gray-500">
+                          After: {prerequisiteTitles.join(", ")}
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
               </ol>
             </li>
           ))}
@@ -101,7 +134,7 @@ export function OnboardingTemplateManager() {
           <input required maxLength={200} value={name} onChange={(event) => setName(event.target.value)} className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-sr-green focus:ring-2 focus:ring-sr-green/20" placeholder="New employee onboarding" />
         </label>
         <div className="space-y-3">
-          <p className="text-sm text-gray-600">Add tasks from first to last. New hires must complete them in this order.</p>
+          <p className="text-sm text-gray-600">Add tasks in a clear display order, then select only the tasks that must be finished first. Leave prerequisites empty when a task can start at any time.</p>
           {tasks.map((task, index) => (
             <fieldset key={index} className="grid gap-3 rounded-lg border border-gray-200 p-4 sm:grid-cols-2">
               <legend className="px-1 text-sm font-medium text-gray-700">Task {index + 1}</legend>
@@ -162,7 +195,41 @@ export function OnboardingTemplateManager() {
                   </select>
                 </label>
               )}
-              {tasks.length > 1 && <button type="button" className="justify-self-start text-sm font-medium text-red-700 underline" onClick={() => setTasks((current) => current.filter((_, itemIndex) => itemIndex !== index))}>Remove task</button>}
+              <details className="rounded-lg border border-gray-100 bg-gray-50 p-3 sm:col-span-2">
+                <summary className="cursor-pointer text-sm font-medium text-gray-700">
+                  Prerequisites {task.prerequisitePositions.length > 0 ? `(${task.prerequisitePositions.length} selected)` : "(none)"}
+                </summary>
+                {index === 0 ? (
+                  <p className="mt-2 text-xs text-gray-500">The first task has no earlier tasks to wait for.</p>
+                ) : (
+                  <fieldset className="mt-3 space-y-2">
+                    <legend className="mb-2 text-xs text-gray-600">
+                      Select the tasks that must be completed before this task unlocks.
+                    </legend>
+                    {tasks.slice(0, index).map((previousTask, previousIndex) => {
+                      const prerequisitePosition = previousIndex + 1;
+                      return (
+                        <label key={prerequisitePosition} className="flex items-start gap-2 text-sm text-gray-700">
+                          <input
+                            type="checkbox"
+                            checked={task.prerequisitePositions.includes(prerequisitePosition)}
+                            onChange={(event) => setTasks((current) => current.map((item, itemIndex) => {
+                              if (itemIndex !== index) return item;
+                              const positions = new Set(item.prerequisitePositions);
+                              if (event.target.checked) positions.add(prerequisitePosition);
+                              else positions.delete(prerequisitePosition);
+                              return { ...item, prerequisitePositions: [...positions].sort((a, b) => a - b) };
+                            }))}
+                            className="mt-0.5 h-4 w-4 cursor-pointer rounded border-gray-300 text-sr-green focus:ring-sr-green"
+                          />
+                          <span>{previousTask.title.trim() || `Task ${prerequisitePosition}`}</span>
+                        </label>
+                      );
+                    })}
+                  </fieldset>
+                )}
+              </details>
+              {tasks.length > 1 && <button type="button" className="justify-self-start text-sm font-medium text-red-700 underline" onClick={() => removeTask(index)}>Remove task</button>}
             </fieldset>
           ))}
           <button type="button" disabled={tasks.length >= 100} onClick={() => setTasks((current) => [...current, blankTask()])} className="text-sm font-medium text-sr-text-blue underline disabled:opacity-50">Add task</button>

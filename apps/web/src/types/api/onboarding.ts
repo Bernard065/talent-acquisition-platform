@@ -27,6 +27,7 @@ export interface OnboardingTemplateTaskRequest {
   responsible_party: OnboardingTaskResponsibility;
   requires_document_upload: boolean;
   requires_document_review: boolean;
+  prerequisite_task_positions: number[];
 }
 
 export interface CreateOnboardingTemplateRequest {
@@ -69,7 +70,14 @@ export interface OnboardingTaskResponse {
   resolution_note: string | null;
   completed_at: string | null;
   version: number;
+  prerequisites: OnboardingTaskPrerequisite[];
   documents: OnboardingTaskDocumentResponse[];
+}
+
+export interface OnboardingTaskPrerequisite {
+  id: string;
+  title: string;
+  status: OnboardingTaskStatus;
 }
 
 export interface OnboardingTaskActivityItem {
@@ -129,6 +137,7 @@ export interface OnboardingTaskWorklistItemResponse {
   assignee_display_name: string | null;
   step_number: number;
   can_update: boolean;
+  can_progress: boolean;
 }
 
 export interface OnboardingTaskWorklistAssigneeResponse {
@@ -177,6 +186,7 @@ export interface EmployeePortalTaskResponse {
   completed_at: string | null;
   version: number;
   can_update: boolean;
+  prerequisites: OnboardingTaskPrerequisite[];
   documents: OnboardingTaskDocumentResponse[];
 }
 

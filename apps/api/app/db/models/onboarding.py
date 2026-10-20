@@ -175,6 +175,31 @@ class OnboardingTemplateTask(Base):
     )
 
 
+class OnboardingTemplateTaskDependency(Base):
+    """A task prerequisite within one immutable onboarding template version."""
+
+    __tablename__ = "onboarding_template_task_dependencies"
+    __table_args__ = (
+        CheckConstraint(
+            "task_id != prerequisite_task_id",
+            name="ck_onboarding_template_task_dependencies_not_self",
+        ),
+        Index(
+            "ix_onboarding_template_task_dependencies_prerequisite",
+            "prerequisite_task_id",
+        ),
+    )
+
+    task_id: Mapped[UUID] = mapped_column(
+        ForeignKey("onboarding_template_tasks.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    prerequisite_task_id: Mapped[UUID] = mapped_column(
+        ForeignKey("onboarding_template_tasks.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+
 class OnboardingInstance(Base):
     """Onboarding work created for one hired application."""
 

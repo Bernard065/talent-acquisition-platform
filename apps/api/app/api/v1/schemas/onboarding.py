@@ -34,6 +34,10 @@ class OnboardingTemplateTaskRequest(BaseModel):
     )
     requires_document_upload: bool = False
     requires_document_review: bool = False
+    prerequisite_task_positions: list[int] = Field(
+        default_factory=list,
+        max_length=99,
+    )
 
     @model_validator(mode="after")
     def validate_responsible_party(self) -> "OnboardingTemplateTaskRequest":
@@ -52,6 +56,12 @@ class OnboardingTemplateTaskRequest(BaseModel):
             raise ValueError("Only employee-owned tasks can request file uploads.")
         if self.requires_document_review and not self.requires_document_upload:
             raise ValueError("Document review requires an employee file upload.")
+        if any(position < 1 for position in self.prerequisite_task_positions):
+            raise ValueError("Prerequisite task positions must be positive.")
+        if len(set(self.prerequisite_task_positions)) != len(
+            self.prerequisite_task_positions
+        ):
+            raise ValueError("Prerequisite task positions must be unique.")
         return self
 
 
@@ -177,6 +187,7 @@ class OnboardingTemplateTaskResponse(BaseModel):
     responsible_party: OnboardingTaskResponsibility
     requires_document_upload: bool
     requires_document_review: bool
+    prerequisite_task_positions: list[int] = Field(default_factory=list)
 
 
 class OnboardingTemplateListItemResponse(OnboardingTemplateResponse):
@@ -230,6 +241,14 @@ class OnboardingTaskDocumentResponse(BaseModel):
     version: int
 
 
+class OnboardingTaskPrerequisiteResponse(BaseModel):
+    """Current status for one task that must be completed first."""
+
+    id: UUID
+    title: str
+    status: OnboardingTaskStatus
+
+
 class OnboardingTaskResponse(BaseModel):
     """Private operational data for one onboarding task."""
 
@@ -250,6 +269,9 @@ class OnboardingTaskResponse(BaseModel):
     blocked_reason: str | None
     resolution_note: str | None
     version: int
+    prerequisites: list[OnboardingTaskPrerequisiteResponse] = Field(
+        default_factory=list
+    )
     documents: list[OnboardingTaskDocumentResponse] = Field(default_factory=list)
 
 
@@ -347,6 +369,7 @@ class OnboardingTaskWorklistItemResponse(BaseModel):
     assignee_display_name: str | None
     step_number: int
     can_update: bool
+    can_progress: bool
 
 
 class OnboardingTaskWorklistResponse(BaseModel):
@@ -425,6 +448,9 @@ class EmployeePortalTaskResponse(BaseModel):
     completed_at: datetime | None
     version: int
     can_update: bool
+    prerequisites: list[OnboardingTaskPrerequisiteResponse] = Field(
+        default_factory=list
+    )
     documents: list[OnboardingTaskDocumentResponse] = Field(default_factory=list)
 
 

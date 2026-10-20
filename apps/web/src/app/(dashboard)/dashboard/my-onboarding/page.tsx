@@ -116,14 +116,14 @@ function EmployeeDocumentVersionEntry({
 function TaskItem({
   task,
   position,
-  blockedByEarlierStep,
+  blockedPrerequisites,
   planActive,
   updatePending,
   onUpdate,
 }: {
   task: EmployeePortalTaskResponse;
   position: number;
-  blockedByEarlierStep: boolean;
+  blockedPrerequisites: EmployeePortalTaskResponse["prerequisites"];
   planActive: boolean;
   updatePending: boolean;
   onUpdate: (
@@ -317,7 +317,7 @@ function TaskItem({
               </label>
             )}
             {canUploadDocument && (
-              <label className="mt-3 inline-flex min-h-10 cursor-pointer items-center justify-center rounded-lg bg-sr-text-blue px-4 py-2 text-sm font-semibold text-white hover:opacity-90 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60">
+              <label className="mt-3 inline-flex min-h-10 cursor-pointer items-center justify-center rounded-lg bg-sr-text-blue px-4 py-2 text-sm font-semibold text-white hover:opacity-90 has-disabled:cursor-not-allowed has-disabled:opacity-60">
                 <span>{uploadDocument.isPending ? "Uploading and scanning…" : task.documents.some((document) => document.status === "pending_upload") ? "Retry upload" : task.documents.length > 0 ? "Upload another file" : "Choose file to upload"}</span>
                 <input
                   type="file"
@@ -419,8 +419,10 @@ function TaskItem({
             <p className="mt-3 text-xs text-gray-500">
               {!planActive
                 ? "This onboarding plan is not active. Contact People Operations if you need help."
-                : blockedByEarlierStep
-                  ? "This step will be available after the earlier onboarding steps are complete."
+                : blockedPrerequisites.length > 0
+                  ? blockedPrerequisites.some((prerequisite) => prerequisite.status === "cancelled")
+                    ? `A required task was cancelled (${blockedPrerequisites.filter((prerequisite) => prerequisite.status === "cancelled").map((prerequisite) => prerequisite.title).join(", ")}). Contact People Operations.`
+                    : `This step unlocks after these tasks are complete: ${blockedPrerequisites.map((prerequisite) => `“${prerequisite.title}”`).join(", ")}.`
                   : "This step is currently unavailable. Contact People Operations for help."}
             </p>
           )
@@ -593,9 +595,9 @@ export default function MyOnboardingPage() {
                 key={task.id}
                 task={task}
                 position={index + 1}
-                blockedByEarlierStep={tasks
-                  .slice(0, index)
-                  .some((earlierTask) => earlierTask.status !== "completed")}
+                blockedPrerequisites={task.prerequisites.filter(
+                  (prerequisite) => prerequisite.status !== "completed",
+                )}
                 planActive={data.onboarding_status === "active"}
                 updatePending={updateTask.isPending}
                 onUpdate={updateEmployeeTask}

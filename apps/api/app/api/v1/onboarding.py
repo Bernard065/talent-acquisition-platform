@@ -36,6 +36,7 @@ from app.api.v1.schemas.onboarding import (
     OnboardingTaskDocumentReviewRequest,
     OnboardingTaskDocumentUploadAuthorizationRequest,
     OnboardingTaskDocumentUploadAuthorizationResponse,
+    OnboardingTaskPrerequisiteResponse,
     OnboardingTaskResponse,
     OnboardingTaskWorklistAssigneeResponse,
     OnboardingTaskWorklistItemResponse,
@@ -72,7 +73,9 @@ from app.services.onboarding import (
     list_active_onboarding_templates,
     list_onboarding_overview,
     list_onboarding_task_activity,
+    list_onboarding_task_prerequisite_states,
     list_onboarding_task_worklist,
+    list_onboarding_template_prerequisite_positions,
     start_onboarding,
     update_employee_portal_task_status,
     update_onboarding_task_due_date,
@@ -143,6 +146,14 @@ async def list_onboarding_task_worklist_endpoint(
             OnboardingTaskWorklistItemResponse(
                 task=OnboardingTaskResponse.model_validate(item.task).model_copy(
                     update={
+                        "prerequisites": [
+                            OnboardingTaskPrerequisiteResponse(
+                                id=prerequisite.id,
+                                title=prerequisite.title,
+                                status=prerequisite.status,
+                            )
+                            for prerequisite in item.prerequisites
+                        ],
                         "documents": [
                             OnboardingTaskDocumentResponse.model_validate(document)
                             for document in documents_by_task.get(
@@ -159,6 +170,7 @@ async def list_onboarding_task_worklist_endpoint(
                 assignee_display_name=item.assignee_display_name,
                 step_number=item.step_number,
                 can_update=item.can_update,
+                can_progress=item.can_progress,
             )
             for item in items
         ],
@@ -296,6 +308,11 @@ async def list_onboarding_templates_endpoint(
         session,
         context=context,
     )
+    template_task_ids = tuple(task.id for _, tasks in templates for task in tasks)
+    prerequisite_positions = await list_onboarding_template_prerequisite_positions(
+        session,
+        task_ids=template_task_ids,
+    )
     response.headers["Cache-Control"] = "private, no-store"
     return OnboardingTemplateListResponse(
         items=[
@@ -306,7 +323,13 @@ async def list_onboarding_templates_endpoint(
                 is_active=template.is_active,
                 created_at=template.created_at,
                 tasks=[
-                    OnboardingTemplateTaskResponse.model_validate(task)
+                    OnboardingTemplateTaskResponse.model_validate(task).model_copy(
+                        update={
+                            "prerequisite_task_positions": list(
+                                prerequisite_positions.get(task.id, ())
+                            )
+                        }
+                    )
                     for task in tasks
                 ],
             )
@@ -342,11 +365,24 @@ async def get_application_onboarding_endpoint(
         tenant_id=context.tenant_id,
         task_ids=tuple(task.id for task in tasks),
     )
+    prerequisites_by_task = await list_onboarding_task_prerequisite_states(
+        session,
+        tenant_id=context.tenant_id,
+        tasks=tasks,
+    )
     return ApplicationOnboardingResponse(
         instance=OnboardingInstanceResponse.model_validate(instance),
         tasks=[
             OnboardingTaskResponse.model_validate(task).model_copy(
                 update={
+                    "prerequisites": [
+                        OnboardingTaskPrerequisiteResponse(
+                            id=prerequisite.id,
+                            title=prerequisite.title,
+                            status=prerequisite.status,
+                        )
+                        for prerequisite in prerequisites_by_task.get(task.id, ())
+                    ],
                     "documents": [
                         OnboardingTaskDocumentResponse.model_validate(document)
                         for document in documents_by_task.get(task.id, ())
@@ -660,6 +696,11 @@ async def get_employee_portal_onboarding_endpoint(
         tenant_id=context.tenant_id,
         task_ids=tuple(task.id for task in tasks),
     )
+    prerequisites_by_task = await list_onboarding_task_prerequisite_states(
+        session,
+        tenant_id=context.tenant_id,
+        tasks=tasks,
+    )
     response.headers["Cache-Control"] = "private, no-store"
     return EmployeePortalOnboardingResponse(
         profile=EmployeePortalProfileResponse(
@@ -708,16 +749,24 @@ async def get_employee_portal_onboarding_endpoint(
                         OnboardingTaskStatus.IN_PROGRESS,
                     }
                     and all(
-                        earlier_task.status is OnboardingTaskStatus.COMPLETED
-                        for earlier_task in tasks[:index]
+                        prerequisite.status is OnboardingTaskStatus.COMPLETED
+                        for prerequisite in prerequisites_by_task.get(task.id, ())
                     )
                 ),
+                prerequisites=[
+                    OnboardingTaskPrerequisiteResponse(
+                        id=prerequisite.id,
+                        title=prerequisite.title,
+                        status=prerequisite.status,
+                    )
+                    for prerequisite in prerequisites_by_task.get(task.id, ())
+                ],
                 documents=[
                     OnboardingTaskDocumentResponse.model_validate(document)
                     for document in documents_by_task.get(task.id, ())
                 ],
             )
-            for index, task in enumerate(tasks)
+            for task in tasks
         ],
     )
 
@@ -811,6 +860,9 @@ async def create_onboarding_template_endpoint(
                         responsible_party=task.responsible_party,
                         requires_document_upload=task.requires_document_upload,
                         requires_document_review=task.requires_document_review,
+                        prerequisite_task_positions=tuple(
+                            task.prerequisite_task_positions
+                        ),
                     )
                     for task in payload.tasks
                 ),

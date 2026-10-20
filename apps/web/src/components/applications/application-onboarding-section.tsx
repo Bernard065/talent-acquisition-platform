@@ -42,13 +42,13 @@ function TaskRow({
   applicationId,
   task,
   stepNumber,
-  blockingTask,
+  blockingPrerequisites,
   canEditDueDate,
 }: {
   applicationId: string;
   task: OnboardingTaskResponse;
   stepNumber: number;
-  blockingTask: OnboardingTaskResponse | null;
+  blockingPrerequisites: OnboardingTaskResponse["prerequisites"];
   canEditDueDate: boolean;
 }) {
   const members = useTeamMembers();
@@ -59,7 +59,8 @@ function TaskRow({
   const [resolutionNote, setResolutionNote] = useState("");
   const [dueDateDraft, setDueDateDraft] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
-  const active = !blockingTask && task.status !== "completed" && task.status !== "cancelled";
+  const active = task.status !== "completed" && task.status !== "cancelled";
+  const canProgress = blockingPrerequisites.length === 0;
   const hasAvailableDocument = task.documents.some(
     (document) => document.status === "available",
   );
@@ -132,17 +133,17 @@ function TaskRow({
   }
 
   return (
-    <li className={`rounded-lg border p-4 ${blockingTask ? "border-gray-200 bg-gray-50" : "border-gray-200 bg-white"}`}>
+    <li className={`rounded-lg border p-4 ${!canProgress && active ? "border-gray-200 bg-gray-50" : "border-gray-200 bg-white"}`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 gap-3">
-          <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${task.status === "completed" ? "bg-emerald-100 text-emerald-800" : blockingTask ? "bg-gray-200 text-gray-500" : "bg-blue-100 text-sr-text-blue"}`} aria-hidden="true">
+          <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${task.status === "completed" ? "bg-emerald-100 text-emerald-800" : !canProgress && active ? "bg-gray-200 text-gray-500" : "bg-blue-100 text-sr-text-blue"}`} aria-hidden="true">
             {task.status === "completed" ? "✓" : stepNumber}
           </span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="font-medium text-gray-900">{task.title}</h3>
-              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${task.status === "completed" ? "bg-emerald-50 text-emerald-800" : blockingTask ? "bg-gray-200 text-gray-600" : task.status === "blocked" ? "bg-amber-100 text-amber-900" : "bg-blue-50 text-blue-800"}`}>
-                {blockingTask ? "Locked" : taskLabels[task.status]}
+              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${task.status === "completed" ? "bg-emerald-50 text-emerald-800" : !canProgress && active ? "bg-gray-200 text-gray-600" : task.status === "blocked" ? "bg-amber-100 text-amber-900" : "bg-blue-50 text-blue-800"}`}>
+                {!canProgress && active ? "Waiting" : taskLabels[task.status]}
               </span>
             </div>
             {task.description && <p className="mt-1 whitespace-pre-wrap text-sm text-gray-600">{task.description}</p>}
@@ -150,10 +151,10 @@ function TaskRow({
               {task.responsible_party === "employee" ? "Employee-owned step" : "Workspace-owned step"}
             </p>
             <p className="mt-2 text-xs text-gray-500">{task.due_at ? `Due ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeZone: "UTC" }).format(new Date(task.due_at))}` : "No due date"}</p>
-            {blockingTask && <p className="mt-2 text-sm text-gray-600">
-              {blockingTask.status === "cancelled"
-                ? `“${blockingTask.title}” was cancelled. Ask People Ops to review the plan before continuing.`
-                : `Complete “${blockingTask.title}” first to unlock this task.`}
+            {blockingPrerequisites.length > 0 && <p className="mt-2 text-sm text-gray-600">
+              {blockingPrerequisites.some((prerequisite) => prerequisite.status === "cancelled")
+                ? `A required task was cancelled (${blockingPrerequisites.filter((prerequisite) => prerequisite.status === "cancelled").map((prerequisite) => prerequisite.title).join(", ")}). Ask People Ops to review the plan.`
+                : `Complete ${blockingPrerequisites.map((prerequisite) => `“${prerequisite.title}”`).join(" and ")} first to unlock this task.`}
             </p>}
             {task.resolution_note && <p className="mt-3 whitespace-pre-wrap rounded-md border border-blue-100 bg-blue-50 p-3 text-sm text-blue-950"><span className="font-semibold">People Operations response: </span>{task.resolution_note}</p>}
           </div>
@@ -161,7 +162,7 @@ function TaskRow({
         {active && (
           <label className="shrink-0">
             <span className="sr-only">Update status for {task.title}</span>
-            <select value={task.status} disabled={updateStatus.isPending} onChange={(event) => changeStatus(event.target.value as OnboardingTaskStatus)} className="h-10 w-full cursor-pointer rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto">
+            <select value={task.status} disabled={!canProgress || updateStatus.isPending} onChange={(event) => changeStatus(event.target.value as OnboardingTaskStatus)} className="h-10 w-full cursor-pointer rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto">
               <option value={task.status}>{taskLabels[task.status]}</option>
               {task.status === "not_started" && <><option value="in_progress">In progress</option><option value="blocked">Blocked</option></>}
               {task.status === "in_progress" && <><option value="completed" disabled={task.requires_document_upload && !canCompleteDocumentRequirement}>Completed</option><option value="blocked">Blocked</option></>}
@@ -287,8 +288,13 @@ export function ApplicationOnboardingSection({
   const instance = onboarding.data?.instance;
   const tasks = onboarding.data?.tasks ?? [];
   const allTasksComplete = tasks.length > 0 && tasks.every((task) => task.status === "completed");
-  const nextTaskIndex = tasks.findIndex((task) => task.status !== "completed");
+  const nextTaskIndex = tasks.findIndex((task) =>
+    task.status !== "completed" &&
+    task.status !== "cancelled" &&
+    task.prerequisites.every((prerequisite) => prerequisite.status === "completed"),
+  );
   const nextTask = nextTaskIndex >= 0 ? tasks[nextTaskIndex] : undefined;
+  const cancelledTask = tasks.find((task) => task.status === "cancelled");
   const progressPercent = tasks.length
     ? Math.round((tasks.filter((task) => task.status === "completed").length / tasks.length) * 100)
     : 0;
@@ -299,7 +305,7 @@ export function ApplicationOnboardingSection({
     <section aria-labelledby="application-onboarding-heading" className="rounded-xl border border-gray-200 bg-white p-6">
       <div>
         <h2 id="application-onboarding-heading" className="text-base font-semibold text-sr-text-blue">New hire onboarding</h2>
-        <p className="mt-1 text-sm text-gray-600">Follow the steps in order. Each task unlocks after the previous task is completed.</p>
+        <p className="mt-1 text-sm text-gray-600">Tasks without prerequisites can be worked on in parallel. Any required tasks are shown on the step that is waiting.</p>
       </div>
 
       {onboarding.isLoading ? (
@@ -354,9 +360,10 @@ export function ApplicationOnboardingSection({
             <div>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{instance.status === "active" && nextTask ? nextTask.status === "cancelled" ? "Plan needs review" : `Next up · Step ${nextTaskIndex + 1} of ${tasks.length}` : "Onboarding status"}</p>
-                  <p className="mt-1 text-lg font-semibold text-gray-900">{instance.status === "active" ? nextTask?.status === "cancelled" ? "A task was cancelled" : nextTask?.title ?? "All tasks are complete" : `Onboarding ${instance.status}`}</p>
-                  {instance.status === "active" && nextTask?.status === "cancelled" && <p className="mt-1 text-sm text-amber-900">Ask People Ops to review the plan before continuing.</p>}
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{instance.status === "active" && cancelledTask ? "Plan needs review" : instance.status === "active" && nextTask ? `Ready now · Step ${nextTaskIndex + 1} of ${tasks.length}` : "Onboarding status"}</p>
+                  <p className="mt-1 text-lg font-semibold text-gray-900">{instance.status === "active" ? cancelledTask ? "A task was cancelled" : nextTask?.title ?? (allTasksComplete ? "All tasks are complete" : "Waiting for prerequisites") : `Onboarding ${instance.status}`}</p>
+                  {instance.status === "active" && cancelledTask && <p className="mt-1 text-sm text-amber-900">Ask People Ops to review the plan before continuing.</p>}
+                  {instance.status === "active" && !nextTask && !cancelledTask && !allTasksComplete && <p className="mt-1 text-sm text-gray-600">Complete the required prerequisite tasks to unlock the remaining steps.</p>}
                   <p className="mt-1 text-sm text-gray-600">Started {dateLabel(instance.started_at)}</p>
                 </div>
                 {instance.status === "active" && (
@@ -386,14 +393,14 @@ export function ApplicationOnboardingSection({
               </div>
             </div>
           </div>
-          {tasks.length ? <ol className="space-y-3" aria-label="Onboarding tasks in order">{tasks.map((task, index) => {
-            const blockingTask = tasks.slice(0, index).find((previous) => previous.status !== "completed") ?? null;
-            return <TaskRow key={task.id} applicationId={applicationId} task={task} stepNumber={index + 1} blockingTask={blockingTask} canEditDueDate={canEditDueDates && instance.status === "active"} />;
+          {tasks.length ? <ol className="space-y-3" aria-label="Onboarding tasks">{tasks.map((task, index) => {
+            const blockingPrerequisites = task.prerequisites.filter((prerequisite) => prerequisite.status !== "completed");
+            return <TaskRow key={task.id} applicationId={applicationId} task={task} stepNumber={index + 1} blockingPrerequisites={blockingPrerequisites} canEditDueDate={canEditDueDates && instance.status === "active"} />;
           })}</ol> : <p className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">This plan has no tasks. Ask a workspace admin or People Ops member to review the onboarding template.</p>}
         </div>
       )}
       {error && <p role="alert" className="mt-3 text-sm text-red-800">{error}</p>}
-      {instance?.status === "active" && <p className="mt-4 text-xs text-gray-500">Tasks must be completed in order. You can assign or update the current task; later tasks stay locked until it is complete.</p>}
+      {instance?.status === "active" && <p className="mt-4 text-xs text-gray-500">Only tasks with incomplete prerequisites are locked. Tasks with no prerequisites are ready to work on.</p>}
     </section>
   );
 }
