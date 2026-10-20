@@ -78,6 +78,18 @@ class CreateOnboardingTemplateRequest(BaseModel):
     )
 
 
+class CreateOnboardingTemplateVersionRequest(BaseModel):
+    """Input for publishing a new version of an existing template."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+    tasks: list[OnboardingTemplateTaskRequest] = Field(
+        min_length=1,
+        max_length=100,
+    )
+
+
 class StartOnboardingRequest(BaseModel):
     """Input for starting onboarding for a hired application."""
 
@@ -191,7 +203,7 @@ class OnboardingTemplateTaskResponse(BaseModel):
 
 
 class OnboardingTemplateListItemResponse(OnboardingTemplateResponse):
-    """Active template metadata and its immutable task definitions."""
+    """Template version metadata and its immutable task definitions."""
 
     tasks: list[OnboardingTemplateTaskResponse]
 

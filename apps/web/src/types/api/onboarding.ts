@@ -36,6 +36,11 @@ export interface CreateOnboardingTemplateRequest {
   tasks: OnboardingTemplateTaskRequest[];
 }
 
+export interface CreateOnboardingTemplateVersionRequest {
+  expected_version: number;
+  tasks: OnboardingTemplateTaskRequest[];
+}
+
 export interface OnboardingTemplateTaskResponse extends OnboardingTemplateTaskRequest {
   id: string;
   position: number;

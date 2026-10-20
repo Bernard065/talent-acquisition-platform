@@ -511,13 +511,44 @@ async def list_active_onboarding_templates(
     """List active tenant templates and their ordered task definitions."""
     _require_role(context, _ONBOARDING_WRITE_ROLES)
 
+    return await _list_onboarding_templates(
+        session,
+        tenant_id=context.tenant_id,
+        active_only=True,
+    )
+
+
+async def list_onboarding_template_versions(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+) -> list[tuple[OnboardingTemplate, tuple[OnboardingTemplateTask, ...]]]:
+    """List all tenant template versions for workspace template managers."""
+    _require_role(context, _TEMPLATE_ADMIN_ROLES)
+
+    return await _list_onboarding_templates(
+        session,
+        tenant_id=context.tenant_id,
+        active_only=False,
+    )
+
+
+async def _list_onboarding_templates(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    active_only: bool,
+) -> list[tuple[OnboardingTemplate, tuple[OnboardingTemplateTask, ...]]]:
+    """Load template versions and their ordered task definitions."""
+    statement = select(OnboardingTemplate).where(
+        OnboardingTemplate.tenant_id == tenant_id
+    )
+    if active_only:
+        statement = statement.where(OnboardingTemplate.is_active.is_(True))
+
     templates = list(
         await session.scalars(
-            select(OnboardingTemplate)
-            .where(
-                OnboardingTemplate.tenant_id == context.tenant_id,
-                OnboardingTemplate.is_active.is_(True),
-            )
+            statement
             .order_by(
                 OnboardingTemplate.name,
                 OnboardingTemplate.version.desc(),
@@ -942,26 +973,49 @@ class CreateOnboardingTemplateCommand:
                 "Template name must not exceed 200 characters."
             )
 
-        if self.version < 1:
+        if self.version != 1:
             raise OnboardingValidationError(
-                "Template version must be at least one."
+                "New templates start at version one. Create a new version "
+                "from the current template."
             )
 
-        if not self.tasks:
-            raise OnboardingValidationError(
-                "An onboarding template requires at least one task."
-            )
-
-        for position, task in enumerate(self.tasks, start=1):
-            if any(
-                prerequisite_position >= position
-                for prerequisite_position in task.prerequisite_task_positions
-            ):
-                raise OnboardingValidationError(
-                    "A task can depend only on an earlier task in the template."
-                )
+        _validate_template_task_definitions(self.tasks)
 
         object.__setattr__(self, "name", normalized_name)
+
+
+@dataclass(frozen=True, slots=True)
+class CreateOnboardingTemplateVersionCommand:
+    """Input for publishing a new immutable template version."""
+
+    expected_version: int
+    tasks: tuple[OnboardingTemplateTaskDefinition, ...]
+
+    def __post_init__(self) -> None:
+        if self.expected_version < 1:
+            raise OnboardingValidationError(
+                "Expected template version must be at least one."
+            )
+        _validate_template_task_definitions(self.tasks)
+
+
+def _validate_template_task_definitions(
+    tasks: tuple[OnboardingTemplateTaskDefinition, ...],
+) -> None:
+    """Validate task count and prerequisite ordering for a template version."""
+    if not tasks:
+        raise OnboardingValidationError(
+            "An onboarding template requires at least one task."
+        )
+
+    for position, task in enumerate(tasks, start=1):
+        if any(
+            prerequisite_position >= position
+            for prerequisite_position in task.prerequisite_task_positions
+        ):
+            raise OnboardingValidationError(
+                "A task can depend only on an earlier task in the template."
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1109,47 +1163,35 @@ async def create_onboarding_template(
     context: TenantContext,
     command: CreateOnboardingTemplateCommand,
 ) -> OnboardingTemplate:
-    """Create one tenant-owned immutable template version."""
+    """Create the first immutable version of a tenant-owned template."""
     _require_role(context, _TEMPLATE_ADMIN_ROLES)
 
     async with transactional(session):
+        existing_template_id = await session.scalar(
+            select(OnboardingTemplate.id).where(
+                OnboardingTemplate.tenant_id == context.tenant_id,
+                OnboardingTemplate.name == command.name,
+            )
+        )
+        if existing_template_id is not None:
+            raise OnboardingValidationError(
+                "A template with this name already exists. Create a new version instead."
+            )
+
         template = OnboardingTemplate(
             tenant_id=context.tenant_id,
             name=command.name,
-            version=command.version,
+            version=1,
             is_active=True,
             created_by_subject=context.subject,
         )
         session.add(template)
         await session.flush()
 
-        template_tasks = [
-            OnboardingTemplateTask(
-                onboarding_template_id=template.id,
-                position=position,
-                title=task.title,
-                description=task.description,
-                due_offset_days=task.due_offset_days,
-                default_assignee_role=task.default_assignee_role,
-                responsible_party=task.responsible_party,
-                requires_document_upload=task.requires_document_upload,
-                requires_document_review=task.requires_document_review,
-            )
-            for position, task in enumerate(command.tasks, start=1)
-        ]
-        session.add_all(template_tasks)
-        await session.flush()
-        task_id_by_position = {
-            template_task.position: template_task.id
-            for template_task in template_tasks
-        }
-        session.add_all(
-            OnboardingTemplateTaskDependency(
-                task_id=task_id_by_position[position],
-                prerequisite_task_id=task_id_by_position[prerequisite_position],
-            )
-            for position, task in enumerate(command.tasks, start=1)
-            for prerequisite_position in task.prerequisite_task_positions
+        await _persist_template_task_definitions(
+            session,
+            template=template,
+            tasks=command.tasks,
         )
 
         record_audit_event(
@@ -1168,6 +1210,113 @@ async def create_onboarding_template(
         await session.refresh(template)
 
     return template
+
+
+async def create_onboarding_template_version(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    template_id: UUID,
+    command: CreateOnboardingTemplateVersionCommand,
+) -> OnboardingTemplate:
+    """Publish an immutable new version without changing existing plans."""
+    _require_role(context, _TEMPLATE_ADMIN_ROLES)
+
+    async with transactional(session):
+        current = await session.scalar(
+            select(OnboardingTemplate)
+            .where(
+                OnboardingTemplate.id == template_id,
+                OnboardingTemplate.tenant_id == context.tenant_id,
+            )
+            .with_for_update()
+        )
+        if current is None:
+            raise OnboardingTemplateNotFoundError(
+                "Onboarding template was not found."
+            )
+        if not current.is_active:
+            raise OnboardingVersionConflictError(
+                "Only the current template version can be edited. Refresh and try again."
+            )
+        _validate_version(
+            actual_version=current.version,
+            expected_version=command.expected_version,
+            entity_name="onboarding template",
+        )
+
+        current.is_active = False
+        await session.flush()
+
+        template = OnboardingTemplate(
+            tenant_id=context.tenant_id,
+            name=current.name,
+            version=current.version + 1,
+            is_active=True,
+            created_by_subject=context.subject,
+        )
+        session.add(template)
+        await session.flush()
+        await _persist_template_task_definitions(
+            session,
+            template=template,
+            tasks=command.tasks,
+        )
+
+        record_audit_event(
+            session,
+            context=context,
+            action="onboarding_template.version_created",
+            entity_type="onboarding_template",
+            entity_id=str(template.id),
+            details={
+                "previous_template_id": str(current.id),
+                "previous_version": current.version,
+                "version": template.version,
+                "task_count": len(command.tasks),
+            },
+        )
+
+        await session.flush()
+        await session.refresh(template)
+
+    return template
+
+
+async def _persist_template_task_definitions(
+    session: AsyncSession,
+    *,
+    template: OnboardingTemplate,
+    tasks: tuple[OnboardingTemplateTaskDefinition, ...],
+) -> None:
+    """Persist task definitions and prerequisite edges for one immutable version."""
+    template_tasks = [
+        OnboardingTemplateTask(
+            onboarding_template_id=template.id,
+            position=position,
+            title=task.title,
+            description=task.description,
+            due_offset_days=task.due_offset_days,
+            default_assignee_role=task.default_assignee_role,
+            responsible_party=task.responsible_party,
+            requires_document_upload=task.requires_document_upload,
+            requires_document_review=task.requires_document_review,
+        )
+        for position, task in enumerate(tasks, start=1)
+    ]
+    session.add_all(template_tasks)
+    await session.flush()
+    task_id_by_position = {
+        template_task.position: template_task.id for template_task in template_tasks
+    }
+    session.add_all(
+        OnboardingTemplateTaskDependency(
+            task_id=task_id_by_position[position],
+            prerequisite_task_id=task_id_by_position[prerequisite_position],
+        )
+        for position, task in enumerate(tasks, start=1)
+        for prerequisite_position in task.prerequisite_task_positions
+    )
 
 
 async def start_onboarding(

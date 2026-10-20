@@ -49,6 +49,13 @@ class OnboardingTemplate(Base):
             name="uq_onboarding_templates_tenant_name_version",
         ),
         Index(
+            "uq_onboarding_templates_tenant_name_active",
+            "tenant_id",
+            "name",
+            unique=True,
+            postgresql_where=text("is_active"),
+        ),
+        Index(
             "ix_onboarding_templates_tenant_active",
             "tenant_id",
             "is_active",
