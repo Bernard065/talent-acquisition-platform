@@ -164,6 +164,7 @@ async def list_onboarding_document_review_queue(
     page: int,
     limit: int,
     query: str | None = None,
+    document_id: UUID | None = None,
 ) -> tuple[list[OnboardingDocumentReviewQueueItem], int]:
     """List clean employee documents awaiting review in this tenant."""
     if context.roles.isdisjoint(_DOCUMENT_REVIEW_ROLES):
@@ -186,6 +187,8 @@ async def list_onboarding_document_review_queue(
         Candidate.tenant_id == context.tenant_id,
         Employee.tenant_id == context.tenant_id,
     ]
+    if document_id is not None:
+        filters.append(OnboardingTaskDocument.id == document_id)
     if query and query.strip():
         search_term = f"%{query.strip()}%"
         filters.append(

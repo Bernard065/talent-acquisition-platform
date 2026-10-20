@@ -35,9 +35,11 @@ function reviewStatusLabel(status: OnboardingTaskDocumentResponse["review_status
 export function DocumentReviewControls({
   document,
   canReview,
+  onReviewed,
 }: {
   document: OnboardingTaskDocumentResponse;
   canReview: boolean;
+  onReviewed?: () => void;
 }) {
   const review = useReviewOnboardingTaskDocument();
   const [showRequestForm, setShowRequestForm] = useState(false);
@@ -65,6 +67,7 @@ export function DocumentReviewControls({
       onSuccess: () => {
         setComment("");
         setShowRequestForm(false);
+        onReviewed?.();
       },
       onError: () => setError("The document review could not be saved. Refresh and try again."),
     });

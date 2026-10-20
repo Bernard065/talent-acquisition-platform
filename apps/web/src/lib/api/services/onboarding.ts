@@ -51,6 +51,7 @@ export interface OnboardingDocumentReviewQueueParams {
   page?: number;
   limit?: number;
   query?: string;
+  document_id?: string;
 }
 
 export function listOnboardingTemplates(options?: RequestOptions) {
