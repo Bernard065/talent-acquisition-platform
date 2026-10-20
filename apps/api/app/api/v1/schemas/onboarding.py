@@ -79,7 +79,7 @@ class CreateOnboardingTemplateRequest(BaseModel):
 
 
 class CreateOnboardingTemplateVersionRequest(BaseModel):
-    """Input for publishing a new version of an existing template."""
+    """Input for creating a draft version of an existing template."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -88,6 +88,26 @@ class CreateOnboardingTemplateVersionRequest(BaseModel):
         min_length=1,
         max_length=100,
     )
+
+
+class UpdateOnboardingTemplateDraftRequest(BaseModel):
+    """Input for updating a saved draft before publication."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int = Field(ge=1)
+    tasks: list[OnboardingTemplateTaskRequest] = Field(
+        min_length=1,
+        max_length=100,
+    )
+
+
+class OnboardingTemplateDraftActionRequest(BaseModel):
+    """Concurrency precondition for publishing or discarding a draft."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int = Field(ge=1)
 
 
 class StartOnboardingRequest(BaseModel):
@@ -182,6 +202,8 @@ class OnboardingTemplateResponse(BaseModel):
     name: str
     version: int
     is_active: bool
+    publication_status: Literal["draft", "published"]
+    draft_revision: int
     created_at: datetime
 
 

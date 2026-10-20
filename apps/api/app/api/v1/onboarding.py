@@ -42,6 +42,7 @@ from app.api.v1.schemas.onboarding import (
     OnboardingTaskWorklistAssigneeResponse,
     OnboardingTaskWorklistItemResponse,
     OnboardingTaskWorklistResponse,
+    OnboardingTemplateDraftActionRequest,
     OnboardingTemplateListItemResponse,
     OnboardingTemplateListResponse,
     OnboardingTemplateResponse,
@@ -50,6 +51,7 @@ from app.api.v1.schemas.onboarding import (
     UpdateEmployeePortalTaskStatusRequest,
     UpdateOnboardingTaskDueDateRequest,
     UpdateOnboardingTaskStatusRequest,
+    UpdateOnboardingTemplateDraftRequest,
 )
 from app.core.authorization import TenantContext
 from app.core.config import Settings
@@ -64,13 +66,16 @@ from app.services.object_storage import ObjectStorage
 from app.services.onboarding import (
     CreateOnboardingTemplateCommand,
     CreateOnboardingTemplateVersionCommand,
+    OnboardingTemplateDraftActionCommand,
     OnboardingTemplateTaskDefinition,
     UpdateOnboardingTaskStatusCommand,
+    UpdateOnboardingTemplateDraftCommand,
     assign_onboarding_task,
     cancel_onboarding,
     complete_onboarding,
-    create_onboarding_template,
-    create_onboarding_template_version,
+    create_onboarding_template_draft,
+    create_onboarding_template_version_draft,
+    discard_onboarding_template_draft,
     get_application_onboarding,
     get_employee_portal_onboarding,
     list_active_onboarding_templates,
@@ -80,10 +85,12 @@ from app.services.onboarding import (
     list_onboarding_task_worklist,
     list_onboarding_template_prerequisite_positions,
     list_onboarding_template_versions,
+    publish_onboarding_template_draft,
     start_onboarding,
     update_employee_portal_task_status,
     update_onboarding_task_due_date,
     update_onboarding_task_status,
+    update_onboarding_template_draft,
 )
 from app.services.onboarding_documents import (
     CreateOnboardingTaskDocumentCommand,
@@ -325,6 +332,8 @@ async def list_onboarding_templates_endpoint(
                 name=template.name,
                 version=template.version,
                 is_active=template.is_active,
+                publication_status=template.publication_status.value,
+                draft_revision=template.draft_revision,
                 created_at=template.created_at,
                 tasks=[
                     OnboardingTemplateTaskResponse.model_validate(task).model_copy(
@@ -370,6 +379,8 @@ async def list_onboarding_template_versions_endpoint(
                 name=template.name,
                 version=template.version,
                 is_active=template.is_active,
+                publication_status=template.publication_status.value,
+                draft_revision=template.draft_revision,
                 created_at=template.created_at,
                 tasks=[
                     OnboardingTemplateTaskResponse.model_validate(task).model_copy(
@@ -883,7 +894,7 @@ async def update_employee_portal_task_status_endpoint(
     "/onboarding-templates",
     response_model=OnboardingTemplateResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Create an onboarding template",
+    summary="Save an onboarding template draft",
 )
 async def create_onboarding_template_endpoint(
     payload: CreateOnboardingTemplateRequest,
@@ -891,10 +902,10 @@ async def create_onboarding_template_endpoint(
     session: DatabaseSession,
     idempotency_key: IdempotencyKey,
 ) -> JSONResponse:
-    """Create an immutable tenant-owned onboarding template version."""
+    """Save a new onboarding template as an unpublished draft."""
 
     async def operation() -> tuple[int, dict[str, Any]]:
-        template = await create_onboarding_template(
+        template = await create_onboarding_template_draft(
             session,
             context=context,
             command=CreateOnboardingTemplateCommand(
@@ -939,7 +950,7 @@ async def create_onboarding_template_endpoint(
     "/onboarding-templates/{template_id}/versions",
     response_model=OnboardingTemplateResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Create a new onboarding template version",
+    summary="Save a new onboarding template version as a draft",
 )
 async def create_onboarding_template_version_endpoint(
     template_id: UUID,
@@ -948,10 +959,10 @@ async def create_onboarding_template_version_endpoint(
     session: DatabaseSession,
     idempotency_key: IdempotencyKey,
 ) -> JSONResponse:
-    """Create a new active version while retaining prior template snapshots."""
+    """Create a draft version while keeping the current version active."""
 
     async def operation() -> tuple[int, dict[str, Any]]:
-        template = await create_onboarding_template_version(
+        template = await create_onboarding_template_version_draft(
             session,
             context=context,
             template_id=template_id,
@@ -990,6 +1001,141 @@ async def create_onboarding_template_version_endpoint(
             "template_id": str(template_id),
             **payload.model_dump(mode="json"),
         },
+        operation=operation,
+    )
+    return _private_response(result)
+
+
+@router.put(
+    "/onboarding-templates/{template_id}/draft",
+    response_model=OnboardingTemplateResponse,
+    summary="Update an onboarding template draft",
+)
+async def update_onboarding_template_draft_endpoint(
+    template_id: UUID,
+    payload: UpdateOnboardingTemplateDraftRequest,
+    context: CallerContext,
+    session: DatabaseSession,
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Save draft changes without changing the active employee checklist."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        template = await update_onboarding_template_draft(
+            session,
+            context=context,
+            template_id=template_id,
+            command=UpdateOnboardingTemplateDraftCommand(
+                expected_revision=payload.expected_revision,
+                tasks=tuple(
+                    OnboardingTemplateTaskDefinition(
+                        title=task.title,
+                        description=task.description,
+                        due_offset_days=task.due_offset_days,
+                        default_assignee_role=task.default_assignee_role,
+                        responsible_party=task.responsible_party,
+                        requires_document_upload=task.requires_document_upload,
+                        requires_document_review=task.requires_document_review,
+                        prerequisite_task_positions=tuple(
+                            task.prerequisite_task_positions
+                        ),
+                    )
+                    for task in payload.tasks
+                ),
+            ),
+        )
+        return (
+            status.HTTP_200_OK,
+            OnboardingTemplateResponse.model_validate(template).model_dump(
+                mode="json"
+            ),
+        )
+
+    result = await execute_idempotently(
+        session,
+        context=context,
+        key=idempotency_key,
+        operation_name="onboarding_template.draft.update",
+        payload={"template_id": str(template_id), **payload.model_dump(mode="json")},
+        operation=operation,
+    )
+    return _private_response(result)
+
+
+@router.post(
+    "/onboarding-templates/{template_id}/publish",
+    response_model=OnboardingTemplateResponse,
+    summary="Publish an onboarding template draft",
+)
+async def publish_onboarding_template_draft_endpoint(
+    template_id: UUID,
+    payload: OnboardingTemplateDraftActionRequest,
+    context: CallerContext,
+    session: DatabaseSession,
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Activate a reviewed draft for future onboarding plans."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        template = await publish_onboarding_template_draft(
+            session,
+            context=context,
+            template_id=template_id,
+            command=OnboardingTemplateDraftActionCommand(
+                expected_revision=payload.expected_revision
+            ),
+        )
+        return (
+            status.HTTP_200_OK,
+            OnboardingTemplateResponse.model_validate(template).model_dump(
+                mode="json"
+            ),
+        )
+
+    result = await execute_idempotently(
+        session,
+        context=context,
+        key=idempotency_key,
+        operation_name="onboarding_template.draft.publish",
+        payload={"template_id": str(template_id), **payload.model_dump(mode="json")},
+        operation=operation,
+    )
+    return _private_response(result)
+
+
+@router.post(
+    "/onboarding-templates/{template_id}/discard",
+    summary="Discard an onboarding template draft",
+)
+async def discard_onboarding_template_draft_endpoint(
+    template_id: UUID,
+    payload: OnboardingTemplateDraftActionRequest,
+    context: CallerContext,
+    session: DatabaseSession,
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Discard a draft that should not become available for new hires."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        discarded_template_id = await discard_onboarding_template_draft(
+            session,
+            context=context,
+            template_id=template_id,
+            command=OnboardingTemplateDraftActionCommand(
+                expected_revision=payload.expected_revision
+            ),
+        )
+        return (
+            status.HTTP_200_OK,
+            {"template_id": str(discarded_template_id), "discarded": True},
+        )
+
+    result = await execute_idempotently(
+        session,
+        context=context,
+        key=idempotency_key,
+        operation_name="onboarding_template.draft.discard",
+        payload={"template_id": str(template_id), **payload.model_dump(mode="json")},
         operation=operation,
     )
     return _private_response(result)
