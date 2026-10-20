@@ -1,10 +1,12 @@
-import { get, patch, post, type RequestOptions } from "../client";
+import { get, patch, post, put, type RequestOptions } from "../client";
 import type {
   ApplicationOnboardingResponse,
   AssignOnboardingTaskRequest,
   CreateOnboardingTaskDocumentRequest,
   CreateOnboardingTemplateRequest,
   CreateOnboardingTemplateVersionRequest,
+  OnboardingTemplateDraftActionRequest,
+  OnboardingTemplateDraftDiscardResponse,
   EmployeePortalOnboardingResponse,
   ExpectedInstanceVersionRequest,
   OnboardingInstanceResponse,
@@ -24,11 +26,13 @@ import type {
   UpdateOnboardingTaskDueDateRequest,
   UpdateEmployeePortalTaskStatusRequest,
   UpdateOnboardingTaskStatusRequest,
+  UpdateOnboardingTemplateDraftRequest,
 } from "@/types/api/onboarding";
 
 type OnboardingTemplateCreated = Pick<
   OnboardingTemplateResponse,
   "id" | "name" | "version" | "is_active" | "created_at"
+  | "publication_status" | "draft_revision"
 >;
 
 export interface OnboardingOverviewParams {
@@ -240,6 +244,45 @@ export function createOnboardingTemplateVersion(
 ) {
   return post<OnboardingTemplateCreated>(
     `/onboarding-templates/${templateId}/versions`,
+    request,
+    { ...options, idempotencyKey },
+  );
+}
+
+export function updateOnboardingTemplateDraft(
+  templateId: string,
+  request: UpdateOnboardingTemplateDraftRequest,
+  idempotencyKey: string,
+  options?: RequestOptions,
+) {
+  return put<OnboardingTemplateCreated>(
+    `/onboarding-templates/${templateId}/draft`,
+    request,
+    { ...options, idempotencyKey },
+  );
+}
+
+export function publishOnboardingTemplateDraft(
+  templateId: string,
+  request: OnboardingTemplateDraftActionRequest,
+  idempotencyKey: string,
+  options?: RequestOptions,
+) {
+  return post<OnboardingTemplateCreated>(
+    `/onboarding-templates/${templateId}/publish`,
+    request,
+    { ...options, idempotencyKey },
+  );
+}
+
+export function discardOnboardingTemplateDraft(
+  templateId: string,
+  request: OnboardingTemplateDraftActionRequest,
+  idempotencyKey: string,
+  options?: RequestOptions,
+) {
+  return post<OnboardingTemplateDraftDiscardResponse>(
+    `/onboarding-templates/${templateId}/discard`,
     request,
     { ...options, idempotencyKey },
   );
