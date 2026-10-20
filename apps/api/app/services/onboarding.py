@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from uuid import UUID
 
-from sqlalchemy import and_, exists, func, or_, select
+from sqlalchemy import and_, delete, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
@@ -13,7 +13,7 @@ from app.core.authorization import Role, TenantContext
 from app.db.models.application import Application
 from app.db.models.candidate import Candidate
 from app.db.models.employee import Employee
-from app.db.models.identity import User, UserRoleAssignment
+from app.db.models.identity import Tenant, User, UserRoleAssignment
 from app.db.models.onboarding import (
     OnboardingInstance,
     OnboardingInstanceHistory,
@@ -37,6 +37,7 @@ from app.domains.onboarding.enums import (
     OnboardingTaskResponsibility,
     OnboardingTaskStatus,
     OnboardingTaskWorklistView,
+    OnboardingTemplatePublicationStatus,
 )
 from app.domains.onboarding.transitions import (
     validate_instance_transition,
@@ -544,7 +545,11 @@ async def _list_onboarding_templates(
         OnboardingTemplate.tenant_id == tenant_id
     )
     if active_only:
-        statement = statement.where(OnboardingTemplate.is_active.is_(True))
+        statement = statement.where(
+            OnboardingTemplate.is_active.is_(True),
+            OnboardingTemplate.publication_status
+            == OnboardingTemplatePublicationStatus.PUBLISHED,
+        )
 
     templates = list(
         await session.scalars(
@@ -999,6 +1004,34 @@ class CreateOnboardingTemplateVersionCommand:
         _validate_template_task_definitions(self.tasks)
 
 
+@dataclass(frozen=True, slots=True)
+class UpdateOnboardingTemplateDraftCommand:
+    """Input for changing a saved draft with optimistic concurrency."""
+
+    expected_revision: int
+    tasks: tuple[OnboardingTemplateTaskDefinition, ...]
+
+    def __post_init__(self) -> None:
+        if self.expected_revision < 1:
+            raise OnboardingValidationError(
+                "Expected draft revision must be at least one."
+            )
+        _validate_template_task_definitions(self.tasks)
+
+
+@dataclass(frozen=True, slots=True)
+class OnboardingTemplateDraftActionCommand:
+    """Concurrency precondition for publishing or discarding a template draft."""
+
+    expected_revision: int
+
+    def __post_init__(self) -> None:
+        if self.expected_revision < 1:
+            raise OnboardingValidationError(
+                "Expected draft revision must be at least one."
+            )
+
+
 def _validate_template_task_definitions(
     tasks: tuple[OnboardingTemplateTaskDefinition, ...],
 ) -> None:
@@ -1183,6 +1216,7 @@ async def create_onboarding_template(
             name=command.name,
             version=1,
             is_active=True,
+            publication_status=OnboardingTemplatePublicationStatus.PUBLISHED,
             created_by_subject=context.subject,
         )
         session.add(template)
@@ -1212,14 +1246,70 @@ async def create_onboarding_template(
     return template
 
 
-async def create_onboarding_template_version(
+async def create_onboarding_template_draft(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    command: CreateOnboardingTemplateCommand,
+) -> OnboardingTemplate:
+    """Create an unpublished first version for review before it is used."""
+    _require_role(context, _TEMPLATE_ADMIN_ROLES)
+
+    async with transactional(session):
+        await session.scalar(
+            select(Tenant.id)
+            .where(Tenant.id == context.tenant_id)
+            .with_for_update()
+        )
+        existing_template_id = await session.scalar(
+            select(OnboardingTemplate.id).where(
+                OnboardingTemplate.tenant_id == context.tenant_id,
+                OnboardingTemplate.name == command.name,
+            )
+        )
+        if existing_template_id is not None:
+            raise OnboardingValidationError(
+                "A template with this name already exists. Create a new version instead."
+            )
+
+        template = OnboardingTemplate(
+            tenant_id=context.tenant_id,
+            name=command.name,
+            version=1,
+            is_active=False,
+            publication_status=OnboardingTemplatePublicationStatus.DRAFT,
+            draft_revision=1,
+            created_by_subject=context.subject,
+        )
+        session.add(template)
+        await session.flush()
+        await _persist_template_task_definitions(
+            session,
+            template=template,
+            tasks=command.tasks,
+        )
+        record_audit_event(
+            session,
+            context=context,
+            action="onboarding_template.draft_created",
+            entity_type="onboarding_template",
+            entity_id=str(template.id),
+            details={"version": template.version, "task_count": len(command.tasks)},
+        )
+        await session.flush()
+        await session.refresh(template)
+
+    return template
+
+
+async def create_onboarding_template_version_draft(
     session: AsyncSession,
     *,
     context: TenantContext,
     template_id: UUID,
     command: CreateOnboardingTemplateVersionCommand,
 ) -> OnboardingTemplate:
-    """Publish an immutable new version without changing existing plans."""
+    """Create the next version as a draft without changing the active version."""
     _require_role(context, _TEMPLATE_ADMIN_ROLES)
 
     async with transactional(session):
@@ -1235,52 +1325,265 @@ async def create_onboarding_template_version(
             raise OnboardingTemplateNotFoundError(
                 "Onboarding template was not found."
             )
-        if not current.is_active:
+        if (
+            not current.is_active
+            or current.publication_status
+            is not OnboardingTemplatePublicationStatus.PUBLISHED
+        ):
             raise OnboardingVersionConflictError(
-                "Only the current template version can be edited. Refresh and try again."
+                "Create a draft from the current published template version."
             )
         _validate_version(
             actual_version=current.version,
             expected_version=command.expected_version,
             entity_name="onboarding template",
         )
+        existing_draft_id = await session.scalar(
+            select(OnboardingTemplate.id).where(
+                OnboardingTemplate.tenant_id == context.tenant_id,
+                OnboardingTemplate.name == current.name,
+                OnboardingTemplate.publication_status
+                == OnboardingTemplatePublicationStatus.DRAFT,
+            )
+        )
+        if existing_draft_id is not None:
+            raise OnboardingVersionConflictError(
+                "A draft already exists for this template. Open it to continue editing."
+            )
 
-        current.is_active = False
-        await session.flush()
-
-        template = OnboardingTemplate(
+        draft = OnboardingTemplate(
             tenant_id=context.tenant_id,
             name=current.name,
             version=current.version + 1,
-            is_active=True,
+            is_active=False,
+            publication_status=OnboardingTemplatePublicationStatus.DRAFT,
+            draft_revision=1,
             created_by_subject=context.subject,
         )
-        session.add(template)
+        session.add(draft)
         await session.flush()
         await _persist_template_task_definitions(
             session,
-            template=template,
+            template=draft,
             tasks=command.tasks,
         )
-
         record_audit_event(
             session,
             context=context,
-            action="onboarding_template.version_created",
+            action="onboarding_template.version_draft_created",
             entity_type="onboarding_template",
-            entity_id=str(template.id),
+            entity_id=str(draft.id),
             details={
                 "previous_template_id": str(current.id),
                 "previous_version": current.version,
-                "version": template.version,
+                "version": draft.version,
                 "task_count": len(command.tasks),
             },
         )
-
         await session.flush()
-        await session.refresh(template)
+        await session.refresh(draft)
 
-    return template
+    return draft
+
+
+async def update_onboarding_template_draft(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    template_id: UUID,
+    command: UpdateOnboardingTemplateDraftCommand,
+) -> OnboardingTemplate:
+    """Replace draft task definitions while preserving published versions."""
+    _require_role(context, _TEMPLATE_ADMIN_ROLES)
+
+    async with transactional(session):
+        draft = await session.scalar(
+            select(OnboardingTemplate)
+            .where(
+                OnboardingTemplate.id == template_id,
+                OnboardingTemplate.tenant_id == context.tenant_id,
+            )
+            .with_for_update()
+        )
+        if draft is None:
+            raise OnboardingTemplateNotFoundError(
+                "Onboarding template draft was not found."
+            )
+        if draft.publication_status is not OnboardingTemplatePublicationStatus.DRAFT:
+            raise OnboardingVersionConflictError(
+                "Only an unpublished draft can be edited."
+            )
+        _validate_version(
+            actual_version=draft.draft_revision,
+            expected_version=command.expected_revision,
+            entity_name="onboarding template draft",
+        )
+
+        task_ids = tuple(
+            await session.scalars(
+                select(OnboardingTemplateTask.id).where(
+                    OnboardingTemplateTask.onboarding_template_id == draft.id
+                )
+            )
+        )
+        if task_ids:
+            await session.execute(
+                delete(OnboardingTemplateTaskDependency).where(
+                    OnboardingTemplateTaskDependency.task_id.in_(task_ids)
+                )
+            )
+            await session.execute(
+                delete(OnboardingTemplateTask).where(
+                    OnboardingTemplateTask.id.in_(task_ids)
+                )
+            )
+        draft.draft_revision += 1
+        await _persist_template_task_definitions(
+            session,
+            template=draft,
+            tasks=command.tasks,
+        )
+        record_audit_event(
+            session,
+            context=context,
+            action="onboarding_template.draft_updated",
+            entity_type="onboarding_template",
+            entity_id=str(draft.id),
+            details={
+                "version": draft.version,
+                "draft_revision": draft.draft_revision,
+                "task_count": len(command.tasks),
+            },
+        )
+        await session.flush()
+        await session.refresh(draft)
+
+    return draft
+
+
+async def publish_onboarding_template_draft(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    template_id: UUID,
+    command: OnboardingTemplateDraftActionCommand,
+) -> OnboardingTemplate:
+    """Publish a reviewed draft and atomically retire the prior active version."""
+    _require_role(context, _TEMPLATE_ADMIN_ROLES)
+
+    async with transactional(session):
+        draft = await session.scalar(
+            select(OnboardingTemplate)
+            .where(
+                OnboardingTemplate.id == template_id,
+                OnboardingTemplate.tenant_id == context.tenant_id,
+            )
+            .with_for_update()
+        )
+        if draft is None:
+            raise OnboardingTemplateNotFoundError(
+                "Onboarding template draft was not found."
+            )
+        if draft.publication_status is not OnboardingTemplatePublicationStatus.DRAFT:
+            raise OnboardingVersionConflictError(
+                "This template version has already been published or discarded."
+            )
+        _validate_version(
+            actual_version=draft.draft_revision,
+            expected_version=command.expected_revision,
+            entity_name="onboarding template draft",
+        )
+
+        current = await session.scalar(
+            select(OnboardingTemplate)
+            .where(
+                OnboardingTemplate.tenant_id == context.tenant_id,
+                OnboardingTemplate.name == draft.name,
+                OnboardingTemplate.is_active.is_(True),
+            )
+            .with_for_update()
+        )
+        if current is None:
+            if draft.version != 1:
+                raise OnboardingVersionConflictError(
+                    "The published template changed. Discard this draft and create a new one."
+                )
+        else:
+            if (
+                current.publication_status
+                is not OnboardingTemplatePublicationStatus.PUBLISHED
+                or draft.version != current.version + 1
+            ):
+                raise OnboardingVersionConflictError(
+                    "The published template changed. Discard this draft and create a new one."
+                )
+            current.is_active = False
+            await session.flush()
+
+        draft.publication_status = OnboardingTemplatePublicationStatus.PUBLISHED
+        draft.is_active = True
+        record_audit_event(
+            session,
+            context=context,
+            action="onboarding_template.draft_published",
+            entity_type="onboarding_template",
+            entity_id=str(draft.id),
+            details={
+                "previous_template_id": str(current.id) if current else None,
+                "version": draft.version,
+                "draft_revision": draft.draft_revision,
+            },
+        )
+        await session.flush()
+        await session.refresh(draft)
+
+    return draft
+
+
+async def discard_onboarding_template_draft(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    template_id: UUID,
+    command: OnboardingTemplateDraftActionCommand,
+) -> UUID:
+    """Delete an unpublished draft after recording the discard in the audit log."""
+    _require_role(context, _TEMPLATE_ADMIN_ROLES)
+
+    async with transactional(session):
+        draft = await session.scalar(
+            select(OnboardingTemplate)
+            .where(
+                OnboardingTemplate.id == template_id,
+                OnboardingTemplate.tenant_id == context.tenant_id,
+            )
+            .with_for_update()
+        )
+        if draft is None:
+            raise OnboardingTemplateNotFoundError(
+                "Onboarding template draft was not found."
+            )
+        if draft.publication_status is not OnboardingTemplatePublicationStatus.DRAFT:
+            raise OnboardingVersionConflictError(
+                "Only an unpublished draft can be discarded."
+            )
+        _validate_version(
+            actual_version=draft.draft_revision,
+            expected_version=command.expected_revision,
+            entity_name="onboarding template draft",
+        )
+        template_id = draft.id
+        record_audit_event(
+            session,
+            context=context,
+            action="onboarding_template.draft_discarded",
+            entity_type="onboarding_template",
+            entity_id=str(draft.id),
+            details={"version": draft.version, "draft_revision": draft.draft_revision},
+        )
+        await session.delete(draft)
+
+    return template_id
 
 
 async def _persist_template_task_definitions(
@@ -1363,6 +1666,8 @@ async def start_onboarding(
                 OnboardingTemplate.id == onboarding_template_id,
                 OnboardingTemplate.tenant_id == context.tenant_id,
                 OnboardingTemplate.is_active.is_(True),
+                OnboardingTemplate.publication_status
+                == OnboardingTemplatePublicationStatus.PUBLISHED,
             )
             .with_for_update()
         )

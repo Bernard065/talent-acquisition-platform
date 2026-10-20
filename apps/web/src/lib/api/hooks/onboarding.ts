@@ -10,6 +10,7 @@ import {
   completeOnboarding,
   createOnboardingTemplate,
   createOnboardingTemplateVersion,
+  discardOnboardingTemplateDraft,
   getApplicationOnboarding,
   getEmployeePortalOnboarding,
   getOnboardingTaskActivity,
@@ -20,8 +21,10 @@ import {
   listOnboardingTaskWorklist,
   listOnboardingTemplates,
   listOnboardingTemplateVersions,
+  publishOnboardingTemplateDraft,
   startApplicationOnboarding,
   updateOnboardingTaskDueDate,
+  updateOnboardingTemplateDraft,
   updateEmployeePortalTaskStatus,
   updateOnboardingTaskStatus,
   uploadEmployeeOnboardingTaskDocument,
@@ -31,11 +34,13 @@ import type {
   AssignOnboardingTaskRequest,
   CreateOnboardingTemplateRequest,
   CreateOnboardingTemplateVersionRequest,
+  OnboardingTemplateDraftActionRequest,
   ExpectedInstanceVersionRequest,
   StartOnboardingRequest,
   UpdateOnboardingTaskDueDateRequest,
   UpdateEmployeePortalTaskStatusRequest,
   UpdateOnboardingTaskStatusRequest,
+  UpdateOnboardingTemplateDraftRequest,
   ReviewOnboardingTaskDocumentRequest,
 } from "@/types/api/onboarding";
 import type {
@@ -296,6 +301,49 @@ export function useCreateOnboardingTemplateVersion() {
         queryClient.invalidateQueries({ queryKey: onboardingQueryKeys.templateVersions() }),
       ]);
     },
+  });
+}
+
+function invalidateOnboardingTemplateQueries(queryClient: ReturnType<typeof useQueryClient>) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: onboardingQueryKeys.templates() }),
+    queryClient.invalidateQueries({ queryKey: onboardingQueryKeys.templateVersions() }),
+  ]);
+}
+
+export function useUpdateOnboardingTemplateDraft() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ templateId, request, idempotencyKey }: {
+      templateId: string;
+      request: UpdateOnboardingTemplateDraftRequest;
+      idempotencyKey: string;
+    }) => updateOnboardingTemplateDraft(templateId, request, idempotencyKey),
+    onSuccess: () => invalidateOnboardingTemplateQueries(queryClient),
+  });
+}
+
+export function usePublishOnboardingTemplateDraft() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ templateId, request, idempotencyKey }: {
+      templateId: string;
+      request: OnboardingTemplateDraftActionRequest;
+      idempotencyKey: string;
+    }) => publishOnboardingTemplateDraft(templateId, request, idempotencyKey),
+    onSuccess: () => invalidateOnboardingTemplateQueries(queryClient),
+  });
+}
+
+export function useDiscardOnboardingTemplateDraft() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ templateId, request, idempotencyKey }: {
+      templateId: string;
+      request: OnboardingTemplateDraftActionRequest;
+      idempotencyKey: string;
+    }) => discardOnboardingTemplateDraft(templateId, request, idempotencyKey),
+    onSuccess: () => invalidateOnboardingTemplateQueries(queryClient),
   });
 }
 

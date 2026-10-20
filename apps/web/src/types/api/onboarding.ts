@@ -9,6 +9,7 @@ export type OnboardingTaskStatus =
   | "blocked"
   | "cancelled";
 export type OnboardingTaskResponsibility = "workspace" | "employee";
+export type OnboardingTemplatePublicationStatus = "draft" | "published";
 export type OnboardingTaskWorklistView = "open" | "due_soon" | "overdue" | "completed";
 export type OnboardingTaskEventType =
   | "created"
@@ -41,6 +42,20 @@ export interface CreateOnboardingTemplateVersionRequest {
   tasks: OnboardingTemplateTaskRequest[];
 }
 
+export interface UpdateOnboardingTemplateDraftRequest {
+  expected_revision: number;
+  tasks: OnboardingTemplateTaskRequest[];
+}
+
+export interface OnboardingTemplateDraftActionRequest {
+  expected_revision: number;
+}
+
+export interface OnboardingTemplateDraftDiscardResponse {
+  template_id: string;
+  discarded: true;
+}
+
 export interface OnboardingTemplateTaskResponse extends OnboardingTemplateTaskRequest {
   id: string;
   position: number;
@@ -51,6 +66,8 @@ export interface OnboardingTemplateResponse {
   name: string;
   version: number;
   is_active: boolean;
+  publication_status: OnboardingTemplatePublicationStatus;
+  draft_revision: number;
   created_at: string;
   tasks: OnboardingTemplateTaskResponse[];
 }
