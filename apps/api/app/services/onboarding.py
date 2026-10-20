@@ -22,6 +22,7 @@ from app.db.models.onboarding import (
     OnboardingTaskHistory,
     OnboardingTemplate,
     OnboardingTemplateTask,
+    OnboardingTemplateTaskDependency,
 )
 from app.db.transactions import transactional
 from app.domains.candidates.enums import ApplicationStatus
@@ -103,6 +104,17 @@ class OnboardingTaskWorklistItem:
     assignee_display_name: str | None
     step_number: int
     can_update: bool
+    can_progress: bool
+    prerequisites: tuple["OnboardingTaskPrerequisite", ...]
+
+
+@dataclass(frozen=True, slots=True)
+class OnboardingTaskPrerequisite:
+    """Minimal current state of a prerequisite task."""
+
+    id: UUID
+    title: str
+    status: OnboardingTaskStatus
 
 
 async def list_onboarding_overview(
@@ -142,7 +154,7 @@ async def list_onboarding_overview(
                 select(OnboardingTask.id).where(
                     OnboardingTask.tenant_id == OnboardingInstance.tenant_id,
                     OnboardingTask.onboarding_instance_id == OnboardingInstance.id,
-                    OnboardingTask.due_at < func.current_timestamp(),
+                    OnboardingTask.due_at < func.now(),
                     OnboardingTask.status.not_in(
                         {
                             OnboardingTaskStatus.COMPLETED,
@@ -246,7 +258,7 @@ async def list_onboarding_overview(
         .where(
             OnboardingTask.tenant_id == context.tenant_id,
             OnboardingInstance.status == OnboardingInstanceStatus.ACTIVE,
-            OnboardingTask.due_at < func.current_timestamp(),
+            OnboardingTask.due_at < func.now(),
             OnboardingTask.status.not_in(
                 {
                     OnboardingTaskStatus.COMPLETED,
@@ -425,41 +437,11 @@ async def list_onboarding_task_worklist(
     )
     rows = result.all()
 
-    instance_ids = {row[0].onboarding_instance_id for row in rows}
-    can_update_by_task_id: dict[UUID, bool] = {}
-    if instance_ids:
-        task_states = await session.execute(
-            select(
-                OnboardingTask.onboarding_instance_id,
-                OnboardingTask.id,
-                OnboardingTask.status,
-                OnboardingTemplateTask.position,
-            )
-            .join(
-                OnboardingTemplateTask,
-                OnboardingTemplateTask.id == OnboardingTask.template_task_id,
-            )
-            .where(
-                OnboardingTask.tenant_id == context.tenant_id,
-                OnboardingTask.onboarding_instance_id.in_(instance_ids),
-            )
-            .order_by(
-                OnboardingTask.onboarding_instance_id,
-                OnboardingTemplateTask.position,
-            )
-        )
-        instance_has_blocker: dict[UUID, bool] = {}
-        for instance_id, task_id, task_status, _position in task_states.all():
-            can_update_by_task_id[task_id] = (
-                not instance_has_blocker.get(instance_id, False)
-                and task_status
-                not in {
-                    OnboardingTaskStatus.COMPLETED,
-                    OnboardingTaskStatus.CANCELLED,
-                }
-            )
-            if task_status is not OnboardingTaskStatus.COMPLETED:
-                instance_has_blocker[instance_id] = True
+    prerequisites_by_task_id = await list_onboarding_task_prerequisite_states(
+        session,
+        tenant_id=context.tenant_id,
+        tasks=tuple(row[0] for row in rows),
+    )
 
     worklist_items = [
         OnboardingTaskWorklistItem(
@@ -472,8 +454,17 @@ async def list_onboarding_task_worklist(
             step_number=step_number,
             can_update=(
                 instance_status is OnboardingInstanceStatus.ACTIVE
-                and can_update_by_task_id.get(task.id, False)
+                and task.status
+                not in {
+                    OnboardingTaskStatus.COMPLETED,
+                    OnboardingTaskStatus.CANCELLED,
+                }
             ),
+            can_progress=all(
+                prerequisite.status is OnboardingTaskStatus.COMPLETED
+                for prerequisite in prerequisites_by_task_id.get(task.id, ())
+            ),
+            prerequisites=prerequisites_by_task_id.get(task.id, ()),
         )
         for (
             task,
@@ -556,6 +547,100 @@ async def list_active_onboarding_templates(
         (template, tuple(tasks_by_template.get(template.id, ())))
         for template in templates
     ]
+
+
+async def list_onboarding_template_prerequisite_positions(
+    session: AsyncSession,
+    *,
+    task_ids: tuple[UUID, ...],
+) -> dict[UUID, tuple[int, ...]]:
+    """Return configured prerequisite positions for template task IDs."""
+    if not task_ids:
+        return {}
+
+    rows = await session.execute(
+        select(
+            OnboardingTemplateTaskDependency.task_id,
+            OnboardingTemplateTask.position,
+        )
+        .join(
+            OnboardingTemplateTask,
+            OnboardingTemplateTask.id
+            == OnboardingTemplateTaskDependency.prerequisite_task_id,
+        )
+        .where(OnboardingTemplateTaskDependency.task_id.in_(task_ids))
+        .order_by(
+            OnboardingTemplateTaskDependency.task_id,
+            OnboardingTemplateTask.position,
+        )
+    )
+    positions_by_task_id: dict[UUID, list[int]] = {}
+    for task_id, position in rows:
+        positions_by_task_id.setdefault(task_id, []).append(position)
+    return {
+        task_id: tuple(positions)
+        for task_id, positions in positions_by_task_id.items()
+    }
+
+
+async def list_onboarding_task_prerequisite_states(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    tasks: tuple[OnboardingTask, ...],
+) -> dict[UUID, tuple[OnboardingTaskPrerequisite, ...]]:
+    """Return prerequisite task statuses within each task's own instance."""
+    if not tasks:
+        return {}
+
+    current_task = aliased(OnboardingTask)
+    prerequisite_task = aliased(OnboardingTask)
+    prerequisite_definition = aliased(OnboardingTemplateTask)
+    rows = await session.execute(
+        select(
+            current_task.id,
+            prerequisite_task.id,
+            prerequisite_task.title,
+            prerequisite_task.status,
+        )
+        .join(
+            OnboardingTemplateTaskDependency,
+            OnboardingTemplateTaskDependency.task_id
+            == current_task.template_task_id,
+        )
+        .join(
+            prerequisite_task,
+            and_(
+                prerequisite_task.template_task_id
+                == OnboardingTemplateTaskDependency.prerequisite_task_id,
+                prerequisite_task.onboarding_instance_id
+                == current_task.onboarding_instance_id,
+                prerequisite_task.tenant_id == current_task.tenant_id,
+            ),
+        )
+        .join(
+            prerequisite_definition,
+            prerequisite_definition.id == prerequisite_task.template_task_id,
+        )
+        .where(
+            current_task.tenant_id == tenant_id,
+            current_task.id.in_(tuple(task.id for task in tasks)),
+        )
+        .order_by(current_task.id, prerequisite_definition.position)
+    )
+    prerequisites_by_task_id: dict[UUID, list[OnboardingTaskPrerequisite]] = {}
+    for task_id, prerequisite_id, title, task_status in rows:
+        prerequisites_by_task_id.setdefault(task_id, []).append(
+            OnboardingTaskPrerequisite(
+                id=prerequisite_id,
+                title=title,
+                status=task_status,
+            )
+        )
+    return {
+        task_id: tuple(prerequisites)
+        for task_id, prerequisites in prerequisites_by_task_id.items()
+    }
 
 
 async def get_application_onboarding(
@@ -772,6 +857,7 @@ class OnboardingTemplateTaskDefinition:
     )
     requires_document_upload: bool = False
     requires_document_review: bool = False
+    prerequisite_task_positions: tuple[int, ...] = ()
 
     def __post_init__(self) -> None:
         normalized_title = self.title.strip()
@@ -822,6 +908,16 @@ class OnboardingTemplateTaskDefinition:
             raise OnboardingValidationError(
                 "Document review requires an employee file upload."
             )
+        if any(position < 1 for position in self.prerequisite_task_positions):
+            raise OnboardingValidationError(
+                "Prerequisite task positions must be positive."
+            )
+        if len(set(self.prerequisite_task_positions)) != len(
+            self.prerequisite_task_positions
+        ):
+            raise OnboardingValidationError(
+                "Prerequisite task positions must be unique."
+            )
 
         object.__setattr__(self, "title", normalized_title)
         object.__setattr__(self, "description", normalized_description)
@@ -855,6 +951,15 @@ class CreateOnboardingTemplateCommand:
             raise OnboardingValidationError(
                 "An onboarding template requires at least one task."
             )
+
+        for position, task in enumerate(self.tasks, start=1):
+            if any(
+                prerequisite_position >= position
+                for prerequisite_position in task.prerequisite_task_positions
+            ):
+                raise OnboardingValidationError(
+                    "A task can depend only on an earlier task in the template."
+                )
 
         object.__setattr__(self, "name", normalized_name)
 
@@ -1018,21 +1123,33 @@ async def create_onboarding_template(
         session.add(template)
         await session.flush()
 
+        template_tasks = [
+            OnboardingTemplateTask(
+                onboarding_template_id=template.id,
+                position=position,
+                title=task.title,
+                description=task.description,
+                due_offset_days=task.due_offset_days,
+                default_assignee_role=task.default_assignee_role,
+                responsible_party=task.responsible_party,
+                requires_document_upload=task.requires_document_upload,
+                requires_document_review=task.requires_document_review,
+            )
+            for position, task in enumerate(command.tasks, start=1)
+        ]
+        session.add_all(template_tasks)
+        await session.flush()
+        task_id_by_position = {
+            template_task.position: template_task.id
+            for template_task in template_tasks
+        }
         session.add_all(
-            [
-                OnboardingTemplateTask(
-                    onboarding_template_id=template.id,
-                    position=position,
-                    title=task.title,
-                    description=task.description,
-                    due_offset_days=task.due_offset_days,
-                    default_assignee_role=task.default_assignee_role,
-                    responsible_party=task.responsible_party,
-                    requires_document_upload=task.requires_document_upload,
-                    requires_document_review=task.requires_document_review,
-                )
-                for position, task in enumerate(command.tasks, start=1)
-            ]
+            OnboardingTemplateTaskDependency(
+                task_id=task_id_by_position[position],
+                prerequisite_task_id=task_id_by_position[prerequisite_position],
+            )
+            for position, task in enumerate(command.tasks, start=1)
+            for prerequisite_position in task.prerequisite_task_positions
         )
 
         record_audit_event(
@@ -1119,6 +1236,13 @@ async def start_onboarding(
                 "An onboarding template must contain at least one task."
             )
 
+        prerequisite_positions_by_task_id = (
+            await list_onboarding_template_prerequisite_positions(
+                session,
+                task_ids=tuple(task.id for task in template_tasks),
+            )
+        )
+
         started_at = datetime.now(UTC)
         requested_roles = {
             task.default_assignee_role
@@ -1158,6 +1282,9 @@ async def start_onboarding(
                     "responsible_party": task.responsible_party.value,
                     "requires_document_upload": task.requires_document_upload,
                     "requires_document_review": task.requires_document_review,
+                    "prerequisite_task_positions": list(
+                        prerequisite_positions_by_task_id.get(task.id, ())
+                    ),
                 }
                 for task in template_tasks
             ],
@@ -1295,49 +1422,31 @@ async def _load_active_task(
     return task, instance
 
 
-async def _require_task_predecessors_complete(
+async def _require_task_prerequisites_complete(
     session: AsyncSession,
     *,
     context: TenantContext,
     task: OnboardingTask,
 ) -> None:
-    """Prevent work on a task until every earlier template step is complete."""
-    template_task = await session.scalar(
-        select(OnboardingTemplateTask)
+    """Prevent task progress until its configured prerequisites are complete."""
+    blocking_task_id = await session.scalar(
+        select(OnboardingTask.id)
         .join(
-            OnboardingTemplate,
-            OnboardingTemplateTask.onboarding_template_id == OnboardingTemplate.id,
-        )
-        .where(
-            OnboardingTemplateTask.id == task.template_task_id,
-            OnboardingTemplate.tenant_id == context.tenant_id,
-        )
-    )
-    if template_task is None:
-        raise OnboardingValidationError(
-            "This onboarding task is not linked to a valid template step."
-        )
-
-    blocking_task = await session.scalar(
-        select(OnboardingTask)
-        .join(
-            OnboardingTemplateTask,
-            OnboardingTask.template_task_id == OnboardingTemplateTask.id,
+            OnboardingTemplateTaskDependency,
+            OnboardingTask.template_task_id
+            == OnboardingTemplateTaskDependency.prerequisite_task_id,
         )
         .where(
             OnboardingTask.tenant_id == context.tenant_id,
             OnboardingTask.onboarding_instance_id == task.onboarding_instance_id,
-            OnboardingTemplateTask.onboarding_template_id
-            == template_task.onboarding_template_id,
-            OnboardingTemplateTask.position < template_task.position,
+            OnboardingTemplateTaskDependency.task_id == task.template_task_id,
             OnboardingTask.status != OnboardingTaskStatus.COMPLETED,
         )
-        .order_by(OnboardingTemplateTask.position)
         .limit(1)
     )
-    if blocking_task is not None:
+    if blocking_task_id is not None:
         raise OnboardingValidationError(
-            "Complete the earlier onboarding tasks before changing this task."
+            "Complete this task’s required prerequisites before continuing."
         )
 
 
@@ -1363,12 +1472,6 @@ async def assign_onboarding_task(
             expected_version=expected_task_version,
             entity_name="onboarding task",
         )
-        await _require_task_predecessors_complete(
-            session,
-            context=context,
-            task=task,
-        )
-
         if task.responsible_party is OnboardingTaskResponsibility.EMPLOYEE:
             raise OnboardingValidationError(
                 "Employee-owned tasks cannot be assigned to workspace members."
@@ -1556,11 +1659,12 @@ async def _apply_onboarding_task_status_update(
         expected_version=command.expected_version,
         entity_name="onboarding task",
     )
-    await _require_task_predecessors_complete(
-        session,
-        context=context,
-        task=task,
-    )
+    if command.target_status is not OnboardingTaskStatus.CANCELLED:
+        await _require_task_prerequisites_complete(
+            session,
+            context=context,
+            task=task,
+        )
 
     previous_status = task.status
     validate_task_transition(previous_status, command.target_status)

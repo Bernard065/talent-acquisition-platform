@@ -18,6 +18,7 @@ from app.db.models.onboarding import (
     OnboardingTask,
     OnboardingTaskDocument,
     OnboardingTemplateTask,
+    OnboardingTemplateTaskDependency,
 )
 from app.db.transactions import transactional
 from app.domains.documents.enums import MalwareScanVerdict
@@ -1005,7 +1006,7 @@ async def _require_uploadable_task(
     *,
     task: OnboardingTask,
 ) -> None:
-    """Enforce active plan, task configuration, and ordered-step rules."""
+    """Enforce active plan, task configuration, and prerequisite rules."""
     if not task.requires_document_upload:
         raise OnboardingTaskNotFoundError("Onboarding task was not found.")
     instance = await session.scalar(
@@ -1024,30 +1025,31 @@ async def _require_uploadable_task(
         raise OnboardingValidationError(
             "This onboarding step is not currently accepting a document."
         )
-    position = await session.scalar(
-        select(OnboardingTemplateTask.position).where(
+    task_template_exists = await session.scalar(
+        select(OnboardingTemplateTask.id).where(
             OnboardingTemplateTask.id == task.template_task_id,
         )
     )
-    if position is None:
+    if task_template_exists is None:
         raise OnboardingTaskNotFoundError("Onboarding task was not found.")
-    earlier_incomplete_id = await session.scalar(
+    incomplete_prerequisite_id = await session.scalar(
         select(OnboardingTask.id)
         .join(
-            OnboardingTemplateTask,
-            OnboardingTemplateTask.id == OnboardingTask.template_task_id,
+            OnboardingTemplateTaskDependency,
+            OnboardingTemplateTaskDependency.prerequisite_task_id
+            == OnboardingTask.template_task_id,
         )
         .where(
             OnboardingTask.tenant_id == task.tenant_id,
             OnboardingTask.onboarding_instance_id == task.onboarding_instance_id,
-            OnboardingTemplateTask.position < position,
+            OnboardingTemplateTaskDependency.task_id == task.template_task_id,
             OnboardingTask.status != OnboardingTaskStatus.COMPLETED,
         )
         .limit(1)
     )
-    if earlier_incomplete_id is not None:
+    if incomplete_prerequisite_id is not None:
         raise OnboardingValidationError(
-            "Complete the earlier onboarding steps before uploading this document."
+            "Complete this task’s required prerequisites before uploading a document."
         )
 
 
