@@ -101,6 +101,23 @@ def _headers() -> dict[str, str]:
     return {"Idempotency-Key": str(uuid4())}
 
 
+async def _publish_template_draft(
+    client: AsyncClient,
+    *,
+    template_id: str,
+    draft_revision: int,
+) -> None:
+    """Publish a saved draft before using it to start onboarding."""
+    response = await client.post(
+        f"/api/v1/onboarding-templates/{template_id}/publish",
+        json={"expected_revision": draft_revision},
+        headers=_headers(),
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["publication_status"] == "published"
+
+
 def _template_payload(*, task_count: int = 1) -> dict[str, object]:
     """Build a valid onboarding template payload."""
     return {
@@ -260,7 +277,7 @@ async def api_app_fixture(
 async def test_creates_template_idempotently_with_private_response(
     api_app: FastAPI,
 ) -> None:
-    """Persist one template and replay the exact response for the same key."""
+    """Save one draft and replay its response for the same idempotency key."""
     headers = _headers()
     payload = _template_payload()
 
@@ -283,6 +300,8 @@ async def test_creates_template_idempotently_with_private_response(
     assert replay.status_code == 201
     assert first.json() == replay.json()
     assert first.json()["name"] == "Standard employee onboarding"
+    assert first.json()["publication_status"] == "draft"
+    assert first.json()["draft_revision"] == 1
     assert first.headers["Cache-Control"] == "private, no-store"
     assert first.headers["Idempotent-Replayed"] == "false"
     assert replay.headers["Idempotent-Replayed"] == "true"
@@ -310,6 +329,11 @@ async def test_starts_assigns_updates_and_completes_onboarding(
             headers=_headers(),
         )
         template_id = template.json()["id"]
+        await _publish_template_draft(
+            client,
+            template_id=template_id,
+            draft_revision=template.json()["draft_revision"],
+        )
 
         started = await client.post(
             f"/api/v1/applications/{application.id}/onboarding-instances",
@@ -384,6 +408,11 @@ async def test_replays_task_status_update_and_rejects_stale_version(
             json=_template_payload(),
             headers=_headers(),
         )
+        await _publish_template_draft(
+            client,
+            template_id=template.json()["id"],
+            draft_revision=template.json()["draft_revision"],
+        )
         started = await client.post(
             f"/api/v1/applications/{application.id}/onboarding-instances",
             json={"onboarding_template_id": template.json()["id"]},
@@ -447,6 +476,11 @@ async def test_cancels_active_onboarding(
             json=_template_payload(task_count=2),
             headers=_headers(),
         )
+        await _publish_template_draft(
+            client,
+            template_id=template.json()["id"],
+            draft_revision=template.json()["draft_revision"],
+        )
         started = await client.post(
             f"/api/v1/applications/{application.id}/onboarding-instances",
             json={"onboarding_template_id": template.json()["id"]},
@@ -509,6 +543,11 @@ async def test_enforces_authorization_tenant_isolation_and_strict_fields(
             "/api/v1/onboarding-templates",
             json=_template_payload(),
             headers=_headers(),
+        )
+        await _publish_template_draft(
+            client,
+            template_id=owner_template.json()["id"],
+            draft_revision=owner_template.json()["draft_revision"],
         )
         owner_instance = await client.post(
             f"/api/v1/applications/{owner_application.id}/onboarding-instances",
