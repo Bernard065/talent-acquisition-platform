@@ -57,6 +57,7 @@ from app.db.models.onboarding import (
     OnboardingTaskHistory,
     OnboardingTemplate,
     OnboardingTemplateTask,
+    OnboardingTemplateTaskDependency,
 )
 from app.db.models.outbox import OutboxEvent
 from app.db.models.requisition import Requisition
@@ -116,6 +117,7 @@ __all__ = [
     "OnboardingTaskHistory",
     "OnboardingTemplate",
     "OnboardingTemplateTask",
+    "OnboardingTemplateTaskDependency",
     "OutboxEvent",
     "Requisition",
     "RequisitionApproval",
