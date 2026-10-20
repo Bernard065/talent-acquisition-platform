@@ -542,6 +542,7 @@ async def _render_delivery_message(
             recipient_email=recipient_email,
             review_queue_url=(
                 f"{web_app_base_url.rstrip('/')}/dashboard/onboarding/document-reviews"
+                f"?documentId={notification.entity_id}"
             ),
         )
 
