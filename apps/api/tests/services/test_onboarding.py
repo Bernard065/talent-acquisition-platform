@@ -17,6 +17,8 @@ from app.db.models.onboarding import (
     OnboardingInstanceHistory,
     OnboardingTask,
     OnboardingTaskHistory,
+    OnboardingTemplate,
+    OnboardingTemplateTask,
 )
 from app.db.models.outbox import OutboxEvent
 from app.db.models.requisition import Requisition
@@ -26,22 +28,33 @@ from app.domains.onboarding.enums import (
     OnboardingInstanceStatus,
     OnboardingTaskEventType,
     OnboardingTaskStatus,
+    OnboardingTemplatePublicationStatus,
 )
 from app.domains.requisitions.enums import RequisitionStatus
 from app.services.onboarding import (
     CreateOnboardingTemplateCommand,
+    CreateOnboardingTemplateVersionCommand,
+    OnboardingTemplateDraftActionCommand,
     OnboardingTemplateTaskDefinition,
     UpdateOnboardingTaskStatusCommand,
+    UpdateOnboardingTemplateDraftCommand,
     assign_onboarding_task,
     cancel_onboarding,
     complete_onboarding,
     create_onboarding_template,
+    create_onboarding_template_draft,
+    create_onboarding_template_version_draft,
+    discard_onboarding_template_draft,
+    list_active_onboarding_templates,
+    publish_onboarding_template_draft,
     start_onboarding,
     update_onboarding_task_status,
+    update_onboarding_template_draft,
 )
 from app.services.onboarding_errors import (
     OnboardingAccessDeniedError,
     OnboardingTaskNotFoundError,
+    OnboardingTemplateNotFoundError,
     OnboardingValidationError,
     OnboardingVersionConflictError,
 )
@@ -160,6 +173,38 @@ async def _create_template(
     )
 
 
+def _template_task_definitions(
+    *titles: str,
+) -> tuple[OnboardingTemplateTaskDefinition, ...]:
+    """Build ordered task definitions with distinct due offsets."""
+    return tuple(
+        OnboardingTemplateTaskDefinition(
+            title=title,
+            due_offset_days=position,
+            default_assignee_role=Role.PEOPLE_OPERATIONS,
+        )
+        for position, title in enumerate(titles, start=1)
+    )
+
+
+async def _create_template_draft(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    name: str = "Draft employee onboarding",
+    task_titles: tuple[str, ...] = ("Collect employee details",),
+) -> OnboardingTemplate:
+    """Create a draft for one tenant through the application service."""
+    return await create_onboarding_template_draft(
+        session,
+        context=_context(tenant_id),
+        command=CreateOnboardingTemplateCommand(
+            name=name,
+            tasks=_template_task_definitions(*task_titles),
+        ),
+    )
+
+
 async def _start_onboarding_with_tasks(
     session: AsyncSession,
     *,
@@ -215,9 +260,7 @@ async def test_starts_hired_application_with_snapshot_history_and_safe_audit(
     )
     tasks = list(
         await session.scalars(
-            select(OnboardingTask).where(
-                OnboardingTask.onboarding_instance_id == instance.id
-            )
+            select(OnboardingTask).where(OnboardingTask.onboarding_instance_id == instance.id)
         )
     )
     history = await session.scalar(
@@ -381,10 +424,7 @@ async def test_assigns_and_transitions_task_with_history_and_concurrency(
         )
     )
 
-    notification_types = {
-        event.payload["notification_event_type"]
-        for event in notification_events
-    }
+    notification_types = {event.payload["notification_event_type"] for event in notification_events}
 
     assert "onboarding.started" in notification_types
     assert "onboarding.task_assigned" in notification_types
@@ -547,8 +587,7 @@ async def test_cancellation_cancels_non_terminal_tasks_atomically(
     instance_history = await session.scalar(
         select(OnboardingInstanceHistory).where(
             OnboardingInstanceHistory.onboarding_instance_id == instance.id,
-            OnboardingInstanceHistory.event_type
-            == OnboardingInstanceEventType.CANCELLED,
+            OnboardingInstanceHistory.event_type == OnboardingInstanceEventType.CANCELLED,
         )
     )
 
@@ -615,3 +654,246 @@ async def test_concurrent_task_updates_allow_only_one_current_version(
     )
 
     assert sorted(outcomes) == ["updated", "version_conflict"]
+
+
+@pytest.mark.asyncio
+async def test_template_draft_revision_and_publication_lifecycle(
+    session: AsyncSession,
+) -> None:
+    """Keep drafts unavailable until published and reject stale revisions."""
+    tenant_id = uuid4()
+    await _seed_hired_application(session, tenant_id=tenant_id)
+    draft = await _create_template_draft(session, tenant_id=tenant_id)
+
+    assert draft.publication_status is OnboardingTemplatePublicationStatus.DRAFT
+    assert draft.is_active is False
+    assert draft.draft_revision == 1
+    assert (
+        await list_active_onboarding_templates(
+            session,
+            context=_context(tenant_id),
+        )
+        == []
+    )
+
+    updated = await update_onboarding_template_draft(
+        session,
+        context=_context(tenant_id),
+        template_id=draft.id,
+        command=UpdateOnboardingTemplateDraftCommand(
+            expected_revision=1,
+            tasks=_template_task_definitions(
+                "Collect employee details",
+                "Review employment documents",
+            ),
+        ),
+    )
+    stored_tasks = list(
+        await session.scalars(
+            select(OnboardingTemplateTask)
+            .where(OnboardingTemplateTask.onboarding_template_id == draft.id)
+            .order_by(OnboardingTemplateTask.position)
+        )
+    )
+
+    assert updated.draft_revision == 2
+    assert [task.title for task in stored_tasks] == [
+        "Collect employee details",
+        "Review employment documents",
+    ]
+
+    with pytest.raises(OnboardingVersionConflictError):
+        await update_onboarding_template_draft(
+            session,
+            context=_context(tenant_id),
+            template_id=draft.id,
+            command=UpdateOnboardingTemplateDraftCommand(
+                expected_revision=1,
+                tasks=_template_task_definitions("Stale edit"),
+            ),
+        )
+
+    with pytest.raises(OnboardingVersionConflictError):
+        await publish_onboarding_template_draft(
+            session,
+            context=_context(tenant_id),
+            template_id=draft.id,
+            command=OnboardingTemplateDraftActionCommand(expected_revision=1),
+        )
+
+    published = await publish_onboarding_template_draft(
+        session,
+        context=_context(tenant_id),
+        template_id=draft.id,
+        command=OnboardingTemplateDraftActionCommand(expected_revision=2),
+    )
+    active_templates = await list_active_onboarding_templates(
+        session,
+        context=_context(tenant_id),
+    )
+
+    assert published.publication_status is OnboardingTemplatePublicationStatus.PUBLISHED
+    assert published.is_active is True
+    assert published.draft_revision == 2
+    assert [template.id for template, _ in active_templates] == [draft.id]
+
+
+@pytest.mark.asyncio
+async def test_publishing_template_version_preserves_existing_onboarding_snapshot(
+    session: AsyncSession,
+) -> None:
+    """Keep the prior version active until publish and preserve existing plans."""
+    tenant_id = uuid4()
+    application, _ = await _seed_hired_application(
+        session,
+        tenant_id=tenant_id,
+    )
+    first_draft = await _create_template_draft(
+        session,
+        tenant_id=tenant_id,
+        name="Versioned onboarding",
+        task_titles=("Prepare the workstation",),
+    )
+    first_version = await publish_onboarding_template_draft(
+        session,
+        context=_context(tenant_id),
+        template_id=first_draft.id,
+        command=OnboardingTemplateDraftActionCommand(expected_revision=1),
+    )
+    instance = await start_onboarding(
+        session,
+        context=_context(tenant_id),
+        application_id=application.id,
+        onboarding_template_id=first_version.id,
+    )
+
+    second_draft = await create_onboarding_template_version_draft(
+        session,
+        context=_context(tenant_id),
+        template_id=first_version.id,
+        command=CreateOnboardingTemplateVersionCommand(
+            expected_version=1,
+            tasks=_template_task_definitions(
+                "Prepare the workstation",
+                "Schedule orientation",
+            ),
+        ),
+    )
+    active_before_publish = await list_active_onboarding_templates(
+        session,
+        context=_context(tenant_id),
+    )
+
+    assert second_draft.version == 2
+    assert second_draft.publication_status is OnboardingTemplatePublicationStatus.DRAFT
+    assert first_version.is_active is True
+    assert [template.id for template, _ in active_before_publish] == [first_version.id]
+
+    second_version = await publish_onboarding_template_draft(
+        session,
+        context=_context(tenant_id),
+        template_id=second_draft.id,
+        command=OnboardingTemplateDraftActionCommand(expected_revision=1),
+    )
+    active_after_publish = await list_active_onboarding_templates(
+        session,
+        context=_context(tenant_id),
+    )
+
+    assert first_version.is_active is False
+    assert second_version.is_active is True
+    assert [template.id for template, _ in active_after_publish] == [second_version.id]
+    assert instance.onboarding_template_id == first_version.id
+    assert instance.template_snapshot["template_id"] == str(first_version.id)
+    assert instance.template_snapshot["template_version"] == 1
+    assert instance.template_snapshot["tasks"][0]["title"] == ("Prepare the workstation")
+
+
+@pytest.mark.asyncio
+async def test_discarding_draft_preserves_published_template_and_enforces_scope(
+    session: AsyncSession,
+) -> None:
+    """Discard only a tenant-owned draft and record the action in the audit log."""
+    tenant_id = uuid4()
+    await _seed_hired_application(session, tenant_id=tenant_id)
+    first_draft = await _create_template_draft(
+        session,
+        tenant_id=tenant_id,
+        name="Retained published template",
+    )
+    published = await publish_onboarding_template_draft(
+        session,
+        context=_context(tenant_id),
+        template_id=first_draft.id,
+        command=OnboardingTemplateDraftActionCommand(expected_revision=1),
+    )
+    draft = await create_onboarding_template_version_draft(
+        session,
+        context=_context(tenant_id),
+        template_id=published.id,
+        command=CreateOnboardingTemplateVersionCommand(
+            expected_version=1,
+            tasks=_template_task_definitions("Updated onboarding task"),
+        ),
+    )
+
+    other_tenant_id = uuid4()
+    session.add(
+        Tenant(
+            id=other_tenant_id,
+            name="Other onboarding tenant",
+            slug=f"other-onboarding-{other_tenant_id.hex[:12]}",
+        )
+    )
+    await session.flush()
+
+    with pytest.raises(OnboardingTemplateNotFoundError):
+        await update_onboarding_template_draft(
+            session,
+            context=_context(other_tenant_id),
+            template_id=draft.id,
+            command=UpdateOnboardingTemplateDraftCommand(
+                expected_revision=1,
+                tasks=_template_task_definitions("Cross-tenant edit"),
+            ),
+        )
+
+    with pytest.raises(OnboardingAccessDeniedError):
+        await discard_onboarding_template_draft(
+            session,
+            context=_context(tenant_id, roles=frozenset({Role.RECRUITER})),
+            template_id=draft.id,
+            command=OnboardingTemplateDraftActionCommand(expected_revision=1),
+        )
+
+    with pytest.raises(OnboardingVersionConflictError):
+        await discard_onboarding_template_draft(
+            session,
+            context=_context(tenant_id),
+            template_id=draft.id,
+            command=OnboardingTemplateDraftActionCommand(expected_revision=2),
+        )
+
+    discarded_id = await discard_onboarding_template_draft(
+        session,
+        context=_context(tenant_id),
+        template_id=draft.id,
+        command=OnboardingTemplateDraftActionCommand(expected_revision=1),
+    )
+    remaining_templates = list(
+        await session.scalars(
+            select(OnboardingTemplate).where(OnboardingTemplate.tenant_id == tenant_id)
+        )
+    )
+    audit_event = await session.scalar(
+        select(AuditEvent).where(
+            AuditEvent.action == "onboarding_template.draft_discarded",
+            AuditEvent.entity_id == str(draft.id),
+        )
+    )
+
+    assert discarded_id == draft.id
+    assert {template.id for template in remaining_templates} == {published.id}
+    assert published.publication_status is OnboardingTemplatePublicationStatus.PUBLISHED
+    assert published.is_active is True
+    assert audit_event is not None
