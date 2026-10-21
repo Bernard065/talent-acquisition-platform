@@ -15,15 +15,28 @@ from app.api.v1.schemas.employee_records import (
     EmployeeDirectoryFilterOptionsResponse,
     EmployeeDirectoryItemResponse,
     EmployeeDirectoryResponse,
+    EmployeeOffboardingChecklistResponse,
+    EmployeeOffboardingTaskResponse,
+    EmployeeOffboardingTaskUpdateRequest,
     EmployeeRecordResponse,
     LinkEmployeeAccountRequest,
     LinkEmployeeAccountResponse,
+    OffboardingTemplateResponse,
+    OffboardingTemplateTaskResponse,
+    ReplaceOffboardingTemplateRequest,
     StartEmployeeOffboardingRequest,
     UpdateEmployeeRecordRequest,
 )
 from app.core.authorization import Role, TenantContext
 from app.db.models.employee import Employee
 from app.domains.employees.enums import EmployeeStatus
+from app.services.employee_offboarding import (
+    OffboardingTemplateTaskCommand,
+    list_employee_offboarding_tasks,
+    list_offboarding_template_tasks,
+    replace_offboarding_template_tasks,
+    update_employee_offboarding_task,
+)
 from app.services.employee_records import (
     cancel_employee_offboarding,
     create_application_employee_record,
@@ -296,6 +309,121 @@ async def cancel_employee_offboarding_endpoint(
         key=idempotency_key,
         operation_name=f"employee_record.offboarding.cancel:{employee_id}",
         payload={"employee_id": str(employee_id), **payload.model_dump(mode="json")},
+        operation=operation,
+    )
+    return _private_response(result)
+
+
+@router.get(
+    "/employee-offboarding-template",
+    response_model=OffboardingTemplateResponse,
+    summary="Get the workspace offboarding checklist template",
+)
+async def get_offboarding_template_endpoint(
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+) -> OffboardingTemplateResponse:
+    tasks = await list_offboarding_template_tasks(session, context=context)
+    response.headers["Cache-Control"] = "private, no-store"
+    return OffboardingTemplateResponse(
+        items=[OffboardingTemplateTaskResponse.model_validate(task) for task in tasks]
+    )
+
+
+@router.put(
+    "/employee-offboarding-template",
+    response_model=OffboardingTemplateResponse,
+    summary="Replace the workspace offboarding checklist template",
+)
+async def replace_offboarding_template_endpoint(
+    payload: ReplaceOffboardingTemplateRequest,
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+) -> OffboardingTemplateResponse:
+    tasks = await replace_offboarding_template_tasks(
+        session,
+        context=context,
+        tasks=tuple(
+            OffboardingTemplateTaskCommand(
+                title=item.title,
+                description=item.description,
+                due_days_before_last_working_day=(item.due_days_before_last_working_day),
+            )
+            for item in payload.items
+        ),
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return OffboardingTemplateResponse(
+        items=[OffboardingTemplateTaskResponse.model_validate(task) for task in tasks]
+    )
+
+
+@router.get(
+    "/employee-records/{employee_id}/offboarding-tasks",
+    response_model=EmployeeOffboardingChecklistResponse,
+    summary="Get the current employee offboarding checklist",
+)
+async def list_employee_offboarding_tasks_endpoint(
+    employee_id: UUID,
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+) -> EmployeeOffboardingChecklistResponse:
+    rows, completed_count, total_count = await list_employee_offboarding_tasks(
+        session,
+        context=context,
+        employee_id=employee_id,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return EmployeeOffboardingChecklistResponse(
+        items=[
+            EmployeeOffboardingTaskResponse.model_validate(task).model_copy(
+                update={"assigned_to_name": assignee_name}
+            )
+            for task, assignee_name in rows
+        ],
+        completed_count=completed_count,
+        total_count=total_count,
+    )
+
+
+@router.patch(
+    "/employee-offboarding-tasks/{task_id}",
+    response_model=EmployeeOffboardingTaskResponse,
+    summary="Update an employee offboarding checklist task",
+)
+async def update_employee_offboarding_task_endpoint(
+    task_id: UUID,
+    payload: EmployeeOffboardingTaskUpdateRequest,
+    context: CallerContext,
+    session: DatabaseSession,
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    async def operation() -> tuple[int, dict[str, Any]]:
+        changes = payload.model_dump(
+            exclude={"expected_version"},
+            exclude_unset=True,
+        )
+        task = await update_employee_offboarding_task(
+            session,
+            context=context,
+            task_id=task_id,
+            expected_version=payload.expected_version,
+            changes=changes,
+        )
+        return (
+            status.HTTP_200_OK,
+            EmployeeOffboardingTaskResponse.model_validate(task).model_dump(mode="json"),
+        )
+
+    result = await execute_idempotently(
+        session,
+        context=context,
+        key=idempotency_key,
+        operation_name=f"employee_offboarding.task.update:{task_id}",
+        payload=payload.model_dump(mode="json"),
         operation=operation,
     )
     return _private_response(result)
