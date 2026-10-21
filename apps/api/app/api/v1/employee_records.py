@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import get_db_session, get_tenant_context
 from app.api.idempotency import IdempotencyKey, idempotency_response
 from app.api.v1.schemas.employee_records import (
+    CancelEmployeeOffboardingRequest,
     CreateEmployeeRecordRequest,
     EmployeeDirectoryFilterOptionsResponse,
     EmployeeDirectoryItemResponse,
@@ -17,16 +18,20 @@ from app.api.v1.schemas.employee_records import (
     EmployeeRecordResponse,
     LinkEmployeeAccountRequest,
     LinkEmployeeAccountResponse,
+    StartEmployeeOffboardingRequest,
     UpdateEmployeeRecordRequest,
 )
-from app.core.authorization import TenantContext
+from app.core.authorization import Role, TenantContext
+from app.db.models.employee import Employee
 from app.domains.employees.enums import EmployeeStatus
 from app.services.employee_records import (
+    cancel_employee_offboarding,
     create_application_employee_record,
     get_application_employee_record,
     get_employee_directory_filter_options,
     link_employee_account,
     list_employee_records,
+    start_employee_offboarding,
     update_employee_record,
 )
 from app.services.idempotency import IdempotencyResult, execute_idempotently
@@ -34,6 +39,21 @@ from app.services.idempotency import IdempotencyResult, execute_idempotently
 router = APIRouter(tags=["Employee records"])
 CallerContext = Annotated[TenantContext, Depends(get_tenant_context)]
 DatabaseSession = Annotated[AsyncSession, Depends(get_db_session)]
+_OFFBOARDING_DETAIL_ROLES = frozenset({Role.TENANT_ADMIN, Role.PEOPLE_OPERATIONS})
+
+
+def _employee_record_response(
+    employee: Employee,
+    *,
+    context: TenantContext,
+) -> EmployeeRecordResponse:
+    """Serialize an employee and keep planned departure details HR-only."""
+    response = EmployeeRecordResponse.model_validate(employee)
+    if context.roles.isdisjoint(_OFFBOARDING_DETAIL_ROLES):
+        response = response.model_copy(
+            update={"last_working_day": None, "offboarding_reason": None}
+        )
+    return response
 
 
 @router.get(
@@ -67,7 +87,7 @@ async def list_employee_records_endpoint(
     return EmployeeDirectoryResponse(
         items=[
             EmployeeDirectoryItemResponse(
-                **EmployeeRecordResponse.model_validate(employee).model_dump(),
+                **_employee_record_response(employee, context=context).model_dump(),
                 employee_name=employee_name,
             )
             for employee, employee_name in rows
@@ -123,7 +143,7 @@ async def get_application_employee_record_endpoint(
         application_id=application_id,
     )
     response.headers["Cache-Control"] = "private, no-store"
-    return EmployeeRecordResponse.model_validate(employee) if employee else None
+    return _employee_record_response(employee, context=context) if employee else None
 
 
 @router.post(
@@ -151,7 +171,7 @@ async def create_application_employee_record_endpoint(
         )
         return (
             status.HTTP_201_CREATED,
-            EmployeeRecordResponse.model_validate(employee).model_dump(mode="json"),
+            _employee_record_response(employee, context=context).model_dump(mode="json"),
         )
 
     result = await execute_idempotently(
@@ -191,7 +211,7 @@ async def update_employee_record_endpoint(
         )
         return (
             status.HTTP_200_OK,
-            EmployeeRecordResponse.model_validate(employee).model_dump(mode="json"),
+            _employee_record_response(employee, context=context).model_dump(mode="json"),
         )
 
     result = await execute_idempotently(
@@ -200,6 +220,82 @@ async def update_employee_record_endpoint(
         key=idempotency_key,
         operation_name=f"employee_record.update:{employee_id}",
         payload=payload.model_dump(mode="json"),
+        operation=operation,
+    )
+    return _private_response(result)
+
+
+@router.post(
+    "/employee-records/{employee_id}/offboarding",
+    response_model=EmployeeRecordResponse,
+    summary="Start employee offboarding",
+)
+async def start_employee_offboarding_endpoint(
+    employee_id: UUID,
+    payload: StartEmployeeOffboardingRequest,
+    context: CallerContext,
+    session: DatabaseSession,
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Record the planned final working day and reason for an employee."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        employee = await start_employee_offboarding(
+            session,
+            context=context,
+            employee_id=employee_id,
+            expected_version=payload.expected_version,
+            last_working_day=payload.last_working_day,
+            reason=payload.reason,
+        )
+        return (
+            status.HTTP_200_OK,
+            _employee_record_response(employee, context=context).model_dump(mode="json"),
+        )
+
+    result = await execute_idempotently(
+        session,
+        context=context,
+        key=idempotency_key,
+        operation_name=f"employee_record.offboarding.start:{employee_id}",
+        payload={"employee_id": str(employee_id), **payload.model_dump(mode="json")},
+        operation=operation,
+    )
+    return _private_response(result)
+
+
+@router.post(
+    "/employee-records/{employee_id}/offboarding/cancel",
+    response_model=EmployeeRecordResponse,
+    summary="Cancel employee offboarding",
+)
+async def cancel_employee_offboarding_endpoint(
+    employee_id: UUID,
+    payload: CancelEmployeeOffboardingRequest,
+    context: CallerContext,
+    session: DatabaseSession,
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Restore an employee to active and retain the cancelled plan in audit history."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        employee = await cancel_employee_offboarding(
+            session,
+            context=context,
+            employee_id=employee_id,
+            expected_version=payload.expected_version,
+        )
+        return (
+            status.HTTP_200_OK,
+            _employee_record_response(employee, context=context).model_dump(mode="json"),
+        )
+
+    result = await execute_idempotently(
+        session,
+        context=context,
+        key=idempotency_key,
+        operation_name=f"employee_record.offboarding.cancel:{employee_id}",
+        payload={"employee_id": str(employee_id), **payload.model_dump(mode="json")},
         operation=operation,
     )
     return _private_response(result)
