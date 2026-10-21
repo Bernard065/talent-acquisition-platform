@@ -19,6 +19,7 @@ from app.domains.candidates.enums import ApplicationStatus
 from app.domains.employees.enums import EmployeeOffboardingReason, EmployeeStatus
 from app.services.audit import record_audit_event
 from app.services.candidate_errors import ApplicationNotFoundError
+from app.services.employee_offboarding import create_offboarding_tasks_for_cycle
 from app.services.onboarding_errors import (
     EmployeeRecordNotFoundError,
     OnboardingAccessDeniedError,
@@ -27,12 +28,8 @@ from app.services.onboarding_errors import (
 )
 
 _EMPLOYEE_ROLES = frozenset({Role.TENANT_ADMIN, Role.PEOPLE_OPERATIONS, Role.RECRUITER})
-_EMPLOYEE_ACCOUNT_ADMIN_ROLES = frozenset(
-    {Role.TENANT_ADMIN, Role.PEOPLE_OPERATIONS}
-)
-_EMPLOYEE_OFFBOARDING_ADMIN_ROLES = frozenset(
-    {Role.TENANT_ADMIN, Role.PEOPLE_OPERATIONS}
-)
+_EMPLOYEE_ACCOUNT_ADMIN_ROLES = frozenset({Role.TENANT_ADMIN, Role.PEOPLE_OPERATIONS})
+_EMPLOYEE_OFFBOARDING_ADMIN_ROLES = frozenset({Role.TENANT_ADMIN, Role.PEOPLE_OPERATIONS})
 
 
 def _require_employee_access(context: TenantContext) -> None:
@@ -477,9 +474,7 @@ async def start_employee_offboarding(
                 "Employee record has changed; reload before starting offboarding."
             )
         if employee.status is not EmployeeStatus.ACTIVE:
-            raise OnboardingValidationError(
-                "Only an active employee can start offboarding."
-            )
+            raise OnboardingValidationError("Only an active employee can start offboarding.")
         if employee.start_date is not None and last_working_day < employee.start_date:
             raise OnboardingValidationError(
                 "The last working day cannot be before the employee's start date."
@@ -488,6 +483,12 @@ async def start_employee_offboarding(
         employee.status = EmployeeStatus.OFFBOARDING
         employee.last_working_day = last_working_day
         employee.offboarding_reason = reason
+        offboarding_tasks = await create_offboarding_tasks_for_cycle(
+            session,
+            context=context,
+            employee=employee,
+            last_working_day=last_working_day,
+        )
         record_audit_event(
             session,
             context=context,
@@ -497,6 +498,8 @@ async def start_employee_offboarding(
             details={
                 "last_working_day": last_working_day.isoformat(),
                 "reason": reason.value,
+                "offboarding_cycle_id": str(employee.offboarding_cycle_id),
+                "checklist_task_count": len(offboarding_tasks),
             },
         )
         await session.flush()
@@ -537,9 +540,11 @@ async def cancel_employee_offboarding(
 
         previous_last_working_day = employee.last_working_day
         previous_reason = employee.offboarding_reason
+        previous_cycle_id = employee.offboarding_cycle_id
         employee.status = EmployeeStatus.ACTIVE
         employee.last_working_day = None
         employee.offboarding_reason = None
+        employee.offboarding_cycle_id = None
         record_audit_event(
             session,
             context=context,
@@ -553,6 +558,9 @@ async def cancel_employee_offboarding(
                     else None
                 ),
                 "reason": previous_reason.value if previous_reason is not None else None,
+                "offboarding_cycle_id": (
+                    str(previous_cycle_id) if previous_cycle_id is not None else None
+                ),
             },
         )
         await session.flush()
@@ -600,9 +608,7 @@ async def link_employee_account(
                 .with_for_update()
             )
             if user is None:
-                raise OnboardingValidationError(
-                    "Select an existing member of this workspace."
-                )
+                raise OnboardingValidationError("Select an existing member of this workspace.")
             candidate_email = await session.scalar(
                 select(Candidate.email).where(
                     Candidate.id == employee.candidate_id,
@@ -640,9 +646,7 @@ async def link_employee_account(
             entity_type="employee",
             entity_id=str(employee.id),
             details={
-                "previous_user_id": str(previous_user_id)
-                if previous_user_id
-                else None,
+                "previous_user_id": str(previous_user_id) if previous_user_id else None,
                 "user_id": str(user_id) if user_id else None,
             },
         )
@@ -650,5 +654,3 @@ async def link_employee_account(
         await session.refresh(employee)
 
     return employee
-
-

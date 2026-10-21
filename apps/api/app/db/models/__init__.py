@@ -29,6 +29,10 @@ from app.db.models.candidate_retention_policy import CandidateRetentionPolicy
 from app.db.models.candidate_retention_review import CandidateRetentionReview
 from app.db.models.candidate_talent_pool_consent import CandidateTalentPoolConsentEvent
 from app.db.models.employee import Employee
+from app.db.models.employee_offboarding import (
+    EmployeeOffboardingTask,
+    EmployeeOffboardingTemplateTask,
+)
 from app.db.models.hris import HrisConnection, HrisHandoff
 from app.db.models.idempotency import IdempotencyRecord
 from app.db.models.identity import Tenant, User, UserRoleAssignment, WorkspaceInvitation
@@ -89,6 +93,8 @@ __all__ = [
     "CandidateRetentionReview",
     "CandidateTalentPoolConsentEvent",
     "Employee",
+    "EmployeeOffboardingTask",
+    "EmployeeOffboardingTemplateTask",
     "CandidateRetentionHold",
     "CalendarConnection",
     "HrisConnection",

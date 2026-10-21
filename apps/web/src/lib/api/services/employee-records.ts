@@ -4,9 +4,14 @@ import type {
   CancelEmployeeOffboardingRequest,
   EmployeeDirectoryFilterOptionsResponse,
   EmployeeDirectoryResponse,
+  EmployeeOffboardingChecklistResponse,
+  EmployeeOffboardingTaskResponse,
+  EmployeeOffboardingTaskUpdateRequest,
   EmployeeRecordResponse,
   LinkEmployeeAccountRequest,
   LinkEmployeeAccountResponse,
+  OffboardingTemplateResponse,
+  ReplaceOffboardingTemplateRequest,
   StartEmployeeOffboardingRequest,
   UpdateEmployeeRecordRequest,
 } from "@/types/api/employee-records";
@@ -94,6 +99,44 @@ export function cancelEmployeeOffboarding(
 ) {
   return post<EmployeeRecordResponse>(
     `/employee-records/${employeeId}/offboarding/cancel`,
+    request,
+    { ...options, idempotencyKey },
+  );
+}
+
+export function getOffboardingTemplate(options?: RequestOptions) {
+  return get<OffboardingTemplateResponse>("/employee-offboarding-template", options);
+}
+
+export function replaceOffboardingTemplate(
+  request: ReplaceOffboardingTemplateRequest,
+  options?: RequestOptions,
+) {
+  return put<OffboardingTemplateResponse>(
+    "/employee-offboarding-template",
+    request,
+    options,
+  );
+}
+
+export function getEmployeeOffboardingChecklist(
+  employeeId: string,
+  options?: RequestOptions,
+) {
+  return get<EmployeeOffboardingChecklistResponse>(
+    `/employee-records/${employeeId}/offboarding-tasks`,
+    options,
+  );
+}
+
+export function updateEmployeeOffboardingTask(
+  taskId: string,
+  request: EmployeeOffboardingTaskUpdateRequest,
+  idempotencyKey: string,
+  options?: RequestOptions,
+) {
+  return patch<EmployeeOffboardingTaskResponse>(
+    `/employee-offboarding-tasks/${taskId}`,
     request,
     { ...options, idempotencyKey },
   );

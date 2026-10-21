@@ -6,7 +6,9 @@ import type {
   CancelEmployeeOffboardingRequest,
   CreateEmployeeRecordRequest,
   EmployeeRecordResponse,
+  EmployeeOffboardingTaskUpdateRequest,
   LinkEmployeeAccountRequest,
+  ReplaceOffboardingTemplateRequest,
   StartEmployeeOffboardingRequest,
   UpdateEmployeeRecordRequest,
 } from "@/types/api/employee-records";
@@ -18,7 +20,11 @@ import {
   getApplicationEmployeeRecord,
   listEmployeeRecords,
   linkEmployeeAccount,
+  getEmployeeOffboardingChecklist,
+  getOffboardingTemplate,
+  replaceOffboardingTemplate,
   startEmployeeOffboarding,
+  updateEmployeeOffboardingTask,
   updateEmployeeRecord,
 } from "../services/employee-records";
 
@@ -28,6 +34,9 @@ export const employeeRecordQueryKeys = {
   list: (params: EmployeeDirectoryParams = {}) =>
     [...employeeRecordQueryKeys.lists(), params] as const,
   filterOptions: () => [...employeeRecordQueryKeys.all, "filter-options"] as const,
+  offboardingTemplate: () => [...employeeRecordQueryKeys.all, "offboarding-template"] as const,
+  offboardingTasks: (employeeId: string) =>
+    [...employeeRecordQueryKeys.all, "offboarding-tasks", employeeId] as const,
   application: (applicationId: string) =>
     [...employeeRecordQueryKeys.all, applicationId] as const,
 };
@@ -38,6 +47,57 @@ export function useEmployeeDirectory(params: EmployeeDirectoryParams) {
     queryKey: employeeRecordQueryKeys.list(params),
     queryFn: ({ signal }) => listEmployeeRecords(params, { signal }),
     enabled: status === "authenticated",
+  });
+}
+
+export function useOffboardingTemplate() {
+  const { status } = useSession();
+  return useQuery({
+    queryKey: employeeRecordQueryKeys.offboardingTemplate(),
+    queryFn: ({ signal }) => getOffboardingTemplate({ signal }),
+    enabled: status === "authenticated",
+  });
+}
+
+export function useReplaceOffboardingTemplate() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: ReplaceOffboardingTemplateRequest) =>
+      replaceOffboardingTemplate(request),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: employeeRecordQueryKeys.offboardingTemplate(),
+      });
+    },
+  });
+}
+
+export function useEmployeeOffboardingChecklist(
+  employeeId: string,
+  enabled = true,
+) {
+  const { status } = useSession();
+  return useQuery({
+    queryKey: employeeRecordQueryKeys.offboardingTasks(employeeId),
+    queryFn: ({ signal }) => getEmployeeOffboardingChecklist(employeeId, { signal }),
+    enabled: status === "authenticated" && enabled && Boolean(employeeId),
+  });
+}
+
+export function useUpdateEmployeeOffboardingTask() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, request, idempotencyKey }: {
+      taskId: string;
+      employeeId: string;
+      request: EmployeeOffboardingTaskUpdateRequest;
+      idempotencyKey: string;
+    }) => updateEmployeeOffboardingTask(taskId, request, idempotencyKey),
+    onSuccess: async (_task, variables) => {
+      await queryClient.invalidateQueries({
+        queryKey: employeeRecordQueryKeys.offboardingTasks(variables.employeeId),
+      });
+    },
   });
 }
 
@@ -130,6 +190,9 @@ function useEmployeeOffboardingMutation<TRequest>(
           queryKey: employeeRecordQueryKeys.application(variables.applicationId),
         }),
         queryClient.invalidateQueries({ queryKey: employeeRecordQueryKeys.lists() }),
+        queryClient.invalidateQueries({
+          queryKey: employeeRecordQueryKeys.offboardingTasks(variables.employeeId),
+        }),
       ]);
     },
   });

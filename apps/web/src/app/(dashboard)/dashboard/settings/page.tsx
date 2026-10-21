@@ -7,6 +7,7 @@ import { ProfileTab } from "@/components/settings/profile-tab";
 import { IntegrationsTab } from "@/components/settings/integrations-tab";
 import { NotificationsTab } from "@/components/settings/notifications-tab";
 import { OnboardingTemplateManager } from "@/components/settings/onboarding-template-manager";
+import { OffboardingTemplateManager } from "@/components/settings/offboarding-template-manager";
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
@@ -14,6 +15,7 @@ export default function SettingsPage() {
   const canManageOnboarding = session?.roles?.some((role) =>
     role === "tenant_admin" || role === "people_operations",
   ) ?? false;
+  const canManageOffboarding = canManageOnboarding;
 
   return (
     <div className="flex flex-col gap-6 max-w-300 mx-auto w-full">
@@ -68,6 +70,18 @@ export default function SettingsPage() {
               Onboarding
             </button>
           )}
+          {canManageOffboarding && (
+            <button
+              onClick={() => setActiveTab("offboarding")}
+              className={`py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === "offboarding"
+                  ? "border-sr-green text-sr-text-blue"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+              }`}
+            >
+              Offboarding
+            </button>
+          )}
         </nav>
       </div>
 
@@ -77,6 +91,7 @@ export default function SettingsPage() {
         {activeTab === "integrations" && <IntegrationsTab />}
         {activeTab === "notifications" && <NotificationsTab />}
         {activeTab === "onboarding" && canManageOnboarding && <OnboardingTemplateManager />}
+        {activeTab === "offboarding" && canManageOffboarding && <OffboardingTemplateManager />}
       </div>
     </div>
   );

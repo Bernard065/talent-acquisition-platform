@@ -93,6 +93,9 @@ class Employee(Base):
         ),
         nullable=True,
     )
+    offboarding_cycle_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True), nullable=True, index=True
+    )
     created_by_subject: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

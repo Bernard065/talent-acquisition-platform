@@ -6,6 +6,11 @@ export type EmployeeOffboardingReason =
   | "contract_end"
   | "termination"
   | "other";
+export type EmployeeOffboardingTaskStatus =
+  | "pending"
+  | "in_progress"
+  | "completed"
+  | "blocked";
 
 export interface EmployeeRecordResponse {
   id: string;
@@ -75,6 +80,54 @@ export interface StartEmployeeOffboardingRequest {
 
 export interface CancelEmployeeOffboardingRequest {
   expected_version: number;
+}
+
+export interface OffboardingTemplateTask {
+  id?: string;
+  position?: number;
+  title: string;
+  description: string | null;
+  due_days_before_last_working_day: number;
+}
+
+export interface OffboardingTemplateResponse {
+  items: OffboardingTemplateTask[];
+}
+
+export interface ReplaceOffboardingTemplateRequest {
+  items: Array<{
+    title: string;
+    description: string | null;
+    due_days_before_last_working_day: number;
+  }>;
+}
+
+export interface EmployeeOffboardingTaskResponse {
+  id: string;
+  position: number;
+  title: string;
+  description: string | null;
+  due_date: string;
+  assigned_to_user_id: string | null;
+  assigned_to_name: string | null;
+  status: EmployeeOffboardingTaskStatus;
+  completion_notes: string | null;
+  completed_at: string | null;
+  version: number;
+}
+
+export interface EmployeeOffboardingChecklistResponse {
+  items: EmployeeOffboardingTaskResponse[];
+  completed_count: number;
+  total_count: number;
+}
+
+export interface EmployeeOffboardingTaskUpdateRequest {
+  expected_version: number;
+  assigned_to_user_id?: string | null;
+  due_date?: string;
+  status?: EmployeeOffboardingTaskStatus;
+  completion_notes?: string | null;
 }
 
 export interface LinkEmployeeAccountResponse {
