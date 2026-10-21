@@ -84,6 +84,7 @@ class CreateOnboardingTemplateVersionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     expected_version: int = Field(ge=1)
+    restore_from_template_id: UUID | None = None
     tasks: list[OnboardingTemplateTaskRequest] = Field(
         min_length=1,
         max_length=100,
@@ -205,6 +206,11 @@ class OnboardingTemplateResponse(BaseModel):
     publication_status: Literal["draft", "published"]
     draft_revision: int
     created_at: datetime
+    created_by_display_name: str | None = None
+    published_at: datetime | None = None
+    published_by_display_name: str | None = None
+    based_on_version: int | None = Field(default=None, ge=1)
+    restored_from_version: int | None = Field(default=None, ge=1)
 
 
 class OnboardingTemplateTaskResponse(BaseModel):

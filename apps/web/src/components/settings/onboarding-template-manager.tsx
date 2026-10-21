@@ -59,6 +59,50 @@ function taskRequestsFromVersion(
     }));
 }
 
+const templateTimestampMonths = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+function formatTemplateTimestamp(value: string | null | undefined): string {
+  if (!value) return "Date unavailable";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Date unavailable";
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const month = templateTimestampMonths[date.getUTCMonth()];
+  const year = date.getUTCFullYear();
+  const hour = String(date.getUTCHours()).padStart(2, "0");
+  const minute = String(date.getUTCMinutes()).padStart(2, "0");
+  return `${day} ${month} ${year}, ${hour}:${minute} UTC`;
+}
+
+function TemplateVersionProvenance({ template }: { template: OnboardingTemplateResponse }) {
+  return (
+    <div className="mt-2 space-y-1 text-xs text-gray-600">
+      <p>
+        Created {formatTemplateTimestamp(template.created_at)}
+        {template.created_by_display_name ? ` by ${template.created_by_display_name}` : " · creator unavailable"}
+      </p>
+      {template.publication_status === "published" && (
+        <p>
+          {template.published_at
+            ? `Published ${formatTemplateTimestamp(template.published_at)}`
+            : "Publication date unavailable"}
+          {template.published_by_display_name ? ` by ${template.published_by_display_name}` : " · publisher unavailable"}
+        </p>
+      )}
+      {template.restored_from_version !== null && template.restored_from_version !== undefined ? (
+        <p className="font-medium text-indigo-800">
+          Restored from published version {template.restored_from_version}
+          {template.based_on_version ? ` · draft created from version ${template.based_on_version}` : ""}
+        </p>
+      ) : template.based_on_version ? (
+        <p>Draft created from published version {template.based_on_version}</p>
+      ) : null}
+    </div>
+  );
+}
+
 export function OnboardingTemplateManager() {
   const templateVersions = useOnboardingTemplateVersions();
   const createTemplate = useCreateOnboardingTemplate();
@@ -233,6 +277,7 @@ export function OnboardingTemplateManager() {
     setRestoreFeedback(null);
     const request: CreateOnboardingTemplateVersionRequest = {
       expected_version: current.version,
+      restore_from_template_id: source.id,
       tasks: taskRequestsFromVersion(source),
     };
     createVersion.mutate({
@@ -314,6 +359,7 @@ export function OnboardingTemplateManager() {
                     <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${current ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>
                       {current ? "Published · Used for new hires" : "Draft · Not used for new hires"}
                     </span>
+                    {current && <TemplateVersionProvenance template={current} />}
                   </div>
                   {current && !draft && (
                     <button
@@ -356,6 +402,7 @@ export function OnboardingTemplateManager() {
                         <p className="mt-1 text-xs text-amber-900">
                           Employee checklist preview. Publishing makes this version available for future hires.
                         </p>
+                        <TemplateVersionProvenance template={draft} />
                       </div>
                       <button
                         type="button"
@@ -465,6 +512,7 @@ export function OnboardingTemplateManager() {
                               </button>
                             )}
                           </div>
+                          <TemplateVersionProvenance template={template} />
                           {draft ? (
                             <p className="mt-2 text-xs text-gray-600">
                               Publish or discard draft version {draft.version} before restoring another version.
