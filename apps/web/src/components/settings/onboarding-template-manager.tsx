@@ -18,6 +18,7 @@ import type {
   UpdateOnboardingTemplateDraftRequest,
 } from "@/types/api/onboarding";
 import type { Role } from "@/types/api/auth";
+import { OnboardingTemplateVersionComparison } from "./onboarding-template-version-comparison";
 
 type TemplateTaskDraft = {
   title: string;
@@ -314,6 +315,7 @@ export function OnboardingTemplateManager() {
                         Edit draft
                       </button>
                     </div>
+                    <OnboardingTemplateVersionComparison current={current} draft={draft} />
                     <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-amber-950">
                       {draft.tasks.map((task) => {
                         const prerequisiteTitles = task.prerequisite_task_positions
