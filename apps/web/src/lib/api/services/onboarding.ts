@@ -41,6 +41,7 @@ export interface OnboardingOverviewParams {
   query?: string;
   status?: OnboardingInstanceResponse["status"];
   overdue_only?: boolean;
+  template_id?: string;
 }
 
 export interface OnboardingTaskWorklistParams {

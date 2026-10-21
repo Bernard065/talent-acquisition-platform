@@ -79,6 +79,7 @@ from app.services.onboarding import (
     get_application_onboarding,
     get_employee_portal_onboarding,
     get_onboarding_template_version_provenance,
+    get_onboarding_template_version_usage,
     list_active_onboarding_templates,
     list_onboarding_overview,
     list_onboarding_task_activity,
@@ -264,6 +265,7 @@ async def list_onboarding_overview_endpoint(
         Query(alias="status"),
     ] = None,
     overdue_only: bool = False,
+    template_id: UUID | None = None,
 ) -> OnboardingOverviewResponse:
     """Search and paginate onboarding plans in the caller's workspace."""
     items, total, active_plan_count, overdue_task_count = (
@@ -275,6 +277,7 @@ async def list_onboarding_overview_endpoint(
             query=query,
             status=status_filter,
             overdue_only=overdue_only,
+            template_id=template_id,
         )
     )
     response.headers["Cache-Control"] = "private, no-store"
@@ -320,6 +323,11 @@ async def list_onboarding_templates_endpoint(
         session,
         context=context,
     )
+    usage_by_template = await get_onboarding_template_version_usage(
+        session,
+        context=context,
+        templates=tuple(template for template, _ in templates),
+    )
     template_task_ids = tuple(task.id for _, tasks in templates for task in tasks)
     prerequisite_positions = await list_onboarding_template_prerequisite_positions(
         session,
@@ -336,6 +344,12 @@ async def list_onboarding_templates_endpoint(
                 publication_status=template.publication_status.value,
                 draft_revision=template.draft_revision,
                 created_at=template.created_at,
+                active_onboarding_plan_count=usage_by_template[
+                    template.id
+                ].active_plan_count,
+                completed_onboarding_plan_count=usage_by_template[
+                    template.id
+                ].completed_plan_count,
                 tasks=[
                     OnboardingTemplateTaskResponse.model_validate(task).model_copy(
                         update={
@@ -372,6 +386,11 @@ async def list_onboarding_template_versions_endpoint(
         context=context,
         templates=tuple(template for template, _ in templates),
     )
+    usage_by_template = await get_onboarding_template_version_usage(
+        session,
+        context=context,
+        templates=tuple(template for template, _ in templates),
+    )
     template_task_ids = tuple(task.id for _, tasks in templates for task in tasks)
     prerequisite_positions = await list_onboarding_template_prerequisite_positions(
         session,
@@ -401,6 +420,12 @@ async def list_onboarding_template_versions_endpoint(
                 restored_from_version=provenance_by_template[
                     template.id
                 ].restored_from_version,
+                active_onboarding_plan_count=usage_by_template[
+                    template.id
+                ].active_plan_count,
+                completed_onboarding_plan_count=usage_by_template[
+                    template.id
+                ].completed_plan_count,
                 tasks=[
                     OnboardingTemplateTaskResponse.model_validate(task).model_copy(
                         update={

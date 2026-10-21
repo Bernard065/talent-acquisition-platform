@@ -93,6 +93,14 @@ class OnboardingTemplateVersionProvenance:
 
 
 @dataclass(frozen=True, slots=True)
+class OnboardingTemplateVersionUsage:
+    """Active and completed plans that use one immutable template version."""
+
+    active_plan_count: int
+    completed_plan_count: int
+
+
+@dataclass(frozen=True, slots=True)
 class OnboardingTaskActivityItem:
     """Privacy-safe task activity for workspace staff or its employee owner."""
 
@@ -139,6 +147,7 @@ async def list_onboarding_overview(
     query: str | None = None,
     status: OnboardingInstanceStatus | None = None,
     overdue_only: bool = False,
+    template_id: UUID | None = None,
 ) -> tuple[
     list[tuple[OnboardingInstance, str, str, int, int, int]],
     int,
@@ -151,6 +160,8 @@ async def list_onboarding_overview(
     filters: list[ColumnElement[bool]] = [
         OnboardingInstance.tenant_id == context.tenant_id,
     ]
+    if template_id is not None:
+        filters.append(OnboardingInstance.onboarding_template_id == template_id)
     if status is not None:
         filters.append(OnboardingInstance.status == status)
     if query and query.strip():
@@ -253,12 +264,24 @@ async def list_onboarding_overview(
             )
         )
 
-    active_count = await session.scalar(
-        select(func.count(OnboardingInstance.id)).where(
-            OnboardingInstance.tenant_id == context.tenant_id,
-            OnboardingInstance.status == OnboardingInstanceStatus.ACTIVE,
+    active_plan_filters: list[ColumnElement[bool]] = [
+        OnboardingInstance.tenant_id == context.tenant_id,
+        OnboardingInstance.status == OnboardingInstanceStatus.ACTIVE,
+    ]
+    if template_id is not None:
+        active_plan_filters.append(
+            OnboardingInstance.onboarding_template_id == template_id
         )
+    active_count = await session.scalar(
+        select(func.count(OnboardingInstance.id)).where(*active_plan_filters)
     )
+    overdue_instance_filters: list[ColumnElement[bool]] = [
+        OnboardingInstance.status == OnboardingInstanceStatus.ACTIVE,
+    ]
+    if template_id is not None:
+        overdue_instance_filters.append(
+            OnboardingInstance.onboarding_template_id == template_id
+        )
     overdue_count = await session.scalar(
         select(func.count(OnboardingTask.id))
         .join(
@@ -270,7 +293,7 @@ async def list_onboarding_overview(
         )
         .where(
             OnboardingTask.tenant_id == context.tenant_id,
-            OnboardingInstance.status == OnboardingInstanceStatus.ACTIVE,
+            *overdue_instance_filters,
             OnboardingTask.due_at < func.now(),
             OnboardingTask.status.not_in(
                 {
@@ -642,6 +665,54 @@ async def get_onboarding_template_version_provenance(
             restored_from_version=restored_from_version,
         )
     return provenance
+
+
+async def get_onboarding_template_version_usage(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    templates: tuple[OnboardingTemplate, ...],
+) -> dict[UUID, OnboardingTemplateVersionUsage]:
+    """Count tenant plans by immutable template version and lifecycle state."""
+    _require_role(context, _ONBOARDING_WRITE_ROLES)
+    if not templates:
+        return {}
+
+    usage_counts = {template.id: [0, 0] for template in templates}
+    rows = await session.execute(
+        select(
+            OnboardingInstance.onboarding_template_id,
+            OnboardingInstance.status,
+            func.count(OnboardingInstance.id),
+        )
+        .where(
+            OnboardingInstance.tenant_id == context.tenant_id,
+            OnboardingInstance.onboarding_template_id.in_(usage_counts),
+            OnboardingInstance.status.in_(
+                (
+                    OnboardingInstanceStatus.ACTIVE,
+                    OnboardingInstanceStatus.COMPLETED,
+                )
+            ),
+        )
+        .group_by(
+            OnboardingInstance.onboarding_template_id,
+            OnboardingInstance.status,
+        )
+    )
+    for template_id, status, count in rows.tuples():
+        if status is OnboardingInstanceStatus.ACTIVE:
+            usage_counts[template_id][0] = count
+        elif status is OnboardingInstanceStatus.COMPLETED:
+            usage_counts[template_id][1] = count
+
+    return {
+        template_id: OnboardingTemplateVersionUsage(
+            active_plan_count=counts[0],
+            completed_plan_count=counts[1],
+        )
+        for template_id, counts in usage_counts.items()
+    }
 
 
 async def _list_onboarding_templates(

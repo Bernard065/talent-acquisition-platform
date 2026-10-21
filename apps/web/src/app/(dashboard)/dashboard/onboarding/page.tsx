@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useOnboardingOverview } from "@/lib/api/hooks/onboarding";
 import type { OnboardingInstanceStatus } from "@/types/api/onboarding";
@@ -9,6 +10,8 @@ import { OnboardingTaskWorklist } from "@/components/onboarding/onboarding-task-
 
 type StatusFilter = "all" | OnboardingInstanceStatus;
 const PAGE_SIZE = 25;
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const statusLabels: Record<OnboardingInstanceStatus, string> = {
   active: "In progress",
@@ -28,8 +31,37 @@ function progressLabel(completed: number, total: number): string {
 }
 
 export default function OnboardingPage() {
+  return (
+    <Suspense
+      fallback={(
+        <p className="mx-auto max-w-5xl py-12 text-center text-sm text-gray-600" role="status">
+          Loading onboarding plans…
+        </p>
+      )}
+    >
+      <OnboardingContent />
+    </Suspense>
+  );
+}
+
+function OnboardingContent() {
   const { status: sessionStatus } = useSession();
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedTemplateId = searchParams.get("template_id");
+  const templateId = requestedTemplateId && UUID_PATTERN.test(requestedTemplateId)
+    ? requestedTemplateId
+    : undefined;
+  const templateName = searchParams.get("template_name")?.trim().slice(0, 200);
+  const requestedVersion = Number(searchParams.get("template_version"));
+  const templateVersion = Number.isInteger(requestedVersion) && requestedVersion >= 1
+    ? requestedVersion
+    : undefined;
+  const requestedStatus = searchParams.get("status");
+  const initialStatus: StatusFilter = requestedStatus === "active" || requestedStatus === "completed" || requestedStatus === "cancelled"
+    ? requestedStatus
+    : "all";
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(initialStatus);
   const [searchInput, setSearchInput] = useState("");
   const [query, setQuery] = useState("");
   const [overdueOnly, setOverdueOnly] = useState(false);
@@ -40,7 +72,8 @@ export default function OnboardingPage() {
     query: query || undefined,
     status: statusFilter === "all" ? undefined : statusFilter,
     overdue_only: overdueOnly || undefined,
-  }), [overdueOnly, page, query, statusFilter]);
+    template_id: templateId,
+  }), [overdueOnly, page, query, statusFilter, templateId]);
   const overview = useOnboardingOverview(params);
   const items = useMemo(() => overview.data?.items ?? [], [overview.data?.items]);
 
@@ -57,7 +90,16 @@ export default function OnboardingPage() {
   const activeCount = overview.data?.active_plan_count ?? 0;
   const overdueCount = overview.data?.overdue_task_count ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const hasFilters = Boolean(query || statusFilter !== "all" || overdueOnly);
+  const hasFilters = Boolean(query || statusFilter !== "all" || overdueOnly || templateId);
+
+  function clearFilters() {
+    setSearchInput("");
+    setQuery("");
+    setStatusFilter("all");
+    setOverdueOnly(false);
+    setPage(1);
+    if (templateId) router.replace("/dashboard/onboarding");
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-375 flex-col gap-6">
@@ -68,15 +110,40 @@ export default function OnboardingPage() {
         </p>
       </header>
 
-      <OnboardingTaskWorklist />
+      {templateId && (
+        <section className="flex flex-col gap-3 rounded-xl border border-blue-100 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-blue-950">
+              Plans using {templateName || "this onboarding template"}
+              {templateVersion ? ` · version ${templateVersion}` : ""}
+            </p>
+            <p className="mt-1 text-xs text-blue-900">
+              This view filters plans by the exact template version used when onboarding started.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={clearFilters}
+            className="min-h-9 shrink-0 cursor-pointer self-start rounded-md border border-blue-200 bg-white px-3 py-1.5 text-sm font-medium text-blue-900 hover:bg-blue-100 sm:self-auto"
+          >
+            Clear version filter
+          </button>
+        </section>
+      )}
+
+      {!templateId && <OnboardingTaskWorklist />}
 
       <section aria-label="Onboarding summary" className="grid gap-3 sm:grid-cols-2">
         <div className="rounded-xl border border-gray-200 bg-white p-4">
-          <p className="text-sm text-gray-600">Active plans</p>
+          <p className="text-sm text-gray-600">
+            {templateId ? "Active plans using this version" : "Active plans"}
+          </p>
           <p className="mt-1 text-2xl font-semibold text-sr-text-blue">{isLoading ? "—" : activeCount}</p>
         </div>
         <div className="rounded-xl border border-gray-200 bg-white p-4">
-          <p className="text-sm text-gray-600">Overdue tasks</p>
+          <p className="text-sm text-gray-600">
+            {templateId ? "Overdue tasks in these plans" : "Overdue tasks"}
+          </p>
           <p className="mt-1 text-2xl font-semibold text-sr-text-blue">{isLoading ? "—" : overdueCount}</p>
         </div>
       </section>
@@ -143,13 +210,7 @@ export default function OnboardingPage() {
                 ? "Change the search or status filter to see other plans."
                 : "Start onboarding from a hired application after creating a reusable plan in Settings → Onboarding."}
             </p>
-            {hasFilters && <button type="button" onClick={() => {
-              setSearchInput("");
-              setQuery("");
-              setStatusFilter("all");
-              setOverdueOnly(false);
-              setPage(1);
-            }} className="mt-4 text-sm font-medium text-sr-text-blue underline">Clear filters</button>}
+            {hasFilters && <button type="button" onClick={clearFilters} className="mt-4 text-sm font-medium text-sr-text-blue underline">Clear filters</button>}
           </div>
         ) : (
           <>
