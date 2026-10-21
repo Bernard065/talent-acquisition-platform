@@ -52,6 +52,10 @@ export interface OnboardingTemplateDraftActionRequest {
   expected_revision: number;
 }
 
+export interface OnboardingTemplateLifecycleActionRequest {
+  expected_version: number;
+}
+
 export interface OnboardingTemplateDraftDiscardResponse {
   template_id: string;
   discarded: true;

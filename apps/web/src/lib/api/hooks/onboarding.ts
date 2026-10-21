@@ -22,6 +22,8 @@ import {
   listOnboardingTemplates,
   listOnboardingTemplateVersions,
   publishOnboardingTemplateDraft,
+  reactivateOnboardingTemplate,
+  retireOnboardingTemplate,
   startApplicationOnboarding,
   updateOnboardingTaskDueDate,
   updateOnboardingTemplateDraft,
@@ -35,6 +37,7 @@ import type {
   CreateOnboardingTemplateRequest,
   CreateOnboardingTemplateVersionRequest,
   OnboardingTemplateDraftActionRequest,
+  OnboardingTemplateLifecycleActionRequest,
   ExpectedInstanceVersionRequest,
   StartOnboardingRequest,
   UpdateOnboardingTaskDueDateRequest,
@@ -343,6 +346,30 @@ export function useDiscardOnboardingTemplateDraft() {
       request: OnboardingTemplateDraftActionRequest;
       idempotencyKey: string;
     }) => discardOnboardingTemplateDraft(templateId, request, idempotencyKey),
+    onSuccess: () => invalidateOnboardingTemplateQueries(queryClient),
+  });
+}
+
+export function useRetireOnboardingTemplate() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ templateId, request, idempotencyKey }: {
+      templateId: string;
+      request: OnboardingTemplateLifecycleActionRequest;
+      idempotencyKey: string;
+    }) => retireOnboardingTemplate(templateId, request, idempotencyKey),
+    onSuccess: () => invalidateOnboardingTemplateQueries(queryClient),
+  });
+}
+
+export function useReactivateOnboardingTemplate() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ templateId, request, idempotencyKey }: {
+      templateId: string;
+      request: OnboardingTemplateLifecycleActionRequest;
+      idempotencyKey: string;
+    }) => reactivateOnboardingTemplate(templateId, request, idempotencyKey),
     onSuccess: () => invalidateOnboardingTemplateQueries(queryClient),
   });
 }

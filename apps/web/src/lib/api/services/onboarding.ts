@@ -7,6 +7,7 @@ import type {
   CreateOnboardingTemplateVersionRequest,
   OnboardingTemplateDraftActionRequest,
   OnboardingTemplateDraftDiscardResponse,
+  OnboardingTemplateLifecycleActionRequest,
   EmployeePortalOnboardingResponse,
   ExpectedInstanceVersionRequest,
   OnboardingInstanceResponse,
@@ -29,7 +30,7 @@ import type {
   UpdateOnboardingTemplateDraftRequest,
 } from "@/types/api/onboarding";
 
-type OnboardingTemplateCreated = Pick<
+type OnboardingTemplateMutationResponse = Pick<
   OnboardingTemplateResponse,
   "id" | "name" | "version" | "is_active" | "created_at"
   | "publication_status" | "draft_revision"
@@ -231,7 +232,7 @@ export function createOnboardingTemplate(
   idempotencyKey: string,
   options?: RequestOptions,
 ) {
-  return post<OnboardingTemplateCreated>("/onboarding-templates", request, {
+  return post<OnboardingTemplateMutationResponse>("/onboarding-templates", request, {
     ...options,
     idempotencyKey,
   });
@@ -243,7 +244,7 @@ export function createOnboardingTemplateVersion(
   idempotencyKey: string,
   options?: RequestOptions,
 ) {
-  return post<OnboardingTemplateCreated>(
+  return post<OnboardingTemplateMutationResponse>(
     `/onboarding-templates/${templateId}/versions`,
     request,
     { ...options, idempotencyKey },
@@ -256,7 +257,7 @@ export function updateOnboardingTemplateDraft(
   idempotencyKey: string,
   options?: RequestOptions,
 ) {
-  return put<OnboardingTemplateCreated>(
+  return put<OnboardingTemplateMutationResponse>(
     `/onboarding-templates/${templateId}/draft`,
     request,
     { ...options, idempotencyKey },
@@ -269,7 +270,7 @@ export function publishOnboardingTemplateDraft(
   idempotencyKey: string,
   options?: RequestOptions,
 ) {
-  return post<OnboardingTemplateCreated>(
+  return post<OnboardingTemplateMutationResponse>(
     `/onboarding-templates/${templateId}/publish`,
     request,
     { ...options, idempotencyKey },
@@ -284,6 +285,32 @@ export function discardOnboardingTemplateDraft(
 ) {
   return post<OnboardingTemplateDraftDiscardResponse>(
     `/onboarding-templates/${templateId}/discard`,
+    request,
+    { ...options, idempotencyKey },
+  );
+}
+
+export function retireOnboardingTemplate(
+  templateId: string,
+  request: OnboardingTemplateLifecycleActionRequest,
+  idempotencyKey: string,
+  options?: RequestOptions,
+) {
+  return post<OnboardingTemplateMutationResponse>(
+    `/onboarding-templates/${templateId}/retire`,
+    request,
+    { ...options, idempotencyKey },
+  );
+}
+
+export function reactivateOnboardingTemplate(
+  templateId: string,
+  request: OnboardingTemplateLifecycleActionRequest,
+  idempotencyKey: string,
+  options?: RequestOptions,
+) {
+  return post<OnboardingTemplateMutationResponse>(
+    `/onboarding-templates/${templateId}/reactivate`,
     request,
     { ...options, idempotencyKey },
   );
