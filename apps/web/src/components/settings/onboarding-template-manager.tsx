@@ -11,6 +11,7 @@ import {
 } from "@/lib/api/hooks/onboarding";
 import type {
   CreateOnboardingTemplateRequest,
+  CreateOnboardingTemplateVersionRequest,
   OnboardingTemplateDraftActionRequest,
   OnboardingTemplateResponse,
   OnboardingTemplateTaskRequest,
@@ -41,6 +42,23 @@ const blankTask = (): TemplateTaskDraft => ({
   prerequisitePositions: [],
 });
 
+function taskRequestsFromVersion(
+  template: OnboardingTemplateResponse,
+): OnboardingTemplateTaskRequest[] {
+  return [...template.tasks]
+    .sort((left, right) => left.position - right.position)
+    .map((task) => ({
+      title: task.title,
+      description: task.description,
+      due_offset_days: task.due_offset_days,
+      default_assignee_role: task.default_assignee_role,
+      responsible_party: task.responsible_party,
+      requires_document_upload: task.requires_document_upload,
+      requires_document_review: task.requires_document_review,
+      prerequisite_task_positions: [...task.prerequisite_task_positions],
+    }));
+}
+
 export function OnboardingTemplateManager() {
   const templateVersions = useOnboardingTemplateVersions();
   const createTemplate = useCreateOnboardingTemplate();
@@ -53,6 +71,11 @@ export function OnboardingTemplateManager() {
   const [pendingDraftAction, setPendingDraftAction] = useState<{
     template: OnboardingTemplateResponse;
     action: "publish" | "discard";
+  } | null>(null);
+  const [restoreFeedback, setRestoreFeedback] = useState<{
+    sourceTemplateId: string;
+    kind: "success" | "error";
+    message: string;
   } | null>(null);
   const [name, setName] = useState("");
   const [tasks, setTasks] = useState<TemplateTaskDraft[]>([blankTask()]);
@@ -200,6 +223,33 @@ export function OnboardingTemplateManager() {
         setPendingDraftAction(null);
         setError("We couldn’t discard this draft. Refresh the template list and try again.");
       },
+    });
+  }
+
+  function createDraftFromPreviousVersion(
+    current: OnboardingTemplateResponse,
+    source: OnboardingTemplateResponse,
+  ) {
+    setRestoreFeedback(null);
+    const request: CreateOnboardingTemplateVersionRequest = {
+      expected_version: current.version,
+      tasks: taskRequestsFromVersion(source),
+    };
+    createVersion.mutate({
+      templateId: current.id,
+      request,
+      idempotencyKey: crypto.randomUUID(),
+    }, {
+      onSuccess: (draft) => setRestoreFeedback({
+        sourceTemplateId: source.id,
+        kind: "success",
+        message: `Draft version ${draft.version} was created from published version ${source.version}. Review the comparison, edit if needed, then publish when ready.`,
+      }),
+      onError: () => setRestoreFeedback({
+        sourceTemplateId: source.id,
+        kind: "error",
+        message: "We couldn’t create a draft from this version. The published template may have changed; refresh and try again.",
+      }),
     });
   }
 
@@ -399,13 +449,45 @@ export function OnboardingTemplateManager() {
                     <ul className="mt-3 space-y-3">
                       {previous.map((template) => (
                         <li key={template.id} className="rounded-md bg-gray-50 p-3">
-                          <p className="text-sm font-medium text-gray-700">
-                            Version {template.version} · Previous version
-                          </p>
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-sm font-medium text-gray-700">
+                              Version {template.version} · Previous version
+                            </p>
+                            {current && (
+                              <button
+                                type="button"
+                                onClick={() => createDraftFromPreviousVersion(current, template)}
+                                disabled={templateMutationPending || Boolean(draft) || Boolean(editingTemplate)}
+                                aria-label={`Use published version ${template.version} as a new draft`}
+                                className="min-h-9 cursor-pointer rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {createVersion.isPending ? "Creating draft…" : "Use as new draft"}
+                              </button>
+                            )}
+                          </div>
+                          {draft ? (
+                            <p className="mt-2 text-xs text-gray-600">
+                              Publish or discard draft version {draft.version} before restoring another version.
+                            </p>
+                          ) : editingTemplate ? (
+                            <p className="mt-2 text-xs text-gray-600">
+                              Save or cancel the open template editor before restoring a previous version.
+                            </p>
+                          ) : null}
+                          {restoreFeedback?.sourceTemplateId === template.id && (
+                            <p
+                              className={`mt-2 text-xs ${restoreFeedback.kind === "error" ? "text-red-800" : "text-emerald-800"}`}
+                              role={restoreFeedback.kind === "error" ? "alert" : "status"}
+                            >
+                              {restoreFeedback.message}
+                            </p>
+                          )}
                           <ol className="mt-2 space-y-1 text-xs text-gray-600">
-                            {template.tasks.map((task, index) => (
-                              <li key={task.id}>{index + 1}. {task.title}</li>
-                            ))}
+                            {[...template.tasks]
+                              .sort((left, right) => left.position - right.position)
+                              .map((task, index) => (
+                                <li key={task.id}>{index + 1}. {task.title}</li>
+                              ))}
                           </ol>
                         </li>
                       ))}
