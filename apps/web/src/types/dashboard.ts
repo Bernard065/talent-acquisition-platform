@@ -26,4 +26,9 @@ export interface InterviewItem {
   badgeStyle: string;
 }
 
-export type SettingsTab = "profile" | "integrations" | "notifications" | "onboarding";
+export type SettingsTab =
+  | "profile"
+  | "integrations"
+  | "notifications"
+  | "onboarding"
+  | "offboarding";
