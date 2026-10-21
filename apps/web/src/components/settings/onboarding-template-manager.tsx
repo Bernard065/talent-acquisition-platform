@@ -8,12 +8,15 @@ import {
   useDiscardOnboardingTemplateDraft,
   useOnboardingTemplateVersions,
   usePublishOnboardingTemplateDraft,
+  useReactivateOnboardingTemplate,
+  useRetireOnboardingTemplate,
   useUpdateOnboardingTemplateDraft,
 } from "@/lib/api/hooks/onboarding";
 import type {
   CreateOnboardingTemplateRequest,
   CreateOnboardingTemplateVersionRequest,
   OnboardingTemplateDraftActionRequest,
+  OnboardingTemplateLifecycleActionRequest,
   OnboardingTemplateResponse,
   OnboardingTemplateTaskRequest,
   OnboardingTaskResponsibility,
@@ -169,11 +172,17 @@ export function OnboardingTemplateManager() {
   const updateDraft = useUpdateOnboardingTemplateDraft();
   const publishDraft = usePublishOnboardingTemplateDraft();
   const discardDraft = useDiscardOnboardingTemplateDraft();
+  const retireTemplate = useRetireOnboardingTemplate();
+  const reactivateTemplate = useReactivateOnboardingTemplate();
   const [editingTemplate, setEditingTemplate] = useState<OnboardingTemplateResponse | null>(null);
   const [showEditorPreview, setShowEditorPreview] = useState(false);
   const [pendingDraftAction, setPendingDraftAction] = useState<{
     template: OnboardingTemplateResponse;
     action: "publish" | "discard";
+  } | null>(null);
+  const [pendingLifecycleAction, setPendingLifecycleAction] = useState<{
+    template: OnboardingTemplateResponse;
+    action: "retire" | "reactivate";
   } | null>(null);
   const [restoreFeedback, setRestoreFeedback] = useState<{
     sourceTemplateId: string;
@@ -329,6 +338,34 @@ export function OnboardingTemplateManager() {
     });
   }
 
+  function confirmLifecycleAction() {
+    if (!pendingLifecycleAction) return;
+    const { template, action } = pendingLifecycleAction;
+    const request: OnboardingTemplateLifecycleActionRequest = {
+      expected_version: template.version,
+    };
+    setError(null);
+    const mutation = action === "retire" ? retireTemplate : reactivateTemplate;
+    mutation.mutate({
+      templateId: template.id,
+      request,
+      idempotencyKey: crypto.randomUUID(),
+    }, {
+      onSuccess: (updated) => {
+        setPendingLifecycleAction(null);
+        setMessage(action === "retire"
+          ? `${updated.name} version ${updated.version} was retired. Existing onboarding plans are unchanged.`
+          : `${updated.name} version ${updated.version} is available for future hires again. Existing onboarding plans are unchanged.`);
+      },
+      onError: () => {
+        setPendingLifecycleAction(null);
+        setError(action === "retire"
+          ? "We couldn’t retire this template. Refresh the template list and resolve any draft before trying again."
+          : "We couldn’t reactivate this template. Refresh the template list and try again.");
+      },
+    });
+  }
+
   function createDraftFromPreviousVersion(
     current: OnboardingTemplateResponse,
     source: OnboardingTemplateResponse,
@@ -359,7 +396,8 @@ export function OnboardingTemplateManager() {
 
   const templateMutationPending =
     createTemplate.isPending || createVersion.isPending || updateDraft.isPending ||
-    publishDraft.isPending || discardDraft.isPending;
+    publishDraft.isPending || discardDraft.isPending || retireTemplate.isPending ||
+    reactivateTemplate.isPending;
 
   function removeTask(indexToRemove: number) {
     const removedPosition = indexToRemove + 1;
@@ -380,7 +418,7 @@ export function OnboardingTemplateManager() {
       <div>
         <h2 className="text-lg font-semibold text-sr-text-blue">Onboarding templates</h2>
         <p className="mt-1 text-sm leading-relaxed text-gray-600">
-          Save changes as a draft, preview the employee checklist, then publish when it is ready. Drafts are not used for new hires. Existing onboarding plans keep their original template version.
+          Save changes as a draft, preview the employee checklist, then publish when it is ready. Retire templates you no longer want offered to new hires. Existing onboarding plans keep their original template version.
         </p>
       </div>
 
@@ -394,16 +432,17 @@ export function OnboardingTemplateManager() {
             const publishedVersions = versions.filter(
               (template) => template.publication_status === "published",
             );
-            const current = publishedVersions.find((template) => template.is_active)
-              ?? publishedVersions[0]
-              ?? null;
+            const current = publishedVersions.find((template) => template.is_active) ?? null;
+            const latestPublished = publishedVersions[0] ?? null;
+            const retired = latestPublished !== null && current === null;
+            const primaryPublished = current ?? latestPublished;
             const draft = versions.find(
               (template) => template.publication_status === "draft",
             ) ?? null;
             const previous = publishedVersions.filter(
-              (template) => template.id !== current?.id,
+              (template) => template.id !== primaryPublished?.id,
             );
-            const displayedTemplate = current ?? draft;
+            const displayedTemplate = primaryPublished ?? draft;
             if (!displayedTemplate) return null;
             return (
               <li key={templateName} className="rounded-lg border border-gray-200 p-4">
@@ -411,31 +450,90 @@ export function OnboardingTemplateManager() {
                   <div>
                     <p className="font-medium text-gray-900">{templateName}</p>
                     <p className="mt-1 text-sm text-gray-600">
-                      {current
-                        ? `Published version ${current.version} · ${current.tasks.length} tasks`
+                      {primaryPublished
+                        ? `Published version ${primaryPublished.version} · ${primaryPublished.tasks.length} tasks`
                         : `Draft version ${displayedTemplate.version} · ${displayedTemplate.tasks.length} tasks`}
                     </p>
-                    <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${current ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>
-                      {current ? "Published · Used for new hires" : "Draft · Not used for new hires"}
+                    <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${current ? "bg-emerald-50 text-emerald-800" : retired ? "bg-gray-100 text-gray-800" : "bg-amber-50 text-amber-900"}`}>
+                      {current ? "Active · Used for new hires" : retired ? "Retired · Not used for new hires" : "Draft · Not used for new hires"}
                     </span>
-                    {current && <TemplateVersionProvenance template={current} />}
-                    {current && <TemplateVersionUsage template={current} />}
+                    {primaryPublished && <TemplateVersionProvenance template={primaryPublished} />}
+                    {primaryPublished && <TemplateVersionUsage template={primaryPublished} />}
                   </div>
-                  {current && !draft && (
-                    <button
-                      type="button"
-                      onClick={() => editTemplate(current)}
-                      className="min-h-10 cursor-pointer rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                    >
-                      Create draft version
-                    </button>
-                  )}
+                  <div className="flex flex-wrap gap-2">
+                    {current && !draft && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => editTemplate(current)}
+                          className="min-h-10 cursor-pointer rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                          Create draft version
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPendingLifecycleAction({ template: current, action: "retire" })}
+                          disabled={templateMutationPending || Boolean(editingTemplate)}
+                          className="min-h-10 cursor-pointer rounded-lg border border-red-300 px-3 py-2 text-sm font-medium text-red-800 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Retire template
+                        </button>
+                      </>
+                    )}
+                    {retired && !draft && primaryPublished && (
+                      <button
+                        type="button"
+                        onClick={() => setPendingLifecycleAction({ template: primaryPublished, action: "reactivate" })}
+                        disabled={templateMutationPending || Boolean(editingTemplate)}
+                        className="min-h-10 cursor-pointer rounded-lg border border-emerald-300 px-3 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Reactivate template
+                      </button>
+                    )}
+                  </div>
                 </div>
-                {current && (
+                {current && draft && (
+                  <p className="mt-3 rounded-md bg-gray-50 p-3 text-xs text-gray-700">
+                    Publish or discard draft version {draft.version} before retiring this template.
+                  </p>
+                )}
+                {pendingLifecycleAction?.template.id === primaryPublished?.id && (
+                  <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3" role="group" aria-label="Confirm template lifecycle action">
+                    <p className="text-sm font-medium text-gray-900">
+                      {pendingLifecycleAction.action === "retire"
+                        ? `Retire ${templateName} version ${primaryPublished.version}?`
+                        : `Reactivate ${templateName} version ${primaryPublished.version}?`}
+                    </p>
+                    <p className="mt-1 text-sm leading-relaxed text-gray-700">
+                      {pendingLifecycleAction.action === "retire"
+                        ? `This removes the template from choices for future hires. ${primaryPublished.active_onboarding_plan_count} in-progress ${primaryPublished.active_onboarding_plan_count === 1 ? "plan uses" : "plans use"} this version; those plans and their checklists will remain unchanged.`
+                        : "This makes the latest published version available for future hires again. Existing onboarding plans and their checklists remain unchanged."}
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={confirmLifecycleAction}
+                        disabled={templateMutationPending}
+                        className="min-h-9 cursor-pointer rounded-md bg-sr-text-blue px-3 py-1.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {templateMutationPending ? "Working…" : pendingLifecycleAction.action === "retire" ? "Confirm retirement" : "Confirm reactivation"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPendingLifecycleAction(null)}
+                        disabled={templateMutationPending}
+                        className="min-h-9 cursor-pointer rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {primaryPublished && (
                   <ol className="mt-4 space-y-1 text-sm text-gray-700">
-                    {current.tasks.map((task, index) => {
+                    {primaryPublished.tasks.map((task, index) => {
                     const prerequisiteTitles = task.prerequisite_task_positions
-                      .map((position) => current.tasks[position - 1]?.title)
+                      .map((position) => primaryPublished.tasks[position - 1]?.title)
                       .filter((title): title is string => Boolean(title));
                     return (
                       <li key={task.id}>
@@ -472,7 +570,7 @@ export function OnboardingTemplateManager() {
                         Edit draft
                       </button>
                     </div>
-                    <OnboardingTemplateVersionComparison current={current} draft={draft} />
+                    {primaryPublished && <OnboardingTemplateVersionComparison current={primaryPublished} draft={draft} />}
                     <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-amber-950">
                       {draft.tasks.map((task) => {
                         const prerequisiteTitles = task.prerequisite_task_positions
