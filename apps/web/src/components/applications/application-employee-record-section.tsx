@@ -6,14 +6,18 @@ import {
   useCancelEmployeeOffboarding,
   useApplicationEmployeeRecord,
   useCreateApplicationEmployeeRecord,
+  useEmployeeOffboardingChecklist,
   useLinkEmployeeAccount,
   useStartEmployeeOffboarding,
+  useUpdateEmployeeOffboardingTask,
   useUpdateEmployeeRecord,
 } from "@/lib/api/hooks/employee-records";
 import { useCurrentIdentity } from "@/lib/api/hooks/auth";
 import { useTeamMembers, useWorkspaceMembers } from "@/lib/api/hooks/team";
 import type {
   EmployeeOffboardingReason,
+  EmployeeOffboardingTaskResponse,
+  EmployeeOffboardingTaskStatus,
   EmployeeRecordResponse,
   EmployeeStatus,
   UpdateEmployeeRecordRequest,
@@ -34,6 +38,206 @@ const offboardingReasonLabels: Record<EmployeeOffboardingReason, string> = {
   termination: "Termination",
   other: "Other",
 };
+
+const offboardingTaskStatusLabels: Record<EmployeeOffboardingTaskStatus, string> = {
+  pending: "Not started",
+  in_progress: "In progress",
+  completed: "Completed",
+  blocked: "Blocked",
+};
+
+function EmployeeOffboardingTaskEditor({
+  employeeId,
+  employee,
+  task,
+  canManage,
+}: {
+  employeeId: string;
+  employee: EmployeeRecordResponse;
+  task: EmployeeOffboardingTaskResponse;
+  canManage: boolean;
+}) {
+  const members = useTeamMembers();
+  const updateTask = useUpdateEmployeeOffboardingTask();
+  const [assigneeId, setAssigneeId] = useState(task.assigned_to_user_id ?? "");
+  const [dueDate, setDueDate] = useState(task.due_date);
+  const [taskStatus, setTaskStatus] = useState<EmployeeOffboardingTaskStatus>(task.status);
+  const [completionNotes, setCompletionNotes] = useState(task.completion_notes ?? "");
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMessage(null);
+    setError(null);
+    updateTask.mutate({
+      taskId: task.id,
+      employeeId,
+      request: {
+        expected_version: task.version,
+        assigned_to_user_id: assigneeId || null,
+        due_date: dueDate,
+        status: taskStatus,
+        completion_notes: completionNotes.trim() || null,
+      },
+      idempotencyKey: crypto.randomUUID(),
+    }, {
+      onSuccess: () => setMessage("Checklist task saved."),
+      onError: (cause) => setError(cause instanceof ApiError
+        ? cause.detail
+        : "This checklist task could not be saved. Refresh and try again."),
+    });
+  }
+
+  return (
+    <article className="rounded-lg border border-gray-200 bg-white p-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h4 className="font-semibold text-gray-900">{task.position}. {task.title}</h4>
+          {task.description && <p className="mt-1 text-sm text-gray-600">{task.description}</p>}
+        </div>
+        <span className="w-fit rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">
+          {offboardingTaskStatusLabels[task.status]}
+        </span>
+      </div>
+
+      <form onSubmit={save} className="mt-4 grid gap-3 sm:grid-cols-2">
+        <label className="text-sm font-medium text-gray-700">
+          Task owner
+          <select
+            value={assigneeId}
+            onChange={(event) => setAssigneeId(event.target.value)}
+            disabled={!canManage || members.isLoading || members.isError}
+            className="mt-1 h-10 w-full rounded-lg border border-gray-200 bg-white px-3 font-normal disabled:bg-gray-50"
+          >
+            <option value="">Unassigned</option>
+            {members.data?.items.map((member) => (
+              <option key={member.id} value={member.id}>{member.display_name}</option>
+            ))}
+          </select>
+          {members.isError && canManage && <span className="mt-1 block text-xs text-red-700">Workspace members could not be loaded.</span>}
+        </label>
+        <label className="text-sm font-medium text-gray-700">
+          Due date
+          <input
+            type="date"
+            required
+            max={employee.last_working_day ?? undefined}
+            value={dueDate}
+            onChange={(event) => setDueDate(event.target.value)}
+            disabled={!canManage}
+            className="mt-1 h-10 w-full rounded-lg border border-gray-200 px-3 font-normal disabled:bg-gray-50"
+          />
+        </label>
+        <label className="text-sm font-medium text-gray-700">
+          Status
+          <select
+            value={taskStatus}
+            onChange={(event) => setTaskStatus(event.target.value as EmployeeOffboardingTaskStatus)}
+            disabled={!canManage}
+            className="mt-1 h-10 w-full rounded-lg border border-gray-200 bg-white px-3 font-normal disabled:bg-gray-50"
+          >
+            {Object.entries(offboardingTaskStatusLabels).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm font-medium text-gray-700 sm:col-span-2">
+          Completion or handover notes
+          <textarea
+            rows={2}
+            maxLength={4000}
+            value={completionNotes}
+            onChange={(event) => setCompletionNotes(event.target.value)}
+            disabled={!canManage}
+            className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 font-normal disabled:bg-gray-50"
+            placeholder="Optional notes for the handover record"
+          />
+        </label>
+        {error && <p role="alert" className="text-sm text-red-800 sm:col-span-2">{error}</p>}
+        {message && <p role="status" className="text-sm text-emerald-800 sm:col-span-2">{message}</p>}
+        {canManage && (
+          <button
+            type="submit"
+            disabled={updateTask.isPending}
+            className="h-10 w-fit rounded-lg bg-sr-text-blue px-4 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 sm:col-span-2"
+          >
+            {updateTask.isPending ? "Saving…" : "Save task"}
+          </button>
+        )}
+      </form>
+    </article>
+  );
+}
+
+function EmployeeOffboardingChecklist({
+  employee,
+  canManage,
+}: {
+  employee: EmployeeRecordResponse;
+  canManage: boolean;
+}) {
+  const checklist = useEmployeeOffboardingChecklist(employee.id, canManage);
+
+  if (!canManage) {
+    return (
+      <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+        <h4 className="text-sm font-semibold text-gray-900">Offboarding checklist</h4>
+        <p className="mt-1 text-sm text-gray-600">Checklist details are available to workspace admins and People Operations.</p>
+      </div>
+    );
+  }
+  if (checklist.isLoading) {
+    return <p className="mt-4 text-sm text-gray-600">Loading offboarding checklist…</p>;
+  }
+  if (checklist.isError) {
+    return (
+      <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
+        <p role="alert" className="text-sm text-red-800">We couldn’t load the offboarding checklist.</p>
+        <button type="button" onClick={() => void checklist.refetch()} className="mt-2 text-sm font-medium text-red-900 underline">Try again</button>
+      </div>
+    );
+  }
+
+  const items = checklist.data?.items ?? [];
+  const total = checklist.data?.total_count ?? 0;
+  const completed = checklist.data?.completed_count ?? 0;
+  const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+  return (
+    <div className="mt-4 rounded-lg border border-gray-200 bg-white p-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h4 className="text-sm font-semibold text-gray-900">Offboarding checklist</h4>
+          <p className="mt-1 text-sm text-gray-600">Assign owners, update due dates, and record completion or handover notes.</p>
+        </div>
+        <span className="text-sm font-medium text-gray-700" aria-live="polite">{completed} of {total} tasks complete</span>
+      </div>
+      {total > 0 && (
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-gray-100" role="progressbar" aria-label="Offboarding checklist progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
+          <div className="h-full rounded-full bg-sr-green transition-all" style={{ width: `${percent}%` }} />
+        </div>
+      )}
+      {items.length === 0 ? (
+        <p className="mt-4 rounded-lg bg-gray-50 p-3 text-sm text-gray-600">
+          This offboarding plan has no checklist tasks. New plans use the template in Settings → Offboarding, or MindHire’s starter checklist if no template has been saved.
+        </p>
+      ) : (
+        <div className="mt-4 space-y-3">
+          {items.map((task) => (
+            <EmployeeOffboardingTaskEditor
+              key={`${task.id}-${task.version}`}
+              employeeId={employee.id}
+              employee={employee}
+              task={task}
+              canManage={canManage}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function EmployeeRecordForm({
   applicationId,
@@ -326,6 +530,10 @@ function EmployeeOffboardingSection({
         </p>
       )}
 
+      {employee.status === "offboarding" && (
+        <EmployeeOffboardingChecklist employee={employee} canManage={canManage} />
+      )}
+
       {confirmation && (
         <div
           role="group"
@@ -338,7 +546,7 @@ function EmployeeOffboardingSection({
           </h4>
           <p id="employee-offboarding-confirmation-description" className="mt-1 text-sm text-gray-700">
             {confirmation === "start"
-              ? `Record ${lastWorkingDay} as the last working day and ${reason ? offboardingReasonLabels[reason] : "the selected reason"} as the reason. This changes the employee status to Offboarding but keeps their workspace login active.`
+              ? `Record ${lastWorkingDay} as the last working day and ${reason ? offboardingReasonLabels[reason] : "the selected reason"} as the reason. MindHire will create a checklist from Settings → Offboarding, or use its starter checklist if you have not saved one. The employee’s workspace login stays active.`
               : "This restores the employee status to Active and clears the current planned departure details. The cancellation is retained in the audit history."}
           </p>
           <div className="mt-3 flex flex-col gap-2 sm:flex-row">
