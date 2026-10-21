@@ -1,4 +1,11 @@
-export type EmployeeStatus = "preboarding" | "active" | "inactive";
+export type EmployeeStatus = "preboarding" | "active" | "offboarding" | "inactive";
+export type EmployeeOffboardingReason =
+  | "resignation"
+  | "retirement"
+  | "redundancy"
+  | "contract_end"
+  | "termination"
+  | "other";
 
 export interface EmployeeRecordResponse {
   id: string;
@@ -13,6 +20,8 @@ export interface EmployeeRecordResponse {
   manager_user_id: string | null;
   user_id: string | null;
   status: EmployeeStatus;
+  last_working_day: string | null;
+  offboarding_reason: EmployeeOffboardingReason | null;
   version: number;
   created_at: string;
   updated_at: string;
@@ -55,6 +64,16 @@ export interface UpdateEmployeeRecordRequest {
 
 export interface LinkEmployeeAccountRequest {
   user_id: string | null;
+  expected_version: number;
+}
+
+export interface StartEmployeeOffboardingRequest {
+  expected_version: number;
+  last_working_day: string;
+  reason: EmployeeOffboardingReason;
+}
+
+export interface CancelEmployeeOffboardingRequest {
   expected_version: number;
 }
 
