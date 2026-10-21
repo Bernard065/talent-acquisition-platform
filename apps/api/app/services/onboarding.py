@@ -11,6 +11,7 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.authorization import Role, TenantContext
 from app.db.models.application import Application
+from app.db.models.audit import AuditEvent
 from app.db.models.candidate import Candidate
 from app.db.models.employee import Employee
 from app.db.models.identity import Tenant, User, UserRoleAssignment
@@ -78,6 +79,17 @@ _MAX_NAME_LENGTH = 200
 _MAX_DESCRIPTION_LENGTH = 5_000
 _MAX_BLOCK_REASON_LENGTH = 2_000
 _ONBOARDING_TASK_DUE_SOON_WINDOW = timedelta(days=7)
+
+
+@dataclass(frozen=True, slots=True)
+class OnboardingTemplateVersionProvenance:
+    """Actor and lineage metadata for one onboarding template version."""
+
+    created_by_display_name: str | None
+    published_at: datetime | None
+    published_by_display_name: str | None
+    based_on_version: int | None
+    restored_from_version: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -532,6 +544,104 @@ async def list_onboarding_template_versions(
         tenant_id=context.tenant_id,
         active_only=False,
     )
+
+
+async def get_onboarding_template_version_provenance(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    templates: tuple[OnboardingTemplate, ...],
+) -> dict[UUID, OnboardingTemplateVersionProvenance]:
+    """Load tenant-scoped template authorship and publication history."""
+    _require_role(context, _TEMPLATE_ADMIN_ROLES)
+    if not templates:
+        return {}
+
+    template_ids = tuple(template.id for template in templates)
+    events = list(
+        await session.scalars(
+            select(AuditEvent)
+            .where(
+                AuditEvent.tenant_id == context.tenant_id,
+                AuditEvent.entity_type == "onboarding_template",
+                AuditEvent.entity_id.in_(tuple(str(item) for item in template_ids)),
+                AuditEvent.action.in_(
+                    (
+                        "onboarding_template.created",
+                        "onboarding_template.draft_created",
+                        "onboarding_template.version_draft_created",
+                        "onboarding_template.draft_published",
+                    )
+                ),
+            )
+            .order_by(AuditEvent.occurred_at, AuditEvent.id)
+        )
+    )
+
+    subjects = {template.created_by_subject for template in templates} | {
+        event.actor_subject for event in events if event.actor_subject is not None
+    }
+    display_names: dict[str, str] = {}
+    if subjects:
+        rows = await session.execute(
+            select(User.external_subject, User.display_name).where(
+                User.tenant_id == context.tenant_id,
+                User.external_subject.in_(subjects),
+            )
+        )
+        display_names = dict(rows.tuples())
+
+    creation_events: dict[str, AuditEvent] = {}
+    publication_events: dict[str, AuditEvent] = {}
+    for event in events:
+        if event.action == "onboarding_template.draft_published":
+            publication_events[event.entity_id] = event
+        elif event.action in {
+            "onboarding_template.created",
+            "onboarding_template.draft_created",
+            "onboarding_template.version_draft_created",
+        }:
+            creation_events[event.entity_id] = event
+
+    def actor_name(subject: str | None) -> str | None:
+        if subject is None:
+            return None
+        return display_names.get(subject, "Former workspace member")
+
+    provenance: dict[UUID, OnboardingTemplateVersionProvenance] = {}
+    for template in templates:
+        creation_event = creation_events.get(str(template.id))
+        publication_event = publication_events.get(str(template.id))
+        if (
+            publication_event is None
+            and creation_event is not None
+            and creation_event.action == "onboarding_template.created"
+        ):
+            publication_event = creation_event
+
+        details = creation_event.details if creation_event is not None else None
+        based_on_version = None
+        restored_from_version = None
+        if isinstance(details, dict):
+            previous_version = details.get("previous_version")
+            if type(previous_version) is int and previous_version >= 1:
+                based_on_version = previous_version
+            restored_version = details.get("restored_from_version")
+            if type(restored_version) is int and restored_version >= 1:
+                restored_from_version = restored_version
+
+        provenance[template.id] = OnboardingTemplateVersionProvenance(
+            created_by_display_name=actor_name(template.created_by_subject),
+            published_at=publication_event.occurred_at if publication_event else None,
+            published_by_display_name=(
+                actor_name(publication_event.actor_subject)
+                if publication_event
+                else None
+            ),
+            based_on_version=based_on_version,
+            restored_from_version=restored_from_version,
+        )
+    return provenance
 
 
 async def _list_onboarding_templates(
@@ -995,6 +1105,7 @@ class CreateOnboardingTemplateVersionCommand:
 
     expected_version: int
     tasks: tuple[OnboardingTemplateTaskDefinition, ...]
+    restore_from_template_id: UUID | None = None
 
     def __post_init__(self) -> None:
         if self.expected_version < 1:
@@ -1333,6 +1444,22 @@ async def create_onboarding_template_version_draft(
             raise OnboardingVersionConflictError(
                 "Create a draft from the current published template version."
             )
+        restored_from: OnboardingTemplate | None = None
+        if command.restore_from_template_id is not None:
+            restored_from = await session.scalar(
+                select(OnboardingTemplate).where(
+                    OnboardingTemplate.id == command.restore_from_template_id,
+                    OnboardingTemplate.tenant_id == context.tenant_id,
+                    OnboardingTemplate.name == current.name,
+                    OnboardingTemplate.publication_status
+                    == OnboardingTemplatePublicationStatus.PUBLISHED,
+                    OnboardingTemplate.version < current.version,
+                )
+            )
+            if restored_from is None:
+                raise OnboardingVersionConflictError(
+                    "Choose an earlier published version of this template to restore."
+                )
         _validate_version(
             actual_version=current.version,
             expected_version=command.expected_version,
@@ -1376,6 +1503,12 @@ async def create_onboarding_template_version_draft(
             details={
                 "previous_template_id": str(current.id),
                 "previous_version": current.version,
+                "restored_from_template_id": (
+                    str(restored_from.id) if restored_from is not None else None
+                ),
+                "restored_from_version": (
+                    restored_from.version if restored_from is not None else None
+                ),
                 "version": draft.version,
                 "task_count": len(command.tasks),
             },

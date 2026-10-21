@@ -39,6 +39,7 @@ export interface CreateOnboardingTemplateRequest {
 
 export interface CreateOnboardingTemplateVersionRequest {
   expected_version: number;
+  restore_from_template_id?: string | null;
   tasks: OnboardingTemplateTaskRequest[];
 }
 
@@ -69,6 +70,11 @@ export interface OnboardingTemplateResponse {
   publication_status: OnboardingTemplatePublicationStatus;
   draft_revision: number;
   created_at: string;
+  created_by_display_name?: string | null;
+  published_at?: string | null;
+  published_by_display_name?: string | null;
+  based_on_version?: number | null;
+  restored_from_version?: number | null;
   tasks: OnboardingTemplateTaskResponse[];
 }
 

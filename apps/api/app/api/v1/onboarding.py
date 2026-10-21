@@ -78,6 +78,7 @@ from app.services.onboarding import (
     discard_onboarding_template_draft,
     get_application_onboarding,
     get_employee_portal_onboarding,
+    get_onboarding_template_version_provenance,
     list_active_onboarding_templates,
     list_onboarding_overview,
     list_onboarding_task_activity,
@@ -366,6 +367,11 @@ async def list_onboarding_template_versions_endpoint(
         session,
         context=context,
     )
+    provenance_by_template = await get_onboarding_template_version_provenance(
+        session,
+        context=context,
+        templates=tuple(template for template, _ in templates),
+    )
     template_task_ids = tuple(task.id for _, tasks in templates for task in tasks)
     prerequisite_positions = await list_onboarding_template_prerequisite_positions(
         session,
@@ -382,6 +388,19 @@ async def list_onboarding_template_versions_endpoint(
                 publication_status=template.publication_status.value,
                 draft_revision=template.draft_revision,
                 created_at=template.created_at,
+                created_by_display_name=provenance_by_template[
+                    template.id
+                ].created_by_display_name,
+                published_at=provenance_by_template[template.id].published_at,
+                published_by_display_name=provenance_by_template[
+                    template.id
+                ].published_by_display_name,
+                based_on_version=provenance_by_template[
+                    template.id
+                ].based_on_version,
+                restored_from_version=provenance_by_template[
+                    template.id
+                ].restored_from_version,
                 tasks=[
                     OnboardingTemplateTaskResponse.model_validate(task).model_copy(
                         update={
@@ -968,6 +987,7 @@ async def create_onboarding_template_version_endpoint(
             template_id=template_id,
             command=CreateOnboardingTemplateVersionCommand(
                 expected_version=payload.expected_version,
+                restore_from_template_id=payload.restore_from_template_id,
                 tasks=tuple(
                     OnboardingTemplateTaskDefinition(
                         title=task.title,
