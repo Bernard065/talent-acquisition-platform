@@ -22,3 +22,11 @@ class EmployeeOffboardingReason(StrEnum):
     TERMINATION = "termination"
     OTHER = "other"
 
+
+class EmployeeOffboardingTaskStatus(StrEnum):
+    """Progress states for workspace offboarding checklist tasks."""
+
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    BLOCKED = "blocked"
