@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import {
   useCreateOnboardingTemplate,
@@ -99,6 +100,64 @@ function TemplateVersionProvenance({ template }: { template: OnboardingTemplateR
       ) : template.based_on_version ? (
         <p>Draft created from published version {template.based_on_version}</p>
       ) : null}
+    </div>
+  );
+}
+
+function templateUsageHref(
+  template: OnboardingTemplateResponse,
+  status: "active" | "completed",
+): string {
+  const params = new URLSearchParams({
+    template_id: template.id,
+    template_name: template.name,
+    template_version: String(template.version),
+    status,
+  });
+  return `/dashboard/onboarding?${params.toString()}`;
+}
+
+function TemplateUsageCount({
+  template,
+  status,
+  count,
+  label,
+}: {
+  template: OnboardingTemplateResponse;
+  status: "active" | "completed";
+  count: number;
+  label: string;
+}) {
+  const text = `${count} ${label}`;
+  if (count === 0) return <span className="text-gray-500">{text}</span>;
+
+  return (
+    <Link
+      href={templateUsageHref(template, status)}
+      aria-label={`View ${count} ${label} onboarding plans using ${template.name}, version ${template.version}`}
+      className="font-medium text-sr-text-blue underline-offset-2 hover:underline focus-visible:rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sr-green"
+    >
+      {text}
+    </Link>
+  );
+}
+
+function TemplateVersionUsage({ template }: { template: OnboardingTemplateResponse }) {
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600">
+      <span>Active and completed plans using this version:</span>
+      <TemplateUsageCount
+        template={template}
+        status="active"
+        count={template.active_onboarding_plan_count}
+        label="in progress"
+      />
+      <TemplateUsageCount
+        template={template}
+        status="completed"
+        count={template.completed_onboarding_plan_count}
+        label="completed"
+      />
     </div>
   );
 }
@@ -360,6 +419,7 @@ export function OnboardingTemplateManager() {
                       {current ? "Published · Used for new hires" : "Draft · Not used for new hires"}
                     </span>
                     {current && <TemplateVersionProvenance template={current} />}
+                    {current && <TemplateVersionUsage template={current} />}
                   </div>
                   {current && !draft && (
                     <button
@@ -513,6 +573,7 @@ export function OnboardingTemplateManager() {
                             )}
                           </div>
                           <TemplateVersionProvenance template={template} />
+                          <TemplateVersionUsage template={template} />
                           {draft ? (
                             <p className="mt-2 text-xs text-gray-600">
                               Publish or discard draft version {draft.version} before restoring another version.

@@ -75,6 +75,8 @@ export interface OnboardingTemplateResponse {
   published_by_display_name?: string | null;
   based_on_version?: number | null;
   restored_from_version?: number | null;
+  active_onboarding_plan_count: number;
+  completed_onboarding_plan_count: number;
   tasks: OnboardingTemplateTaskResponse[];
 }
 

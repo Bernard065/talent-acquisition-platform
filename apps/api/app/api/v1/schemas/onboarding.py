@@ -234,6 +234,8 @@ class OnboardingTemplateListItemResponse(OnboardingTemplateResponse):
     """Template version metadata and its immutable task definitions."""
 
     tasks: list[OnboardingTemplateTaskResponse]
+    active_onboarding_plan_count: int = Field(default=0, ge=0)
+    completed_onboarding_plan_count: int = Field(default=0, ge=0)
 
 
 class OnboardingTemplateListResponse(BaseModel):
