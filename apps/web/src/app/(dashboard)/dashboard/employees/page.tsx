@@ -14,6 +14,7 @@ const PAGE_SIZE = 25;
 const employeeStatuses: { value: EmployeeStatus; label: string }[] = [
   { value: "preboarding", label: "Preboarding" },
   { value: "active", label: "Active" },
+  { value: "offboarding", label: "Offboarding" },
   { value: "inactive", label: "Inactive" },
 ];
 
@@ -30,6 +31,7 @@ function formatDate(value: string | null): string {
 function statusStyle(status: EmployeeStatus): string {
   if (status === "active") return "bg-emerald-50 text-emerald-800";
   if (status === "inactive") return "bg-gray-100 text-gray-700";
+  if (status === "offboarding") return "bg-orange-50 text-orange-900";
   return "bg-amber-50 text-amber-900";
 }
 
@@ -191,7 +193,7 @@ export default function EmployeesPage() {
               <p className="px-4 py-2 text-xs text-gray-500 sm:hidden">
                 Swipe horizontally to see all employee details.
               </p>
-              <table className="w-full min-w-[1100px] text-left text-sm">
+              <table className="w-full min-w-[1220px] text-left text-sm">
                 <thead className="border-b border-gray-200 bg-gray-50 text-xs font-medium uppercase tracking-wide text-gray-500">
                   <tr>
                     <th scope="col" className="px-5 py-3">Employee</th>
@@ -200,6 +202,7 @@ export default function EmployeesPage() {
                     <th scope="col" className="px-5 py-3">Department</th>
                     <th scope="col" className="px-5 py-3">Location</th>
                     <th scope="col" className="px-5 py-3">Start date</th>
+                    <th scope="col" className="px-5 py-3">Last working day</th>
                     <th scope="col" className="px-5 py-3">Status</th>
                     <th scope="col" className="px-5 py-3"><span className="sr-only">Open application</span></th>
                   </tr>
@@ -218,6 +221,11 @@ export default function EmployeesPage() {
                       <td className="px-5 py-4 text-gray-700">{employee.department || "—"}</td>
                       <td className="px-5 py-4 text-gray-700">{employee.location || "—"}</td>
                       <td className="px-5 py-4 text-gray-700">{formatDate(employee.start_date)}</td>
+                      <td className="px-5 py-4 text-gray-700">
+                        {employee.status === "offboarding" && !employee.last_working_day
+                          ? "Restricted"
+                          : formatDate(employee.last_working_day)}
+                      </td>
                       <td className="px-5 py-4">
                         <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusStyle(employee.status)}`}>
                           {statusLabel(employee.status)}
