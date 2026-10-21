@@ -254,9 +254,7 @@ async def api_app_fixture(
 ) -> AsyncIterator[FastAPI]:
     """Create the API with database and verified-identity overrides."""
     application = create_app(_test_settings())
-    application.dependency_overrides[get_db_session] = _session_dependency(
-        database_engine
-    )
+    application.dependency_overrides[get_db_session] = _session_dependency(database_engine)
     _set_context(application, tenant_id=tenant_id)
 
     yield application
@@ -305,6 +303,99 @@ async def test_creates_template_idempotently_with_private_response(
     assert first.headers["Cache-Control"] == "private, no-store"
     assert first.headers["Idempotent-Replayed"] == "false"
     assert replay.headers["Idempotent-Replayed"] == "true"
+
+
+@pytest.mark.asyncio
+async def test_template_draft_api_requires_current_revision_and_explicit_publish(
+    api_app: FastAPI,
+) -> None:
+    """Exercise revisioned draft edits, publication, and discard via HTTP."""
+    async with AsyncClient(
+        transport=ASGITransport(app=api_app),
+        base_url="http://testserver",
+    ) as client:
+        created = await client.post(
+            "/api/v1/onboarding-templates",
+            json=_template_payload(),
+            headers=_headers(),
+        )
+        template_id = created.json()["id"]
+
+        active_before_publish = await client.get("/api/v1/onboarding-templates")
+
+        updated = await client.put(
+            f"/api/v1/onboarding-templates/{template_id}/draft",
+            json={
+                "expected_revision": 1,
+                "tasks": [
+                    {
+                        "title": "Complete updated onboarding task",
+                        "description": "Use the revised onboarding instructions.",
+                        "due_offset_days": 3,
+                        "default_assignee_role": "people_operations",
+                    }
+                ],
+            },
+            headers=_headers(),
+        )
+        stale_publish = await client.post(
+            f"/api/v1/onboarding-templates/{template_id}/publish",
+            json={"expected_revision": 1},
+            headers=_headers(),
+        )
+        stale_update = await client.put(
+            f"/api/v1/onboarding-templates/{template_id}/draft",
+            json={
+                "expected_revision": 1,
+                "tasks": [
+                    {
+                        "title": "Stale onboarding task",
+                        "default_assignee_role": "people_operations",
+                    }
+                ],
+            },
+            headers=_headers(),
+        )
+        published = await client.post(
+            f"/api/v1/onboarding-templates/{template_id}/publish",
+            json={"expected_revision": 2},
+            headers=_headers(),
+        )
+        active_after_publish = await client.get("/api/v1/onboarding-templates")
+
+        discard_payload = _template_payload()
+        discard_payload["name"] = "Discarded onboarding draft"
+        discard_draft = await client.post(
+            "/api/v1/onboarding-templates",
+            json=discard_payload,
+            headers=_headers(),
+        )
+        discarded = await client.post(
+            f"/api/v1/onboarding-templates/{discard_draft.json()['id']}/discard",
+            json={"expected_revision": 1},
+            headers=_headers(),
+        )
+
+    assert created.status_code == 201
+    assert created.json()["publication_status"] == "draft"
+    assert created.json()["draft_revision"] == 1
+    assert active_before_publish.status_code == 200
+    assert active_before_publish.json()["items"] == []
+    assert updated.status_code == 200
+    assert updated.json()["draft_revision"] == 2
+    assert stale_publish.status_code == 409
+    assert stale_update.status_code == 409
+    assert published.status_code == 200
+    assert published.json()["publication_status"] == "published"
+    assert published.json()["is_active"] is True
+    assert active_after_publish.status_code == 200
+    assert [item["id"] for item in active_after_publish.json()["items"]] == [template_id]
+    assert discard_draft.status_code == 201
+    assert discarded.status_code == 200
+    assert discarded.json() == {
+        "template_id": discard_draft.json()["id"],
+        "discarded": True,
+    }
 
 
 @pytest.mark.asyncio
@@ -418,10 +509,12 @@ async def test_replays_task_status_update_and_rejects_stale_version(
             json={"onboarding_template_id": template.json()["id"]},
             headers=_headers(),
         )
-        task_id = (await _instance_task_ids(
-            database_engine,
-            UUID(started.json()["id"]),
-        ))[0]
+        task_id = (
+            await _instance_task_ids(
+                database_engine,
+                UUID(started.json()["id"]),
+            )
+        )[0]
 
         headers = _headers()
         payload = {
