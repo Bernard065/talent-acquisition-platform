@@ -43,6 +43,7 @@ from app.api.v1.schemas.onboarding import (
     OnboardingTaskWorklistItemResponse,
     OnboardingTaskWorklistResponse,
     OnboardingTemplateDraftActionRequest,
+    OnboardingTemplateLifecycleActionRequest,
     OnboardingTemplateListItemResponse,
     OnboardingTemplateListResponse,
     OnboardingTemplateResponse,
@@ -67,6 +68,7 @@ from app.services.onboarding import (
     CreateOnboardingTemplateCommand,
     CreateOnboardingTemplateVersionCommand,
     OnboardingTemplateDraftActionCommand,
+    OnboardingTemplateLifecycleCommand,
     OnboardingTemplateTaskDefinition,
     UpdateOnboardingTaskStatusCommand,
     UpdateOnboardingTemplateDraftCommand,
@@ -88,6 +90,8 @@ from app.services.onboarding import (
     list_onboarding_template_prerequisite_positions,
     list_onboarding_template_versions,
     publish_onboarding_template_draft,
+    reactivate_onboarding_template,
+    retire_onboarding_template,
     start_onboarding,
     update_employee_portal_task_status,
     update_onboarding_task_due_date,
@@ -1180,6 +1184,88 @@ async def discard_onboarding_template_draft_endpoint(
         context=context,
         key=idempotency_key,
         operation_name="onboarding_template.draft.discard",
+        payload={"template_id": str(template_id), **payload.model_dump(mode="json")},
+        operation=operation,
+    )
+    return _private_response(result)
+
+
+@router.post(
+    "/onboarding-templates/{template_id}/retire",
+    response_model=OnboardingTemplateResponse,
+    summary="Retire a published onboarding template",
+)
+async def retire_onboarding_template_endpoint(
+    template_id: UUID,
+    payload: OnboardingTemplateLifecycleActionRequest,
+    context: CallerContext,
+    session: DatabaseSession,
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Remove a template from future onboarding choices without changing plans."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        template = await retire_onboarding_template(
+            session,
+            context=context,
+            template_id=template_id,
+            command=OnboardingTemplateLifecycleCommand(
+                expected_version=payload.expected_version
+            ),
+        )
+        return (
+            status.HTTP_200_OK,
+            OnboardingTemplateResponse.model_validate(template).model_dump(
+                mode="json"
+            ),
+        )
+
+    result = await execute_idempotently(
+        session,
+        context=context,
+        key=idempotency_key,
+        operation_name="onboarding_template.retire",
+        payload={"template_id": str(template_id), **payload.model_dump(mode="json")},
+        operation=operation,
+    )
+    return _private_response(result)
+
+
+@router.post(
+    "/onboarding-templates/{template_id}/reactivate",
+    response_model=OnboardingTemplateResponse,
+    summary="Reactivate a retired onboarding template",
+)
+async def reactivate_onboarding_template_endpoint(
+    template_id: UUID,
+    payload: OnboardingTemplateLifecycleActionRequest,
+    context: CallerContext,
+    session: DatabaseSession,
+    idempotency_key: IdempotencyKey,
+) -> JSONResponse:
+    """Make a retired template available for future onboarding plans."""
+
+    async def operation() -> tuple[int, dict[str, Any]]:
+        template = await reactivate_onboarding_template(
+            session,
+            context=context,
+            template_id=template_id,
+            command=OnboardingTemplateLifecycleCommand(
+                expected_version=payload.expected_version
+            ),
+        )
+        return (
+            status.HTTP_200_OK,
+            OnboardingTemplateResponse.model_validate(template).model_dump(
+                mode="json"
+            ),
+        )
+
+    result = await execute_idempotently(
+        session,
+        context=context,
+        key=idempotency_key,
+        operation_name="onboarding_template.reactivate",
         payload={"template_id": str(template_id), **payload.model_dump(mode="json")},
         operation=operation,
     )

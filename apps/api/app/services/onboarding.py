@@ -1214,6 +1214,19 @@ class OnboardingTemplateDraftActionCommand:
             )
 
 
+@dataclass(frozen=True, slots=True)
+class OnboardingTemplateLifecycleCommand:
+    """Optimistic-concurrency precondition for a template lifecycle action."""
+
+    expected_version: int
+
+    def __post_init__(self) -> None:
+        if self.expected_version < 1:
+            raise OnboardingValidationError(
+                "Expected template version must be at least one."
+            )
+
+
 def _validate_template_task_definitions(
     tasks: tuple[OnboardingTemplateTaskDefinition, ...],
 ) -> None:
@@ -1788,6 +1801,160 @@ async def discard_onboarding_template_draft(
         await session.delete(draft)
 
     return template_id
+
+
+async def retire_onboarding_template(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    template_id: UUID,
+    command: OnboardingTemplateLifecycleCommand,
+) -> OnboardingTemplate:
+    """Remove a published template from future onboarding choices."""
+    _require_role(context, _TEMPLATE_ADMIN_ROLES)
+
+    async with transactional(session):
+        template = await session.scalar(
+            select(OnboardingTemplate)
+            .where(
+                OnboardingTemplate.id == template_id,
+                OnboardingTemplate.tenant_id == context.tenant_id,
+            )
+            .with_for_update()
+        )
+        if template is None:
+            raise OnboardingTemplateNotFoundError("Onboarding template was not found.")
+        if template.publication_status is not OnboardingTemplatePublicationStatus.PUBLISHED:
+            raise OnboardingVersionConflictError(
+                "Only a published onboarding template can be retired."
+            )
+        if not template.is_active:
+            raise OnboardingVersionConflictError(
+                "This onboarding template is already retired."
+            )
+        _validate_version(
+            actual_version=template.version,
+            expected_version=command.expected_version,
+            entity_name="onboarding template",
+        )
+
+        draft_id = await session.scalar(
+            select(OnboardingTemplate.id).where(
+                OnboardingTemplate.tenant_id == context.tenant_id,
+                OnboardingTemplate.name == template.name,
+                OnboardingTemplate.publication_status
+                == OnboardingTemplatePublicationStatus.DRAFT,
+            )
+        )
+        if draft_id is not None:
+            raise OnboardingVersionConflictError(
+                "Publish or discard the existing draft before retiring this template."
+            )
+
+        template.is_active = False
+        record_audit_event(
+            session,
+            context=context,
+            action="onboarding_template.retired",
+            entity_type="onboarding_template",
+            entity_id=str(template.id),
+            details={"version": template.version},
+        )
+        await session.flush()
+        await session.refresh(template)
+
+    return template
+
+
+async def reactivate_onboarding_template(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    template_id: UUID,
+    command: OnboardingTemplateLifecycleCommand,
+) -> OnboardingTemplate:
+    """Make a retired published version available for future onboarding plans."""
+    _require_role(context, _TEMPLATE_ADMIN_ROLES)
+
+    async with transactional(session):
+        template = await session.scalar(
+            select(OnboardingTemplate)
+            .where(
+                OnboardingTemplate.id == template_id,
+                OnboardingTemplate.tenant_id == context.tenant_id,
+            )
+            .with_for_update()
+        )
+        if template is None:
+            raise OnboardingTemplateNotFoundError("Onboarding template was not found.")
+        if template.publication_status is not OnboardingTemplatePublicationStatus.PUBLISHED:
+            raise OnboardingVersionConflictError(
+                "Only a published onboarding template can be reactivated."
+            )
+        if template.is_active:
+            raise OnboardingVersionConflictError(
+                "This onboarding template is already active."
+            )
+        _validate_version(
+            actual_version=template.version,
+            expected_version=command.expected_version,
+            entity_name="onboarding template",
+        )
+
+        newer_version_id = await session.scalar(
+            select(OnboardingTemplate.id).where(
+                OnboardingTemplate.tenant_id == context.tenant_id,
+                OnboardingTemplate.name == template.name,
+                OnboardingTemplate.publication_status
+                == OnboardingTemplatePublicationStatus.PUBLISHED,
+                OnboardingTemplate.version > template.version,
+            )
+        )
+        if newer_version_id is not None:
+            raise OnboardingVersionConflictError(
+                "Only the latest published version can be reactivated."
+            )
+
+        active_template_id = await session.scalar(
+            select(OnboardingTemplate.id)
+            .where(
+                OnboardingTemplate.tenant_id == context.tenant_id,
+                OnboardingTemplate.name == template.name,
+                OnboardingTemplate.is_active.is_(True),
+            )
+            .with_for_update()
+        )
+        if active_template_id is not None:
+            raise OnboardingVersionConflictError(
+                "Another version of this template is already active."
+            )
+
+        draft_id = await session.scalar(
+            select(OnboardingTemplate.id).where(
+                OnboardingTemplate.tenant_id == context.tenant_id,
+                OnboardingTemplate.name == template.name,
+                OnboardingTemplate.publication_status
+                == OnboardingTemplatePublicationStatus.DRAFT,
+            )
+        )
+        if draft_id is not None:
+            raise OnboardingVersionConflictError(
+                "Discard the existing draft before reactivating this template."
+            )
+
+        template.is_active = True
+        record_audit_event(
+            session,
+            context=context,
+            action="onboarding_template.reactivated",
+            entity_type="onboarding_template",
+            entity_id=str(template.id),
+            details={"version": template.version},
+        )
+        await session.flush()
+        await session.refresh(template)
+
+    return template
 
 
 async def _persist_template_task_definitions(

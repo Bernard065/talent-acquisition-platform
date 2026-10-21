@@ -111,6 +111,14 @@ class OnboardingTemplateDraftActionRequest(BaseModel):
     expected_revision: int = Field(ge=1)
 
 
+class OnboardingTemplateLifecycleActionRequest(BaseModel):
+    """Concurrency precondition for retiring or reactivating a published template."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+
+
 class StartOnboardingRequest(BaseModel):
     """Input for starting onboarding for a hired application."""
 
