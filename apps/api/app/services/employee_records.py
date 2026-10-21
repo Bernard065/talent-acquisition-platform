@@ -16,7 +16,7 @@ from app.db.models.identity import User
 from app.db.models.requisition import Requisition
 from app.db.transactions import transactional
 from app.domains.candidates.enums import ApplicationStatus
-from app.domains.employees.enums import EmployeeStatus
+from app.domains.employees.enums import EmployeeOffboardingReason, EmployeeStatus
 from app.services.audit import record_audit_event
 from app.services.candidate_errors import ApplicationNotFoundError
 from app.services.onboarding_errors import (
@@ -30,6 +30,9 @@ _EMPLOYEE_ROLES = frozenset({Role.TENANT_ADMIN, Role.PEOPLE_OPERATIONS, Role.REC
 _EMPLOYEE_ACCOUNT_ADMIN_ROLES = frozenset(
     {Role.TENANT_ADMIN, Role.PEOPLE_OPERATIONS}
 )
+_EMPLOYEE_OFFBOARDING_ADMIN_ROLES = frozenset(
+    {Role.TENANT_ADMIN, Role.PEOPLE_OPERATIONS}
+)
 
 
 def _require_employee_access(context: TenantContext) -> None:
@@ -41,6 +44,13 @@ def _require_employee_account_admin(context: TenantContext) -> None:
     if context.roles.isdisjoint(_EMPLOYEE_ACCOUNT_ADMIN_ROLES):
         raise OnboardingAccessDeniedError(
             "Only workspace admins and People Operations can link employee accounts."
+        )
+
+
+def _require_employee_offboarding_admin(context: TenantContext) -> None:
+    if context.roles.isdisjoint(_EMPLOYEE_OFFBOARDING_ADMIN_ROLES):
+        raise OnboardingAccessDeniedError(
+            "Only workspace admins and People Operations can manage employee offboarding."
         )
 
 
@@ -381,13 +391,25 @@ async def update_employee_record(
                     EmployeeStatus.ACTIVE,
                     EmployeeStatus.INACTIVE,
                 },
-                EmployeeStatus.ACTIVE: {EmployeeStatus.INACTIVE},
+                EmployeeStatus.ACTIVE: set(),
+                EmployeeStatus.OFFBOARDING: set(),
                 EmployeeStatus.INACTIVE: {EmployeeStatus.ACTIVE},
             }
             if (
                 next_status != employee.status
                 and next_status not in allowed_statuses[employee.status]
             ):
+                if next_status is EmployeeStatus.OFFBOARDING:
+                    raise OnboardingValidationError(
+                        "Use the offboarding action to record a last working day and reason."
+                    )
+                if (
+                    employee.status is EmployeeStatus.ACTIVE
+                    and next_status is EmployeeStatus.INACTIVE
+                ):
+                    raise OnboardingValidationError(
+                        "Start the offboarding workflow before marking an active employee inactive."
+                    )
                 raise OnboardingValidationError("The employee status transition is not allowed.")
             normalized_changes["status"] = next_status
 
@@ -420,6 +442,118 @@ async def update_employee_record(
             entity_type="employee",
             entity_id=str(employee.id),
             details={"updated_fields": sorted(normalized_changes)},
+        )
+        await session.flush()
+        await session.refresh(employee)
+
+    return employee
+
+
+async def start_employee_offboarding(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    employee_id: UUID,
+    expected_version: int,
+    last_working_day: date,
+    reason: EmployeeOffboardingReason,
+) -> Employee:
+    """Record an employee's planned departure without deleting their history."""
+    _require_employee_offboarding_admin(context)
+
+    async with transactional(session):
+        employee = await session.scalar(
+            select(Employee)
+            .where(
+                Employee.id == employee_id,
+                Employee.tenant_id == context.tenant_id,
+            )
+            .with_for_update()
+        )
+        if employee is None:
+            raise EmployeeRecordNotFoundError("Employee record was not found.")
+        if employee.version != expected_version:
+            raise OnboardingVersionConflictError(
+                "Employee record has changed; reload before starting offboarding."
+            )
+        if employee.status is not EmployeeStatus.ACTIVE:
+            raise OnboardingValidationError(
+                "Only an active employee can start offboarding."
+            )
+        if employee.start_date is not None and last_working_day < employee.start_date:
+            raise OnboardingValidationError(
+                "The last working day cannot be before the employee's start date."
+            )
+
+        employee.status = EmployeeStatus.OFFBOARDING
+        employee.last_working_day = last_working_day
+        employee.offboarding_reason = reason
+        record_audit_event(
+            session,
+            context=context,
+            action="employee_record.offboarding_started",
+            entity_type="employee",
+            entity_id=str(employee.id),
+            details={
+                "last_working_day": last_working_day.isoformat(),
+                "reason": reason.value,
+            },
+        )
+        await session.flush()
+        await session.refresh(employee)
+
+    return employee
+
+
+async def cancel_employee_offboarding(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    employee_id: UUID,
+    expected_version: int,
+) -> Employee:
+    """Cancel a planned departure and preserve its details in audit history."""
+    _require_employee_offboarding_admin(context)
+
+    async with transactional(session):
+        employee = await session.scalar(
+            select(Employee)
+            .where(
+                Employee.id == employee_id,
+                Employee.tenant_id == context.tenant_id,
+            )
+            .with_for_update()
+        )
+        if employee is None:
+            raise EmployeeRecordNotFoundError("Employee record was not found.")
+        if employee.version != expected_version:
+            raise OnboardingVersionConflictError(
+                "Employee record has changed; reload before cancelling offboarding."
+            )
+        if employee.status is not EmployeeStatus.OFFBOARDING:
+            raise OnboardingValidationError(
+                "Only an employee in offboarding can cancel a planned departure."
+            )
+
+        previous_last_working_day = employee.last_working_day
+        previous_reason = employee.offboarding_reason
+        employee.status = EmployeeStatus.ACTIVE
+        employee.last_working_day = None
+        employee.offboarding_reason = None
+        record_audit_event(
+            session,
+            context=context,
+            action="employee_record.offboarding_cancelled",
+            entity_type="employee",
+            entity_id=str(employee.id),
+            details={
+                "last_working_day": (
+                    previous_last_working_day.isoformat()
+                    if previous_last_working_day is not None
+                    else None
+                ),
+                "reason": previous_reason.value if previous_reason is not None else None,
+            },
         )
         await session.flush()
         await session.refresh(employee)

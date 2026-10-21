@@ -3,14 +3,17 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { ApiError } from "@/lib/api";
 import {
+  useCancelEmployeeOffboarding,
   useApplicationEmployeeRecord,
   useCreateApplicationEmployeeRecord,
   useLinkEmployeeAccount,
+  useStartEmployeeOffboarding,
   useUpdateEmployeeRecord,
 } from "@/lib/api/hooks/employee-records";
 import { useCurrentIdentity } from "@/lib/api/hooks/auth";
 import { useTeamMembers, useWorkspaceMembers } from "@/lib/api/hooks/team";
 import type {
+  EmployeeOffboardingReason,
   EmployeeRecordResponse,
   EmployeeStatus,
   UpdateEmployeeRecordRequest,
@@ -19,7 +22,17 @@ import type {
 const statusLabels: Record<EmployeeStatus, string> = {
   preboarding: "Preboarding",
   active: "Active",
+  offboarding: "Offboarding",
   inactive: "Inactive",
+};
+
+const offboardingReasonLabels: Record<EmployeeOffboardingReason, string> = {
+  resignation: "Resignation",
+  retirement: "Retirement",
+  redundancy: "Redundancy",
+  contract_end: "End of contract",
+  termination: "Termination",
+  other: "Other",
 };
 
 function EmployeeRecordForm({
@@ -74,8 +87,10 @@ function EmployeeRecordForm({
       department: department.trim() || null,
       location: location.trim() || null,
       manager_user_id: managerId || null,
-      status,
     };
+    if (employee.status === "preboarding" || employee.status === "inactive") {
+      request.status = status;
+    }
     update.mutate({
       employeeId: employee.id,
       applicationId,
@@ -129,13 +144,15 @@ function EmployeeRecordForm({
             <span className="mb-1 block text-sm font-medium text-gray-700">Work location</span>
             <input value={location} onChange={(event) => setLocation(event.target.value)} maxLength={200} className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm" />
           </label>
-          <label>
-            <span className="mb-1 block text-sm font-medium text-gray-700">Employment status</span>
-            <select value={status} onChange={(event) => setStatus(event.target.value as EmployeeStatus)} className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm">
-              <option value={employee.status}>{statusLabels[employee.status]}</option>
-              {(employee.status === "preboarding" ? ["active", "inactive"] : employee.status === "active" ? ["inactive"] : ["active"]).map((nextStatus) => <option key={nextStatus} value={nextStatus}>{statusLabels[nextStatus as EmployeeStatus]}</option>)}
-            </select>
-          </label>
+          {(employee.status === "preboarding" || employee.status === "inactive") && (
+            <label>
+              <span className="mb-1 block text-sm font-medium text-gray-700">Employment status</span>
+              <select value={status} onChange={(event) => setStatus(event.target.value as EmployeeStatus)} className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm">
+                <option value={employee.status}>{statusLabels[employee.status]}</option>
+                {(employee.status === "preboarding" ? ["active", "inactive"] : ["active"]).map((nextStatus) => <option key={nextStatus} value={nextStatus}>{statusLabels[nextStatus as EmployeeStatus]}</option>)}
+              </select>
+            </label>
+          )}
         </>
       )}
       {error && <p role="alert" className="text-sm text-red-800 sm:col-span-2">{error}</p>}
@@ -143,6 +160,208 @@ function EmployeeRecordForm({
         {saving ? "Saving…" : employee ? "Save employee details" : "Create employee record"}
       </button>
     </form>
+  );
+}
+
+function EmployeeOffboardingSection({
+  applicationId,
+  employee,
+  canManage,
+}: {
+  applicationId: string;
+  employee: EmployeeRecordResponse;
+  canManage: boolean;
+}) {
+  const startOffboarding = useStartEmployeeOffboarding();
+  const cancelOffboarding = useCancelEmployeeOffboarding();
+  const [lastWorkingDay, setLastWorkingDay] = useState("");
+  const [reason, setReason] = useState<EmployeeOffboardingReason | "">("");
+  const [confirmation, setConfirmation] = useState<"start" | "cancel" | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const saving = startOffboarding.isPending || cancelOffboarding.isPending;
+
+  function showError(cause: unknown) {
+    setError(cause instanceof ApiError
+      ? cause.detail
+      : "The offboarding update could not be saved. Refresh and try again.");
+  }
+
+  function confirmStart() {
+    if (!lastWorkingDay || !reason) {
+      setError("Choose a last working day and a reason before continuing.");
+      return;
+    }
+    setError(null);
+    startOffboarding.mutate({
+      employeeId: employee.id,
+      applicationId,
+      request: {
+        expected_version: employee.version,
+        last_working_day: lastWorkingDay,
+        reason,
+      },
+      idempotencyKey: crypto.randomUUID(),
+    }, {
+      onSuccess: () => {
+        setConfirmation(null);
+        setMessage("Offboarding has been recorded. The employee record and onboarding history remain available.");
+      },
+      onError: showError,
+    });
+  }
+
+  function confirmCancel() {
+    setError(null);
+    cancelOffboarding.mutate({
+      employeeId: employee.id,
+      applicationId,
+      request: { expected_version: employee.version },
+      idempotencyKey: crypto.randomUUID(),
+    }, {
+      onSuccess: () => {
+        setConfirmation(null);
+        setLastWorkingDay("");
+        setReason("");
+        setMessage("Planned offboarding was cancelled. The employee is active again; the cancellation remains in the audit history.");
+      },
+      onError: showError,
+    });
+  }
+
+  return (
+    <section aria-labelledby="employee-offboarding-heading" className="mt-5 border-t border-gray-200 pt-5">
+      <h3 id="employee-offboarding-heading" className="text-sm font-semibold text-gray-900">Offboarding</h3>
+      <p className="mt-1 text-sm text-gray-600">
+        Record a planned departure while keeping the employee record and historical onboarding information.
+      </p>
+      {message && <p role="status" className="mt-3 text-sm text-emerald-800">{message}</p>}
+      {error && <p role="alert" className="mt-3 text-sm text-red-800">{error}</p>}
+
+      {employee.status === "active" ? (
+        canManage ? (
+          <form
+            className="mt-4 grid gap-3 sm:grid-cols-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              setError(null);
+              setConfirmation("start");
+            }}
+          >
+            <label className="flex flex-col gap-1.5 text-sm font-medium text-gray-700">
+              Last working day
+              <input
+                type="date"
+                required
+                min={employee.start_date ?? undefined}
+                value={lastWorkingDay}
+                onChange={(event) => setLastWorkingDay(event.target.value)}
+                className="h-10 rounded-lg border border-gray-200 px-3 text-sm font-normal"
+              />
+            </label>
+            <label className="flex flex-col gap-1.5 text-sm font-medium text-gray-700">
+              Reason
+              <select
+                required
+                value={reason}
+                onChange={(event) => setReason(event.target.value as EmployeeOffboardingReason | "")}
+                className="h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm font-normal"
+              >
+                <option value="">Choose a reason</option>
+                {Object.entries(offboardingReasonLabels).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="submit"
+              disabled={saving}
+              className="h-10 w-fit rounded-lg border border-sr-text-blue px-4 text-sm font-semibold text-sr-text-blue hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 sm:col-span-2"
+            >
+              Review offboarding
+            </button>
+          </form>
+        ) : (
+          <p className="mt-3 text-sm text-gray-600">Only workspace admins and People Operations can start or cancel offboarding.</p>
+        )
+      ) : employee.status === "offboarding" ? (
+        <div className="mt-4 rounded-lg bg-amber-50 p-4">
+          {canManage ? (
+            <dl className="grid gap-3 text-sm sm:grid-cols-2">
+              <div>
+                <dt className="text-gray-600">Last working day</dt>
+                <dd className="mt-0.5 font-medium text-gray-900">{employee.last_working_day ?? "Not recorded"}</dd>
+              </div>
+              <div>
+                <dt className="text-gray-600">Reason</dt>
+                <dd className="mt-0.5 font-medium text-gray-900">
+                  {employee.offboarding_reason ? offboardingReasonLabels[employee.offboarding_reason] : "Not recorded"}
+                </dd>
+              </div>
+            </dl>
+          ) : (
+            <p className="text-sm text-amber-950">
+              The planned last working day and departure reason are restricted to workspace admins and People Operations.
+            </p>
+          )}
+          <p className="mt-3 text-sm text-amber-950">
+            This records the planned departure only. It does not disable the employee’s workspace login or delete their record and onboarding history.
+          </p>
+          {canManage ? (
+            <button
+              type="button"
+              onClick={() => { setError(null); setConfirmation("cancel"); }}
+              disabled={saving}
+              className="mt-3 h-9 rounded-lg border border-amber-900/30 px-3 text-sm font-semibold text-amber-950 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Cancel planned offboarding
+            </button>
+          ) : (
+            <p className="mt-3 text-sm text-gray-600">Only workspace admins and People Operations can cancel offboarding.</p>
+          )}
+        </div>
+      ) : (
+        <p className="mt-3 text-sm text-gray-600">
+          Offboarding can be started after this employee record is active.
+        </p>
+      )}
+
+      {confirmation && (
+        <div
+          role="group"
+          aria-labelledby="employee-offboarding-confirmation-title"
+          aria-describedby="employee-offboarding-confirmation-description"
+          className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4"
+        >
+          <h4 id="employee-offboarding-confirmation-title" className="text-sm font-semibold text-gray-900">
+            {confirmation === "start" ? "Confirm planned offboarding" : "Cancel planned offboarding?"}
+          </h4>
+          <p id="employee-offboarding-confirmation-description" className="mt-1 text-sm text-gray-700">
+            {confirmation === "start"
+              ? `Record ${lastWorkingDay} as the last working day and ${reason ? offboardingReasonLabels[reason] : "the selected reason"} as the reason. This changes the employee status to Offboarding but keeps their workspace login active.`
+              : "This restores the employee status to Active and clears the current planned departure details. The cancellation is retained in the audit history."}
+          </p>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <button
+              type="button"
+              onClick={confirmation === "start" ? confirmStart : confirmCancel}
+              disabled={saving}
+              className="h-10 rounded-lg bg-sr-text-blue px-4 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {saving ? "Saving…" : confirmation === "start" ? "Confirm offboarding" : "Confirm cancellation"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmation(null)}
+              disabled={saving}
+              className="h-10 rounded-lg border border-gray-300 px-4 text-sm font-semibold text-gray-700 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Go back
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -306,6 +525,13 @@ export function ApplicationEmployeeRecordSection({
             employee={employeeQuery.data ?? null}
             onSaved={() => setStatusMessage("Employee details saved in MindHire.")}
           />
+          {employeeQuery.data && (
+            <EmployeeOffboardingSection
+              applicationId={applicationId}
+              employee={employeeQuery.data}
+              canManage={canManagePortalAccess}
+            />
+          )}
           {canManagePortalAccess && employeeQuery.data && (
             <EmployeeAccountLinkSection
               applicationId={applicationId}

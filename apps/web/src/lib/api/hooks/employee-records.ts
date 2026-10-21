@@ -3,17 +3,22 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "next-auth/react";
 import type {
+  CancelEmployeeOffboardingRequest,
   CreateEmployeeRecordRequest,
+  EmployeeRecordResponse,
   LinkEmployeeAccountRequest,
+  StartEmployeeOffboardingRequest,
   UpdateEmployeeRecordRequest,
 } from "@/types/api/employee-records";
 import type { EmployeeDirectoryParams } from "../services/employee-records";
 import {
+  cancelEmployeeOffboarding,
   createApplicationEmployeeRecord,
   getEmployeeDirectoryFilterOptions,
   getApplicationEmployeeRecord,
   listEmployeeRecords,
   linkEmployeeAccount,
+  startEmployeeOffboarding,
   updateEmployeeRecord,
 } from "../services/employee-records";
 
@@ -104,6 +109,50 @@ export function useUpdateEmployeeRecord() {
       ]);
     },
   });
+}
+
+interface EmployeeOffboardingMutationVariables<TRequest> {
+  employeeId: string;
+  applicationId: string;
+  request: TRequest;
+  idempotencyKey: string;
+}
+
+function useEmployeeOffboardingMutation<TRequest>(
+  mutationFn: (variables: EmployeeOffboardingMutationVariables<TRequest>) => Promise<EmployeeRecordResponse>,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn,
+    onSuccess: async (_employee, variables) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: employeeRecordQueryKeys.application(variables.applicationId),
+        }),
+        queryClient.invalidateQueries({ queryKey: employeeRecordQueryKeys.lists() }),
+      ]);
+    },
+  });
+}
+
+export function useStartEmployeeOffboarding() {
+  return useEmployeeOffboardingMutation<StartEmployeeOffboardingRequest>((variables) =>
+    startEmployeeOffboarding(
+      variables.employeeId,
+      variables.request,
+      variables.idempotencyKey,
+    ),
+  );
+}
+
+export function useCancelEmployeeOffboarding() {
+  return useEmployeeOffboardingMutation<CancelEmployeeOffboardingRequest>((variables) =>
+    cancelEmployeeOffboarding(
+      variables.employeeId,
+      variables.request,
+      variables.idempotencyKey,
+    ),
+  );
 }
 
 export function useLinkEmployeeAccount() {

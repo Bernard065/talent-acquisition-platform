@@ -1,11 +1,13 @@
 import { get, patch, post, put, type RequestOptions } from "../client";
 import type {
   CreateEmployeeRecordRequest,
+  CancelEmployeeOffboardingRequest,
   EmployeeDirectoryFilterOptionsResponse,
   EmployeeDirectoryResponse,
   EmployeeRecordResponse,
   LinkEmployeeAccountRequest,
   LinkEmployeeAccountResponse,
+  StartEmployeeOffboardingRequest,
   UpdateEmployeeRecordRequest,
 } from "@/types/api/employee-records";
 
@@ -66,6 +68,32 @@ export function updateEmployeeRecord(
 ) {
   return patch<EmployeeRecordResponse>(
     `/employee-records/${employeeId}`,
+    request,
+    { ...options, idempotencyKey },
+  );
+}
+
+export function startEmployeeOffboarding(
+  employeeId: string,
+  request: StartEmployeeOffboardingRequest,
+  idempotencyKey: string,
+  options?: RequestOptions,
+) {
+  return post<EmployeeRecordResponse>(
+    `/employee-records/${employeeId}/offboarding`,
+    request,
+    { ...options, idempotencyKey },
+  );
+}
+
+export function cancelEmployeeOffboarding(
+  employeeId: string,
+  request: CancelEmployeeOffboardingRequest,
+  idempotencyKey: string,
+  options?: RequestOptions,
+) {
+  return post<EmployeeRecordResponse>(
+    `/employee-records/${employeeId}/offboarding/cancel`,
     request,
     { ...options, idempotencyKey },
   );

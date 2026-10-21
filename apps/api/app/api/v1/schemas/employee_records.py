@@ -5,7 +5,10 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from app.domains.employees.enums import EmployeeStatus
+from app.domains.employees.enums import (
+    EmployeeOffboardingReason,
+    EmployeeStatus,
+)
 
 
 class CreateEmployeeRecordRequest(BaseModel):
@@ -44,6 +47,24 @@ class LinkEmployeeAccountRequest(BaseModel):
     expected_version: int = Field(ge=1)
 
 
+class StartEmployeeOffboardingRequest(BaseModel):
+    """Required details to start a planned employee departure."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+    last_working_day: date
+    reason: EmployeeOffboardingReason
+
+
+class CancelEmployeeOffboardingRequest(BaseModel):
+    """Concurrency precondition for cancelling planned offboarding."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+
+
 class LinkEmployeeAccountResponse(BaseModel):
     """Safe result of linking or unlinking an employee account."""
 
@@ -69,6 +90,8 @@ class EmployeeRecordResponse(BaseModel):
     manager_user_id: UUID | None
     user_id: UUID | None
     status: EmployeeStatus
+    last_working_day: date | None
+    offboarding_reason: EmployeeOffboardingReason | None
     version: int
     created_at: datetime
     updated_at: datetime

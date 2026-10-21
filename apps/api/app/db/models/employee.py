@@ -18,7 +18,7 @@ from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
-from app.domains.employees.enums import EmployeeStatus
+from app.domains.employees.enums import EmployeeOffboardingReason, EmployeeStatus
 
 
 class Employee(Base):
@@ -83,6 +83,15 @@ class Employee(Base):
         nullable=False,
         default=EmployeeStatus.PREBOARDING,
         server_default=EmployeeStatus.PREBOARDING.value,
+    )
+    last_working_day: Mapped[date | None] = mapped_column(Date, nullable=True)
+    offboarding_reason: Mapped[EmployeeOffboardingReason | None] = mapped_column(
+        Enum(
+            EmployeeOffboardingReason,
+            name="employee_offboarding_reason",
+            values_callable=lambda values: [value.value for value in values],
+        ),
+        nullable=True,
     )
     created_by_subject: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
