@@ -168,6 +168,33 @@ class EmployeeOffboardingOverviewResponse(BaseModel):
     limit: int
 
 
+class MyEmployeeOffboardingTaskResponse(BaseModel):
+    """A task assigned to the authenticated workspace member."""
+
+    id: UUID
+    employee_id: UUID
+    employee_name: str
+    job_title: str
+    title: str
+    description: str | None
+    due_date: date
+    status: EmployeeOffboardingTaskStatus
+    completion_notes: str | None
+    completed_at: datetime | None
+    version: int
+
+
+class MyEmployeeOffboardingTasksResponse(BaseModel):
+    """A paginated list of tasks assigned to the authenticated member."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[MyEmployeeOffboardingTaskResponse]
+    total: int
+    page: int
+    limit: int
+
+
 class LinkEmployeeAccountResponse(BaseModel):
     """Safe result of linking or unlinking an employee account."""
 
