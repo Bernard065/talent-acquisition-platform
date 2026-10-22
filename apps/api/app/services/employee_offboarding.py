@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.functions import count
 
 from app.core.authorization import Role, TenantContext
 from app.db.models.candidate import Candidate
@@ -48,6 +49,15 @@ class EmployeeOffboardingOverviewRow:
     total_task_count: int
     overdue_task_count: int
     next_due_date: date | None
+
+
+@dataclass(frozen=True, slots=True)
+class MyEmployeeOffboardingTaskRow:
+    """An assigned task with the minimum employee context needed to complete it."""
+
+    task: EmployeeOffboardingTask
+    employee_name: str
+    job_title: str
 
 
 _DEFAULT_TASKS = (
@@ -147,7 +157,7 @@ async def list_employee_offboarding_overview(
         Candidate.tenant_id == Employee.tenant_id,
     )
     total = await session.scalar(
-        select(func.count(Employee.id))
+        select(count(Employee.id))
         .select_from(Employee)
         .join(Candidate, candidate_join)
         .where(*filters)
@@ -158,7 +168,7 @@ async def list_employee_offboarding_overview(
             EmployeeOffboardingTask.tenant_id.label("tenant_id"),
             EmployeeOffboardingTask.employee_id.label("employee_id"),
             EmployeeOffboardingTask.offboarding_cycle_id.label("cycle_id"),
-            func.count(EmployeeOffboardingTask.id).label("total_task_count"),
+            count(EmployeeOffboardingTask.id).label("total_task_count"),
             func.sum(
                 case(
                     (EmployeeOffboardingTask.status == EmployeeOffboardingTaskStatus.COMPLETED, 1),
@@ -245,6 +255,100 @@ async def list_employee_offboarding_overview(
                 overdue_count,
                 next_due_date,
             ) in rows
+        ],
+        total or 0,
+    )
+
+
+async def list_my_employee_offboarding_tasks(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    page: int,
+    limit: int,
+    query: str | None = None,
+    task_status: EmployeeOffboardingTaskStatus | None = None,
+    overdue_only: bool = False,
+) -> tuple[list[MyEmployeeOffboardingTaskRow], int]:
+    """Return only active-cycle offboarding tasks assigned to this member."""
+    user_id = await session.scalar(
+        select(User.id).where(
+            User.tenant_id == context.tenant_id,
+            User.external_subject == context.subject,
+        )
+    )
+    if user_id is None:
+        return [], 0
+
+    today = datetime.now(UTC).date()
+    employee_join = and_(
+        Employee.id == EmployeeOffboardingTask.employee_id,
+        Employee.tenant_id == EmployeeOffboardingTask.tenant_id,
+    )
+    candidate_join = and_(
+        Candidate.id == Employee.candidate_id,
+        Candidate.tenant_id == Employee.tenant_id,
+    )
+    filters = [
+        EmployeeOffboardingTask.tenant_id == context.tenant_id,
+        EmployeeOffboardingTask.assigned_to_user_id == user_id,
+        EmployeeOffboardingTask.offboarding_cycle_id == Employee.offboarding_cycle_id,
+        Employee.status == EmployeeStatus.OFFBOARDING,
+    ]
+    if task_status is not None:
+        filters.append(EmployeeOffboardingTask.status == task_status)
+    if overdue_only:
+        filters.extend(
+            (
+                EmployeeOffboardingTask.due_date < today,
+                EmployeeOffboardingTask.status != EmployeeOffboardingTaskStatus.COMPLETED,
+            )
+        )
+    if query and query.strip():
+        search_term = f"%{query.strip()}%"
+        filters.append(
+            or_(
+                EmployeeOffboardingTask.title.ilike(search_term),
+                Candidate.full_name.ilike(search_term),
+                Employee.job_title.ilike(search_term),
+            )
+        )
+
+    total = await session.scalar(
+        select(count(EmployeeOffboardingTask.id))
+        .select_from(EmployeeOffboardingTask)
+        .join(Employee, employee_join)
+        .join(Candidate, candidate_join)
+        .where(*filters)
+    )
+    rows = (
+        await session.execute(
+            select(
+                EmployeeOffboardingTask,
+                Candidate.full_name,
+                Employee.job_title,
+            )
+            .select_from(EmployeeOffboardingTask)
+            .join(Employee, employee_join)
+            .join(Candidate, candidate_join)
+            .where(*filters)
+            .order_by(
+                EmployeeOffboardingTask.due_date,
+                EmployeeOffboardingTask.created_at,
+                EmployeeOffboardingTask.id,
+            )
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
+    ).all()
+    return (
+        [
+            MyEmployeeOffboardingTaskRow(
+                task=task,
+                employee_name=employee_name,
+                job_title=job_title,
+            )
+            for task, employee_name, job_title in rows
         ],
         total or 0,
     )
@@ -428,11 +532,16 @@ async def update_employee_offboarding_task(
     changes: dict[str, Any],
 ) -> EmployeeOffboardingTask:
     """Update task ownership, due date, progress, or completion notes."""
-    _require_offboarding_admin(context)
     if not changes or set(changes).difference(
         {"assigned_to_user_id", "due_date", "status", "completion_notes"}
     ):
         raise OnboardingValidationError("At least one valid checklist update is required.")
+    is_offboarding_admin = not context.roles.isdisjoint(_OFFBOARDING_ADMIN_ROLES)
+    owner_editable_fields = {"status", "completion_notes"}
+    if not is_offboarding_admin and set(changes).difference(owner_editable_fields):
+        raise OnboardingAccessDeniedError(
+            "Assigned task owners can update status and completion notes only."
+        )
 
     async with transactional(session):
         task = await session.scalar(
@@ -445,6 +554,17 @@ async def update_employee_offboarding_task(
         )
         if task is None:
             raise EmployeeRecordNotFoundError("Offboarding checklist task was not found.")
+        if not is_offboarding_admin:
+            current_user_id = await session.scalar(
+                select(User.id).where(
+                    User.tenant_id == context.tenant_id,
+                    User.external_subject == context.subject,
+                )
+            )
+            if current_user_id is None or task.assigned_to_user_id != current_user_id:
+                raise EmployeeRecordNotFoundError(
+                    "Offboarding checklist task was not found."
+                )
         employee = await session.scalar(
             select(Employee)
             .where(

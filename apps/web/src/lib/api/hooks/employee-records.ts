@@ -12,8 +12,11 @@ import type {
   StartEmployeeOffboardingRequest,
   UpdateEmployeeRecordRequest,
 } from "@/types/api/employee-records";
-import type { EmployeeDirectoryParams } from "../services/employee-records";
-import type { EmployeeOffboardingOverviewParams } from "../services/employee-records";
+import type {
+  EmployeeDirectoryParams,
+  EmployeeOffboardingOverviewParams,
+  MyEmployeeOffboardingTaskParams,
+} from "../services/employee-records";
 import {
   cancelEmployeeOffboarding,
   createApplicationEmployeeRecord,
@@ -21,6 +24,7 @@ import {
   getApplicationEmployeeRecord,
   listEmployeeRecords,
   listEmployeeOffboardingOverview,
+  listMyEmployeeOffboardingTasks,
   linkEmployeeAccount,
   getEmployeeOffboardingChecklist,
   getOffboardingTemplate,
@@ -38,6 +42,9 @@ export const employeeRecordQueryKeys = {
   offboardingOverviewLists: () => [...employeeRecordQueryKeys.all, "offboarding-overview"] as const,
   offboardingOverview: (params: EmployeeOffboardingOverviewParams = {}) =>
     [...employeeRecordQueryKeys.offboardingOverviewLists(), params] as const,
+  myOffboardingTaskLists: () => [...employeeRecordQueryKeys.all, "my-offboarding-tasks"] as const,
+  myOffboardingTasks: (params: MyEmployeeOffboardingTaskParams = {}) =>
+    [...employeeRecordQueryKeys.myOffboardingTaskLists(), params] as const,
   filterOptions: () => [...employeeRecordQueryKeys.all, "filter-options"] as const,
   offboardingTemplate: () => [...employeeRecordQueryKeys.all, "offboarding-template"] as const,
   offboardingTasks: (employeeId: string) =>
@@ -64,6 +71,17 @@ export function useEmployeeOffboardingOverview(
     queryKey: employeeRecordQueryKeys.offboardingOverview(params),
     queryFn: ({ signal }) => listEmployeeOffboardingOverview(params, { signal }),
     enabled: status === "authenticated" && enabled,
+  });
+}
+
+export function useMyEmployeeOffboardingTasks(
+  params: MyEmployeeOffboardingTaskParams,
+) {
+  const { status } = useSession();
+  return useQuery({
+    queryKey: employeeRecordQueryKeys.myOffboardingTasks(params),
+    queryFn: ({ signal }) => listMyEmployeeOffboardingTasks(params, { signal }),
+    enabled: status === "authenticated",
   });
 }
 
@@ -117,6 +135,9 @@ export function useUpdateEmployeeOffboardingTask() {
         }),
         queryClient.invalidateQueries({
           queryKey: employeeRecordQueryKeys.offboardingOverviewLists(),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: employeeRecordQueryKeys.myOffboardingTaskLists(),
         }),
       ]);
     },
@@ -217,6 +238,9 @@ function useEmployeeOffboardingMutation<TRequest>(
         }),
         queryClient.invalidateQueries({
           queryKey: employeeRecordQueryKeys.offboardingOverviewLists(),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: employeeRecordQueryKeys.myOffboardingTaskLists(),
         }),
       ]);
     },

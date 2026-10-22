@@ -24,6 +24,8 @@ from app.api.v1.schemas.employee_records import (
     EmployeeRecordResponse,
     LinkEmployeeAccountRequest,
     LinkEmployeeAccountResponse,
+    MyEmployeeOffboardingTaskResponse,
+    MyEmployeeOffboardingTasksResponse,
     OffboardingTemplateResponse,
     OffboardingTemplateTaskResponse,
     ReplaceOffboardingTemplateRequest,
@@ -37,6 +39,7 @@ from app.services.employee_offboarding import (
     OffboardingTemplateTaskCommand,
     list_employee_offboarding_overview,
     list_employee_offboarding_tasks,
+    list_my_employee_offboarding_tasks,
     list_offboarding_template_tasks,
     replace_offboarding_template_tasks,
     update_employee_offboarding_task,
@@ -160,6 +163,55 @@ async def employee_offboarding_overview_endpoint(
                 total_task_count=row.total_task_count,
                 overdue_task_count=row.overdue_task_count,
                 next_due_date=row.next_due_date,
+            )
+            for row in rows
+        ],
+        total=total,
+        page=page,
+        limit=limit,
+    )
+
+
+@router.get(
+    "/employee-offboarding/my-tasks",
+    response_model=MyEmployeeOffboardingTasksResponse,
+    summary="List offboarding tasks assigned to the current member",
+)
+async def my_employee_offboarding_tasks_endpoint(
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+    page: Annotated[int, Query(ge=1)] = 1,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    query: Annotated[str | None, Query(max_length=100)] = None,
+    task_status: Annotated[EmployeeOffboardingTaskStatus | None, Query()] = None,
+    overdue_only: bool = False,
+) -> MyEmployeeOffboardingTasksResponse:
+    """List assigned checklist tasks without exposing other offboarding cases."""
+    rows, total = await list_my_employee_offboarding_tasks(
+        session,
+        context=context,
+        page=page,
+        limit=limit,
+        query=query,
+        task_status=task_status,
+        overdue_only=overdue_only,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return MyEmployeeOffboardingTasksResponse(
+        items=[
+            MyEmployeeOffboardingTaskResponse(
+                id=row.task.id,
+                employee_id=row.task.employee_id,
+                employee_name=row.employee_name,
+                job_title=row.job_title,
+                title=row.task.title,
+                description=row.task.description,
+                due_date=row.task.due_date,
+                status=row.task.status,
+                completion_notes=row.task.completion_notes,
+                completed_at=row.task.completed_at,
+                version=row.task.version,
             )
             for row in rows
         ],

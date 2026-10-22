@@ -9,6 +9,7 @@ import type {
   EmployeeOffboardingTaskStatus,
   EmployeeOffboardingTaskResponse,
   EmployeeOffboardingTaskUpdateRequest,
+  MyEmployeeOffboardingTasksResponse,
   EmployeeRecordResponse,
   LinkEmployeeAccountRequest,
   LinkEmployeeAccountResponse,
@@ -37,6 +38,14 @@ export interface EmployeeOffboardingOverviewParams {
   overdue_only?: boolean;
 }
 
+export interface MyEmployeeOffboardingTaskParams {
+  page?: number;
+  limit?: number;
+  query?: string;
+  task_status?: EmployeeOffboardingTaskStatus;
+  overdue_only?: boolean;
+}
+
 export function listEmployeeRecords(
   params: EmployeeDirectoryParams = {},
   options?: RequestOptions,
@@ -52,6 +61,16 @@ export function listEmployeeOffboardingOverview(
   options?: RequestOptions,
 ) {
   return get<EmployeeOffboardingOverviewResponse>("/employee-offboarding", {
+    ...options,
+    params: { ...options?.params, ...params },
+  });
+}
+
+export function listMyEmployeeOffboardingTasks(
+  params: MyEmployeeOffboardingTaskParams = {},
+  options?: RequestOptions,
+) {
+  return get<MyEmployeeOffboardingTasksResponse>("/employee-offboarding/my-tasks", {
     ...options,
     params: { ...options?.params, ...params },
   });
