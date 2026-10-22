@@ -5,10 +5,11 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authorization import Role, TenantContext
+from app.db.models.candidate import Candidate
 from app.db.models.employee import Employee
 from app.db.models.employee_offboarding import (
     EmployeeOffboardingTask,
@@ -35,6 +36,18 @@ class OffboardingTemplateTaskCommand:
     title: str
     description: str | None
     due_days_before_last_working_day: int
+
+
+@dataclass(frozen=True, slots=True)
+class EmployeeOffboardingOverviewRow:
+    """Employee identity and aggregate progress for an active offboarding cycle."""
+
+    employee: Employee
+    employee_name: str
+    completed_task_count: int
+    total_task_count: int
+    overdue_task_count: int
+    next_due_date: date | None
 
 
 _DEFAULT_TASKS = (
@@ -66,6 +79,175 @@ def _require_offboarding_admin(context: TenantContext) -> None:
         raise OnboardingAccessDeniedError(
             "Only workspace admins and People Operations can manage offboarding checklists."
         )
+
+
+async def list_employee_offboarding_overview(
+    session: AsyncSession,
+    *,
+    context: TenantContext,
+    page: int,
+    limit: int,
+    query: str | None = None,
+    task_status: EmployeeOffboardingTaskStatus | None = None,
+    due_from: date | None = None,
+    due_to: date | None = None,
+    overdue_only: bool = False,
+) -> tuple[list[EmployeeOffboardingOverviewRow], int]:
+    """Return tenant-scoped offboarding cases with task progress summaries."""
+    _require_offboarding_admin(context)
+    if due_from is not None and due_to is not None and due_from > due_to:
+        raise OnboardingValidationError("Task due-from date must not be after due-to date.")
+
+    tenant_id = context.tenant_id
+    today = datetime.now(UTC).date()
+    task_filters = [
+        EmployeeOffboardingTask.tenant_id == tenant_id,
+        EmployeeOffboardingTask.employee_id == Employee.id,
+        EmployeeOffboardingTask.offboarding_cycle_id == Employee.offboarding_cycle_id,
+    ]
+    if task_status is not None:
+        task_filters.append(EmployeeOffboardingTask.status == task_status)
+    if due_from is not None:
+        task_filters.append(EmployeeOffboardingTask.due_date >= due_from)
+    if due_to is not None:
+        task_filters.append(EmployeeOffboardingTask.due_date <= due_to)
+    if overdue_only:
+        task_filters.extend(
+            (
+                EmployeeOffboardingTask.due_date < today,
+                EmployeeOffboardingTask.status != EmployeeOffboardingTaskStatus.COMPLETED,
+            )
+        )
+
+    filters = [
+        Employee.tenant_id == tenant_id,
+        Employee.status == EmployeeStatus.OFFBOARDING,
+    ]
+    if query and query.strip():
+        search_term = f"%{query.strip()}%"
+        filters.append(
+            or_(
+                Candidate.full_name.ilike(search_term),
+                Employee.job_title.ilike(search_term),
+                Employee.department.ilike(search_term),
+                Employee.location.ilike(search_term),
+                Employee.employee_number.ilike(search_term),
+            )
+        )
+    if (
+        task_status is not None
+        or due_from is not None
+        or due_to is not None
+        or overdue_only
+    ):
+        filters.append(select(EmployeeOffboardingTask.id).where(*task_filters).exists())
+
+    candidate_join = and_(
+        Candidate.id == Employee.candidate_id,
+        Candidate.tenant_id == Employee.tenant_id,
+    )
+    total = await session.scalar(
+        select(func.count(Employee.id))
+        .select_from(Employee)
+        .join(Candidate, candidate_join)
+        .where(*filters)
+    )
+
+    task_summary = (
+        select(
+            EmployeeOffboardingTask.tenant_id.label("tenant_id"),
+            EmployeeOffboardingTask.employee_id.label("employee_id"),
+            EmployeeOffboardingTask.offboarding_cycle_id.label("cycle_id"),
+            func.count(EmployeeOffboardingTask.id).label("total_task_count"),
+            func.sum(
+                case(
+                    (EmployeeOffboardingTask.status == EmployeeOffboardingTaskStatus.COMPLETED, 1),
+                    else_=0,
+                )
+            ).label("completed_task_count"),
+            func.sum(
+                case(
+                    (
+                        and_(
+                            EmployeeOffboardingTask.status
+                            != EmployeeOffboardingTaskStatus.COMPLETED,
+                            EmployeeOffboardingTask.due_date < today,
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("overdue_task_count"),
+            func.min(
+                case(
+                    (
+                        EmployeeOffboardingTask.status
+                        != EmployeeOffboardingTaskStatus.COMPLETED,
+                        EmployeeOffboardingTask.due_date,
+                    ),
+                    else_=None,
+                )
+            ).label("next_due_date"),
+        )
+        .where(EmployeeOffboardingTask.tenant_id == tenant_id)
+        .group_by(
+            EmployeeOffboardingTask.tenant_id,
+            EmployeeOffboardingTask.employee_id,
+            EmployeeOffboardingTask.offboarding_cycle_id,
+        )
+        .subquery()
+    )
+    rows = (
+        await session.execute(
+            select(
+                Employee,
+                Candidate.full_name,
+                func.coalesce(task_summary.c.completed_task_count, 0),
+                func.coalesce(task_summary.c.total_task_count, 0),
+                func.coalesce(task_summary.c.overdue_task_count, 0),
+                task_summary.c.next_due_date,
+            )
+            .select_from(Employee)
+            .join(Candidate, candidate_join)
+            .outerjoin(
+                task_summary,
+                and_(
+                    task_summary.c.tenant_id == Employee.tenant_id,
+                    task_summary.c.employee_id == Employee.id,
+                    task_summary.c.cycle_id == Employee.offboarding_cycle_id,
+                ),
+            )
+            .where(*filters)
+            .order_by(
+                Employee.last_working_day.asc().nullslast(),
+                Employee.created_at.desc(),
+                Employee.id,
+            )
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
+    ).all()
+    return (
+        [
+            EmployeeOffboardingOverviewRow(
+                employee=employee,
+                employee_name=employee_name,
+                completed_task_count=int(completed_count),
+                total_task_count=int(total_count),
+                overdue_task_count=int(overdue_count),
+                next_due_date=next_due_date,
+            )
+            for (
+                employee,
+                employee_name,
+                completed_count,
+                total_count,
+                overdue_count,
+                next_due_date,
+            ) in rows
+        ],
+        total or 0,
+    )
 
 
 async def list_offboarding_template_tasks(

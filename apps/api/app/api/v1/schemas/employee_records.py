@@ -140,6 +140,34 @@ class EmployeeOffboardingChecklistResponse(BaseModel):
     total_count: int
 
 
+class EmployeeOffboardingOverviewItemResponse(BaseModel):
+    """One active offboarding case and its current checklist summary."""
+
+    employee_id: UUID
+    application_id: UUID
+    employee_name: str
+    job_title: str
+    department: str | None
+    location: str | None
+    last_working_day: date | None
+    reason: EmployeeOffboardingReason | None
+    completed_task_count: int
+    total_task_count: int
+    overdue_task_count: int
+    next_due_date: date | None
+
+
+class EmployeeOffboardingOverviewResponse(BaseModel):
+    """A paginated, filterable list of current offboarding cases."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[EmployeeOffboardingOverviewItemResponse]
+    total: int
+    page: int
+    limit: int
+
+
 class LinkEmployeeAccountResponse(BaseModel):
     """Safe result of linking or unlinking an employee account."""
 
