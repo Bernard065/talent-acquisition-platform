@@ -17,6 +17,7 @@ const pageTitles: Array<{ href: string; title: string }> = [
   { href: "/dashboard/approvals", title: "Approvals" },
   { href: "/dashboard/employees", title: "Employees" },
   { href: "/dashboard/offboarding", title: "Offboarding" },
+  { href: "/dashboard/my-offboarding", title: "My offboarding tasks" },
   { href: "/dashboard/onboarding", title: "Onboarding" },
   { href: "/dashboard/jobs", title: "Jobs" },
   { href: "/dashboard/candidates", title: "Candidates" },

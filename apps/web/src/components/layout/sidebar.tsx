@@ -83,6 +83,12 @@ const navigation: NavigationItem[] = [
     roles: dashboardRolePolicies.allWorkspaceMembers,
   },
   {
+    name: "My offboarding tasks",
+    href: "/dashboard/my-offboarding",
+    icon: List,
+    roles: dashboardRolePolicies.allWorkspaceMembers,
+  },
+  {
     name: "Interviews",
     href: "/dashboard/interviews",
     icon: CalendarDays,
