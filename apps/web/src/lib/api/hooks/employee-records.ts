@@ -13,12 +13,14 @@ import type {
   UpdateEmployeeRecordRequest,
 } from "@/types/api/employee-records";
 import type { EmployeeDirectoryParams } from "../services/employee-records";
+import type { EmployeeOffboardingOverviewParams } from "../services/employee-records";
 import {
   cancelEmployeeOffboarding,
   createApplicationEmployeeRecord,
   getEmployeeDirectoryFilterOptions,
   getApplicationEmployeeRecord,
   listEmployeeRecords,
+  listEmployeeOffboardingOverview,
   linkEmployeeAccount,
   getEmployeeOffboardingChecklist,
   getOffboardingTemplate,
@@ -33,6 +35,9 @@ export const employeeRecordQueryKeys = {
   lists: () => [...employeeRecordQueryKeys.all, "list"] as const,
   list: (params: EmployeeDirectoryParams = {}) =>
     [...employeeRecordQueryKeys.lists(), params] as const,
+  offboardingOverviewLists: () => [...employeeRecordQueryKeys.all, "offboarding-overview"] as const,
+  offboardingOverview: (params: EmployeeOffboardingOverviewParams = {}) =>
+    [...employeeRecordQueryKeys.offboardingOverviewLists(), params] as const,
   filterOptions: () => [...employeeRecordQueryKeys.all, "filter-options"] as const,
   offboardingTemplate: () => [...employeeRecordQueryKeys.all, "offboarding-template"] as const,
   offboardingTasks: (employeeId: string) =>
@@ -47,6 +52,18 @@ export function useEmployeeDirectory(params: EmployeeDirectoryParams) {
     queryKey: employeeRecordQueryKeys.list(params),
     queryFn: ({ signal }) => listEmployeeRecords(params, { signal }),
     enabled: status === "authenticated",
+  });
+}
+
+export function useEmployeeOffboardingOverview(
+  params: EmployeeOffboardingOverviewParams,
+  enabled = true,
+) {
+  const { status } = useSession();
+  return useQuery({
+    queryKey: employeeRecordQueryKeys.offboardingOverview(params),
+    queryFn: ({ signal }) => listEmployeeOffboardingOverview(params, { signal }),
+    enabled: status === "authenticated" && enabled,
   });
 }
 
@@ -94,9 +111,14 @@ export function useUpdateEmployeeOffboardingTask() {
       idempotencyKey: string;
     }) => updateEmployeeOffboardingTask(taskId, request, idempotencyKey),
     onSuccess: async (_task, variables) => {
-      await queryClient.invalidateQueries({
-        queryKey: employeeRecordQueryKeys.offboardingTasks(variables.employeeId),
-      });
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: employeeRecordQueryKeys.offboardingTasks(variables.employeeId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: employeeRecordQueryKeys.offboardingOverviewLists(),
+        }),
+      ]);
     },
   });
 }
@@ -192,6 +214,9 @@ function useEmployeeOffboardingMutation<TRequest>(
         queryClient.invalidateQueries({ queryKey: employeeRecordQueryKeys.lists() }),
         queryClient.invalidateQueries({
           queryKey: employeeRecordQueryKeys.offboardingTasks(variables.employeeId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: employeeRecordQueryKeys.offboardingOverviewLists(),
         }),
       ]);
     },
