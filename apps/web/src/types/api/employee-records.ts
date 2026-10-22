@@ -144,6 +144,27 @@ export interface EmployeeOffboardingOverviewResponse {
   limit: number;
 }
 
+export interface MyEmployeeOffboardingTaskResponse {
+  id: string;
+  employee_id: string;
+  employee_name: string;
+  job_title: string;
+  title: string;
+  description: string | null;
+  due_date: string;
+  status: EmployeeOffboardingTaskStatus;
+  completion_notes: string | null;
+  completed_at: string | null;
+  version: number;
+}
+
+export interface MyEmployeeOffboardingTasksResponse {
+  items: MyEmployeeOffboardingTaskResponse[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 export interface EmployeeOffboardingTaskUpdateRequest {
   expected_version: number;
   assigned_to_user_id?: string | null;
