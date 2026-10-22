@@ -5,6 +5,8 @@ import type {
   EmployeeDirectoryFilterOptionsResponse,
   EmployeeDirectoryResponse,
   EmployeeOffboardingChecklistResponse,
+  EmployeeOffboardingOverviewResponse,
+  EmployeeOffboardingTaskStatus,
   EmployeeOffboardingTaskResponse,
   EmployeeOffboardingTaskUpdateRequest,
   EmployeeRecordResponse,
@@ -25,11 +27,31 @@ export interface EmployeeDirectoryParams {
   location?: string;
 }
 
+export interface EmployeeOffboardingOverviewParams {
+  page?: number;
+  limit?: number;
+  query?: string;
+  task_status?: EmployeeOffboardingTaskStatus;
+  due_from?: string;
+  due_to?: string;
+  overdue_only?: boolean;
+}
+
 export function listEmployeeRecords(
   params: EmployeeDirectoryParams = {},
   options?: RequestOptions,
 ) {
   return get<EmployeeDirectoryResponse>("/employee-records", {
+    ...options,
+    params: { ...options?.params, ...params },
+  });
+}
+
+export function listEmployeeOffboardingOverview(
+  params: EmployeeOffboardingOverviewParams = {},
+  options?: RequestOptions,
+) {
+  return get<EmployeeOffboardingOverviewResponse>("/employee-offboarding", {
     ...options,
     params: { ...options?.params, ...params },
   });

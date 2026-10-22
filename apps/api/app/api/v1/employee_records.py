@@ -1,5 +1,6 @@
 """Private endpoints for employee records managed by MindHire."""
 
+from datetime import date
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -16,6 +17,8 @@ from app.api.v1.schemas.employee_records import (
     EmployeeDirectoryItemResponse,
     EmployeeDirectoryResponse,
     EmployeeOffboardingChecklistResponse,
+    EmployeeOffboardingOverviewItemResponse,
+    EmployeeOffboardingOverviewResponse,
     EmployeeOffboardingTaskResponse,
     EmployeeOffboardingTaskUpdateRequest,
     EmployeeRecordResponse,
@@ -29,9 +32,10 @@ from app.api.v1.schemas.employee_records import (
 )
 from app.core.authorization import Role, TenantContext
 from app.db.models.employee import Employee
-from app.domains.employees.enums import EmployeeStatus
+from app.domains.employees.enums import EmployeeOffboardingTaskStatus, EmployeeStatus
 from app.services.employee_offboarding import (
     OffboardingTemplateTaskCommand,
+    list_employee_offboarding_overview,
     list_employee_offboarding_tasks,
     list_offboarding_template_tasks,
     replace_offboarding_template_tasks,
@@ -104,6 +108,60 @@ async def list_employee_records_endpoint(
                 employee_name=employee_name,
             )
             for employee, employee_name in rows
+        ],
+        total=total,
+        page=page,
+        limit=limit,
+    )
+
+
+@router.get(
+    "/employee-offboarding",
+    response_model=EmployeeOffboardingOverviewResponse,
+    summary="List active employee offboarding cases",
+)
+async def employee_offboarding_overview_endpoint(
+    context: CallerContext,
+    session: DatabaseSession,
+    response: Response,
+    page: Annotated[int, Query(ge=1)] = 1,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    query: Annotated[str | None, Query(max_length=100)] = None,
+    task_status: Annotated[EmployeeOffboardingTaskStatus | None, Query()] = None,
+    due_from: date | None = None,
+    due_to: date | None = None,
+    overdue_only: bool = False,
+) -> EmployeeOffboardingOverviewResponse:
+    """List current offboarding cases and aggregate their task progress."""
+    rows, total = await list_employee_offboarding_overview(
+        session,
+        context=context,
+        page=page,
+        limit=limit,
+        query=query,
+        task_status=task_status,
+        due_from=due_from,
+        due_to=due_to,
+        overdue_only=overdue_only,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return EmployeeOffboardingOverviewResponse(
+        items=[
+            EmployeeOffboardingOverviewItemResponse(
+                employee_id=row.employee.id,
+                application_id=row.employee.application_id,
+                employee_name=row.employee_name,
+                job_title=row.employee.job_title,
+                department=row.employee.department,
+                location=row.employee.location,
+                last_working_day=row.employee.last_working_day,
+                reason=row.employee.offboarding_reason,
+                completed_task_count=row.completed_task_count,
+                total_task_count=row.total_task_count,
+                overdue_task_count=row.overdue_task_count,
+                next_due_date=row.next_due_date,
+            )
+            for row in rows
         ],
         total=total,
         page=page,

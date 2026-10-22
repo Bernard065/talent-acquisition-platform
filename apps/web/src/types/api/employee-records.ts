@@ -122,6 +122,28 @@ export interface EmployeeOffboardingChecklistResponse {
   total_count: number;
 }
 
+export interface EmployeeOffboardingOverviewItemResponse {
+  employee_id: string;
+  application_id: string;
+  employee_name: string;
+  job_title: string;
+  department: string | null;
+  location: string | null;
+  last_working_day: string | null;
+  reason: EmployeeOffboardingReason | null;
+  completed_task_count: number;
+  total_task_count: number;
+  overdue_task_count: number;
+  next_due_date: string | null;
+}
+
+export interface EmployeeOffboardingOverviewResponse {
+  items: EmployeeOffboardingOverviewItemResponse[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 export interface EmployeeOffboardingTaskUpdateRequest {
   expected_version: number;
   assigned_to_user_id?: string | null;
