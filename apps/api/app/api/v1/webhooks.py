@@ -136,6 +136,7 @@ async def _load_endpoint(
         select(WebhookEndpoint).where(
             WebhookEndpoint.id == webhook_endpoint_id,
             WebhookEndpoint.tenant_id == context.tenant_id,
+            WebhookEndpoint.deleted_at.is_(None),
         )
     )
 
@@ -204,7 +205,10 @@ async def list_webhook_endpoints_endpoint(
     endpoints = list(
         await session.scalars(
             select(WebhookEndpoint)
-            .where(WebhookEndpoint.tenant_id == context.tenant_id)
+            .where(
+                WebhookEndpoint.tenant_id == context.tenant_id,
+                WebhookEndpoint.deleted_at.is_(None),
+            )
             .order_by(WebhookEndpoint.created_at.desc(), WebhookEndpoint.id.desc())
             .limit(100)
         )
