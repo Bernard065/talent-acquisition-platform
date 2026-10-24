@@ -94,5 +94,3 @@ export function useDeleteWebhookEndpoint() {
     }) => deleteWebhookEndpoint(endpointId, request, { idempotencyKey }),
   );
 }
-
-\n

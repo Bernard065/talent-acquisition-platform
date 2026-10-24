@@ -33,5 +33,3 @@ export interface WebhookEndpointDeletedResponse {
   id: string;
   status: "deleted";
 }
-
-\n

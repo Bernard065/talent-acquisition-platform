@@ -65,5 +65,3 @@ export function deleteWebhookEndpoint(
     options,
   );
 }
-
-\n

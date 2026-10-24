@@ -1,6 +1,6 @@
 """Workspace-admin audit event search endpoints."""
 
-from datetime import date, datetime, time, timezone
+from datetime import UTC, date, datetime, time
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -65,11 +65,11 @@ async def list_audit_events(
         )
     if occurred_from:
         filters.append(
-            AuditEvent.occurred_at >= datetime.combine(occurred_from, time.min, timezone.utc)
+            AuditEvent.occurred_at >= datetime.combine(occurred_from, time.min, UTC)
         )
     if occurred_to:
         filters.append(
-            AuditEvent.occurred_at <= datetime.combine(occurred_to, time.max, timezone.utc)
+            AuditEvent.occurred_at <= datetime.combine(occurred_to, time.max, UTC)
         )
 
     tenant_actor_join = and_(
