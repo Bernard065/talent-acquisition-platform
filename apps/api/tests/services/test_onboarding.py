@@ -12,6 +12,7 @@ from app.core.authorization import Role, TenantContext
 from app.db.models.application import Application
 from app.db.models.audit import AuditEvent
 from app.db.models.candidate import Candidate
+from app.db.models.employee import Employee
 from app.db.models.identity import Tenant, User, UserRoleAssignment
 from app.db.models.onboarding import (
     OnboardingInstanceHistory,
@@ -258,6 +259,12 @@ async def test_starts_hired_application_with_snapshot_history_and_safe_audit(
         application_id=application.id,
         onboarding_template_id=template.id,
     )
+    employee = await session.scalar(
+        select(Employee).where(
+            Employee.tenant_id == tenant_id,
+            Employee.application_id == application.id,
+        )
+    )
     tasks = list(
         await session.scalars(
             select(OnboardingTask).where(OnboardingTask.onboarding_instance_id == instance.id)
@@ -276,6 +283,8 @@ async def test_starts_hired_application_with_snapshot_history_and_safe_audit(
     )
 
     assert instance.status is OnboardingInstanceStatus.ACTIVE
+    assert employee is not None
+    assert employee.application_id == application.id
     assert instance.template_snapshot["template_id"] == str(template.id)
     assert len(instance.template_snapshot["tasks"]) == 2
     assert len(tasks) == 2

@@ -10,7 +10,7 @@ The platform will support the complete hiring lifecycle:
 - Branded careers sites and job applications
 - Applicant tracking and candidate relationship management
 - Interview scheduling and hiring-team collaboration
-- Offers, e-signatures, and HRIS handoff
+- Offers, e-signatures, employee records, onboarding, and offboarding
 - Analytics, integrations, and governed AI assistance
 
 ## Technology direction
