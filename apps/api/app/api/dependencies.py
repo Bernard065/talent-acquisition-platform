@@ -23,7 +23,6 @@ from app.services.calendar_oauth import (
     CalendarOAuthProvider,
     CalendarOAuthStateStore,
 )
-from app.services.hris_credentials import HrisCredentialVault
 from app.services.malware_scanner import MalwareScanner
 from app.services.object_storage import ObjectStorage
 from app.services.offer_signature_callback_provider import (
@@ -333,25 +332,6 @@ async def get_webhook_signing_secret_vault(
         )
 
     return cast(WebhookSigningSecretVault, vault)
-
-
-async def get_hris_credential_vault(
-    request: Request,
-) -> HrisCredentialVault:
-    """Return the external vault used for tenant-managed HRIS credentials."""
-    vault = getattr(request.app.state, "hris_credential_vault", None)
-
-    if vault is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="HRIS management service is unavailable.",
-            headers={
-                "Retry-After": "5",
-                "Cache-Control": "private, no-store",
-            },
-        )
-
-    return cast(HrisCredentialVault, vault)
 
 
 async def get_offer_signature_callback_verifiers(

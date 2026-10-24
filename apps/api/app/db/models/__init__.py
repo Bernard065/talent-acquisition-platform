@@ -33,7 +33,6 @@ from app.db.models.employee_offboarding import (
     EmployeeOffboardingTask,
     EmployeeOffboardingTemplateTask,
 )
-from app.db.models.hris import HrisConnection, HrisHandoff
 from app.db.models.idempotency import IdempotencyRecord
 from app.db.models.identity import Tenant, User, UserRoleAssignment, WorkspaceInvitation
 from app.db.models.interview import InterviewParticipant, InterviewSession
@@ -97,8 +96,6 @@ __all__ = [
     "EmployeeOffboardingTemplateTask",
     "CandidateRetentionHold",
     "CalendarConnection",
-    "HrisConnection",
-    "HrisHandoff",
     "IdempotencyRecord",
     "InterviewCalendarSync",
     "InterviewFeedback",

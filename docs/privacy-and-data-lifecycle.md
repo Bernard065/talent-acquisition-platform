@@ -42,4 +42,4 @@ Kenya's Data Protection Act, section 39, and the Data Protection (General) Regul
 
 Before enabling the deletion worker, implement backup expiry and restore tombstones plus a separately reviewed employee-record schedule. Then run a production dry run and obtain approval before setting the explicit worker enable flag. Automatic candidate deletion remains disabled by default.
 
-Erasure here covers data controlled by this application, including candidate document objects in configured object storage. Any data already delivered to external signature, calendar, HRIS, or email providers needs a separate provider-specific deletion/retention process and should not be assumed erased by this workflow.
+Erasure here covers data controlled by this application, including candidate document objects in configured object storage. Any data already delivered to external signature, calendar, or email providers needs a separate provider-specific deletion/retention process and should not be assumed erased by this workflow.
