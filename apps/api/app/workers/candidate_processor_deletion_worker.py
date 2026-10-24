@@ -17,11 +17,6 @@ from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.db.session import Database
 from app.domains.calendar.enums import CalendarProvider
-from app.domains.hris.enums import HrisProvider
-from app.infrastructure.hris.bamboohr_provider import BambooHrProviderAdapter
-from app.infrastructure.processor_deletion.bamboohr import (
-    BambooHrProcessorDeletionProvider,
-)
 from app.infrastructure.processor_deletion.google_calendar import (
     GoogleCalendarProcessorDeletionProvider,
 )
@@ -68,19 +63,6 @@ async def _build_runtime(
             providers["calendar.google"] = GoogleCalendarProcessorDeletionProvider(
                 credential_resolver=credential_resolver,
                 calendar_provider=google_provider,
-            )
-
-        if settings.hris_handoff_provider == "bamboohr":
-            from app.workers.hris_handoff_worker import _build_runtime as _build_hris_runtime
-
-            credential_vault, hris_providers, client = await _build_hris_runtime(settings)
-            clients.append(client)
-            bamboohr_provider = hris_providers.get(HrisProvider.BAMBOOHR)
-            if not isinstance(bamboohr_provider, BambooHrProviderAdapter):
-                raise RuntimeError("BambooHR deletion provider could not be initialized.")
-            providers["hris.bamboohr"] = BambooHrProcessorDeletionProvider(
-                credential_vault=credential_vault,
-                bamboohr_provider=bamboohr_provider,
             )
 
         if settings.offer_signature_provider == "local":

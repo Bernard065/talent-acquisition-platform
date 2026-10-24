@@ -51,11 +51,11 @@ class CandidateProcessorDisclosure(Base):
             name="ck_candidate_processor_disclosures_purpose_code_length",
         ),
         CheckConstraint(
-            "purpose_code IN ('interview_scheduling', 'offer_signature', 'onboarding_handoff')",
+            "purpose_code IN ('interview_scheduling', 'offer_signature')",
             name="ck_candidate_processor_disclosures_purpose_code",
         ),
         CheckConstraint(
-            "source_type IN ('calendar_sync', 'offer_signature', 'hris_handoff')",
+            "source_type IN ('calendar_sync', 'offer_signature')",
             name="ck_candidate_processor_disclosures_source_type",
         ),
         Index(

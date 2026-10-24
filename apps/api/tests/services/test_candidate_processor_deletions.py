@@ -166,11 +166,11 @@ async def test_erasure_atomically_queues_one_work_item_per_disclosure(
         context=_context(tenant_id),
         tenant_id=tenant_id,
         candidate_id=candidate.id,
-        processor_code="hris.bamboohr",
-        purpose=CandidateProcessorPurpose.ONBOARDING_HANDOFF,
-        source=CandidateProcessorDisclosureSource.HRIS_HANDOFF,
+        processor_code="signature.another_provider",
+        purpose=CandidateProcessorPurpose.OFFER_SIGNATURE,
+        source=CandidateProcessorDisclosureSource.OFFER_SIGNATURE,
         source_id=uuid4(),
-        external_record_reference="opaque-employee-456",
+        external_record_reference="opaque-envelope-456",
     )
 
     await request_candidate_erasure(

@@ -18,7 +18,6 @@ from app.db.models.candidate_processor import (
     CandidateProcessorDeletionRequest,
     CandidateProcessorDisclosure,
 )
-from app.db.models.hris import HrisConnection, HrisHandoff
 from app.db.models.offer_signature import OfferSignatureRequest
 from app.db.transactions import transactional
 from app.domains.candidates.processor_data import CandidateProcessorDeletionStatus
@@ -281,26 +280,6 @@ async def _build_command(
         calendar_connection_id = connection.id
         interview_session_id = sync.interview_session_id
         external_calendar_id = connection.external_calendar_id
-    elif disclosure.processor_code == "hris.bamboohr":
-        if disclosure.source_type != "hris_handoff":
-            raise _PreparationError("processor_source_mismatch")
-        handoff = await session.scalar(
-            select(HrisHandoff).where(
-                HrisHandoff.id == disclosure.source_id,
-                HrisHandoff.tenant_id == request.tenant_id,
-            )
-        )
-        if handoff is None:
-            raise _PreparationError("processor_source_unavailable")
-        connection = await session.scalar(
-            select(HrisConnection).where(
-                HrisConnection.id == handoff.hris_connection_id,
-                HrisConnection.tenant_id == request.tenant_id,
-            )
-        )
-        if connection is None or connection.provider.value != "bamboohr":
-            raise _PreparationError("processor_connection_unavailable")
-        credential_reference = connection.credential_reference
     elif disclosure.source_type == "offer_signature":
         signature_request = await session.scalar(
             select(OfferSignatureRequest).where(
