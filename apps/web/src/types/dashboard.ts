@@ -29,6 +29,7 @@ export interface InterviewItem {
 export type SettingsTab =
   | "profile"
   | "integrations"
+  | "auditLog"
   | "notifications"
   | "onboarding"
   | "offboarding";
