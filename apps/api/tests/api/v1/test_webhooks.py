@@ -434,6 +434,4 @@ async def test_updates_rotates_disables_and_logically_deletes_endpoint(
     }
     assert deleted.headers["Cache-Control"] == "private, no-store"
 
-    assert current.status_code == 200
-    assert current.json()["status"] == "disabled"
-    assert "credential_reference" not in current.json()
+    assert current.status_code == 404

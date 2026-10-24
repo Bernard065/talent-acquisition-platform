@@ -6,3 +6,5 @@ export * as jobsService from "./jobs";
 export * as applicationsService from "./applications";
 export * as interviewsService from "./interviews";
 export * as offersService from "./offers";
+export * as auditEventsService from "./audit-events";
+export * as webhookEndpointsService from "./webhook-endpoints";

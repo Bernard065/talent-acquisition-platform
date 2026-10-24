@@ -20,6 +20,7 @@ from app.api.exception_handlers import register_exception_handlers
 from app.api.v1.application_screening import router as application_screening_router
 from app.api.v1.applications import router as applications_router
 from app.api.v1.approvals import router as approvals_router
+from app.api.v1.audit_events import router as audit_events_router
 from app.api.v1.calendar_connections import (
     router as calendar_connections_router,
 )
@@ -426,6 +427,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application.include_router(
         approvals_router,
+        prefix=active_settings.api_prefix,
+    )
+
+    application.include_router(
+        audit_events_router,
         prefix=active_settings.api_prefix,
     )
 

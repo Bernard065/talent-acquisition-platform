@@ -13,3 +13,5 @@ export * from "./notifications";
 export * from "./calendar-connections";
 export * from "./onboarding";
 export * from "./employee-records";
+export * from "./audit-events";
+export * from "./webhook-endpoints";

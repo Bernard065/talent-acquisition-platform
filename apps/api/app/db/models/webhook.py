@@ -46,6 +46,11 @@ class WebhookEndpoint(Base):
             "tenant_id",
             "status",
         ),
+        Index(
+            "ix_webhook_endpoints_tenant_deleted",
+            "tenant_id",
+            "deleted_at",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -94,6 +99,10 @@ class WebhookEndpoint(Base):
         nullable=False,
         server_default=text("CURRENT_TIMESTAMP"),
         onupdate=text("CURRENT_TIMESTAMP"),
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
     )
     version: Mapped[int] = mapped_column(
         Integer,

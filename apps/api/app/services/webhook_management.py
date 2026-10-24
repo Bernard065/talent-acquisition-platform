@@ -9,6 +9,7 @@ import socket
 from collections.abc import Awaitable, Callable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from re import compile as re_compile
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -333,6 +334,7 @@ async def disable_webhook_endpoint(
             .where(
                 WebhookEndpoint.id == webhook_endpoint_id,
                 WebhookEndpoint.tenant_id == context.tenant_id,
+                WebhookEndpoint.deleted_at.is_(None),
             )
             .with_for_update()
         )
@@ -378,6 +380,7 @@ async def _load_webhook_endpoint_for_update(
         .where(
             WebhookEndpoint.id == webhook_endpoint_id,
             WebhookEndpoint.tenant_id == context.tenant_id,
+            WebhookEndpoint.deleted_at.is_(None),
         )
         .with_for_update()
     )
@@ -592,6 +595,7 @@ async def delete_webhook_endpoint(
 
         secret_reference = endpoint.credential_reference
         endpoint.status = WebhookEndpointStatus.DISABLED
+        endpoint.deleted_at = datetime.now(UTC)
 
         await session.execute(
             update(WebhookSubscription)

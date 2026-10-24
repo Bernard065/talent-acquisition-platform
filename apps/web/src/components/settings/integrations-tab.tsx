@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
 import { CalendarDays, Check, ExternalLink, RefreshCw } from "lucide-react";
 import { ApiError } from "@/lib/api/errors";
+import { WebhookIntegrationsPanel } from "@/components/settings/webhook-integrations-panel";
 import {
   useBeginCalendarAuthorization,
   useCalendarConnections,
@@ -10,6 +12,7 @@ import {
 } from "@/lib/api/hooks/calendar-connections";
 
 export function IntegrationsTab() {
+  const { data: session } = useSession();
   const connectionsQuery = useCalendarConnections();
   const authorizationMutation = useBeginCalendarAuthorization();
   const disconnectMutation = useDisconnectCalendar();
@@ -227,6 +230,7 @@ export function IntegrationsTab() {
         </div>
       )}
     </section>
+    {session?.roles?.includes("tenant_admin") && <WebhookIntegrationsPanel />}
     </>
   );
 }
