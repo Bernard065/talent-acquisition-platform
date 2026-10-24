@@ -105,21 +105,6 @@ from app.services.hiring_decision_errors import (
     HiringDecisionValidationError,
     HiringDecisionVersionConflictError,
 )
-from app.services.hris_credentials import HrisCredentialVaultError
-from app.services.hris_errors import (
-    HrisAccessDeniedError,
-    HrisActiveConnectionExistsError,
-    HrisConnectionAlreadyExistsError,
-    HrisConnectionNotFoundError,
-    HrisConnectionValidationError,
-    HrisConnectionVersionConflictError,
-    HrisCredentialStorageError,
-)
-from app.services.hris_handoff_errors import (
-    HrisHandoffNotFoundError,
-    HrisHandoffValidationError,
-    InvalidHrisHandoffCursorError,
-)
 from app.services.idempotency import (
     IdempotencyKeyReuseError,
     InvalidIdempotencyKeyError,
@@ -1292,53 +1277,11 @@ async def webhook_secret_unavailable(
     return response
 
 
-async def hris_forbidden(
+async def invalid_request_schema(
     request: Request,
     _: Exception,
 ) -> JSONResponse:
-    """Return a private HRIS authorization failure."""
-    response = _error_response(
-        request,
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Insufficient permission.",
-    )
-    response.headers["Cache-Control"] = "private, no-store"
-    return response
-
-
-async def hris_not_found(
-    request: Request,
-    _: Exception,
-) -> JSONResponse:
-    """Avoid cross-tenant HRIS connection enumeration."""
-    response = _error_response(
-        request,
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail="HRIS connection not found.",
-    )
-    response.headers["Cache-Control"] = "private, no-store"
-    return response
-
-
-async def invalid_hris_request(
-    request: Request,
-    _: Exception,
-) -> JSONResponse:
-    """Return a private validation failure without vault details."""
-    response = _error_response(
-        request,
-        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-        detail="Invalid HRIS connection request.",
-    )
-    response.headers["Cache-Control"] = "private, no-store"
-    return response
-
-
-async def invalid_hris_schema(
-    request: Request,
-    _: Exception,
-) -> JSONResponse:
-    """Prevent validation output from reflecting HRIS credential inputs."""
+    """Return private validation errors with privacy-specific detail where needed."""
     if "/retention-reviews" in request.url.path:
         return await candidate_retention_review_invalid(request, _)
     if "/talent-pool-consent/" in request.url.path:
@@ -1354,78 +1297,7 @@ async def invalid_hris_schema(
     response = _error_response(
         request,
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-        detail="Invalid HRIS connection request.",
-    )
-    response.headers["Cache-Control"] = "private, no-store"
-    return response
-
-
-async def hris_conflict(
-    request: Request,
-    _: Exception,
-) -> JSONResponse:
-    """Require fresh state before retrying HRIS lifecycle changes."""
-    response = _error_response(
-        request,
-        status_code=status.HTTP_409_CONFLICT,
-        detail="HRIS connection cannot be changed in its current state.",
-    )
-    response.headers["Cache-Control"] = "private, no-store"
-    return response
-
-
-async def hris_vault_unavailable(
-    request: Request,
-    _: Exception,
-) -> JSONResponse:
-    """Hide Infisical implementation details during credential failures."""
-    response = _error_response(
-        request,
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail="HRIS management service is unavailable.",
-    )
-    response.headers["Retry-After"] = "5"
-    response.headers["Cache-Control"] = "private, no-store"
-    return response
-
-
-async def hris_handoff_not_found(
-    request: Request,
-    _: Exception,
-) -> JSONResponse:
-    """Avoid cross-tenant HRIS handoff enumeration."""
-    response = _error_response(
-        request,
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail="HRIS handoff not found.",
-    )
-    response.headers["Cache-Control"] = "private, no-store"
-    return response
-
-
-async def invalid_hris_handoff_request(
-    request: Request,
-    _: Exception,
-) -> JSONResponse:
-    """Return a private validation failure for HRIS handoff operations."""
-    response = _error_response(
-        request,
-        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-        detail="Invalid HRIS handoff request.",
-    )
-    response.headers["Cache-Control"] = "private, no-store"
-    return response
-
-
-async def invalid_hris_handoff_cursor(
-    request: Request,
-    _: Exception,
-) -> JSONResponse:
-    """Return a private malformed-cursor error."""
-    response = _error_response(
-        request,
-        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-        detail="Invalid HRIS handoff cursor.",
+        detail="Invalid request.",
     )
     response.headers["Cache-Control"] = "private, no-store"
     return response
@@ -1939,53 +1811,8 @@ def register_exception_handlers(application: FastAPI) -> None:
         webhook_secret_unavailable,
     )
 
-    application.add_exception_handler(
-        HrisAccessDeniedError,
-        hris_forbidden,
-    )
-    application.add_exception_handler(
-        HrisConnectionNotFoundError,
-        hris_not_found,
-    )
-    application.add_exception_handler(
-        HrisConnectionValidationError,
-        invalid_hris_request,
-    )
-    application.add_exception_handler(
-        HrisActiveConnectionExistsError,
-        hris_conflict,
-    )
-    application.add_exception_handler(
-        HrisConnectionAlreadyExistsError,
-        hris_conflict,
-    )
-    application.add_exception_handler(
-        HrisConnectionVersionConflictError,
-        hris_conflict,
-    )
-    application.add_exception_handler(
-        HrisCredentialStorageError,
-        hris_vault_unavailable,
-    )
-    application.add_exception_handler(
-        HrisCredentialVaultError,
-        hris_vault_unavailable,
-    )
-    application.add_exception_handler(
-        HrisHandoffNotFoundError,
-        hris_handoff_not_found,
-    )
-    application.add_exception_handler(
-        HrisHandoffValidationError,
-        invalid_hris_handoff_request,
-    )
-    application.add_exception_handler(
-        InvalidHrisHandoffCursorError,
-        invalid_hris_handoff_cursor,
-    )
-
     application.add_exception_handler(OperationalError, database_unavailable)
     application.add_exception_handler(
         RequestValidationError,
-        invalid_hris_schema,
+        invalid_request_schema,
     )
