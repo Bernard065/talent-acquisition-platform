@@ -36,7 +36,7 @@ dependencies = [
 
 dev = [
   "boto3-stubs[s3]>=1.35,<2.0",
-  "httpx2>=2.13.0",
+  "httpx2>=2.16.0",
   "mypy>=1.14,<2.0",
   "pytest>=9.1.1,<10.0",
   "pytest-asyncio>=1.4.0,<2.0",
